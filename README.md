@@ -14,8 +14,9 @@ masks — into a caller-owned RGB or RGBA view, and since Gate M3 its QuickDraw
 lines, rectangles, round rects, ovals, arcs, polygons and regions with
 patterns, colors, transfer modes and clipping. Since Gate M4 it draws text
 with TrueType fonts the caller maps to the picture's font names and IDs
-(`Pictlib.Fonts`); pictlib ships no fonts. QuickTime images are reported as
-unsupported until their gate passes. `Pictlib.Capabilities` lists what is
+(`Pictlib.Fonts`); pictlib ships no fonts. Since Gate M5 it draws JPEG images
+embedded through QuickTime, decoded by jpeglib. Encoding is not available
+yet. `Pictlib.Capabilities` lists what is
 implemented; everything else is unavailable until its implementation-plan gate
 passes.
 

@@ -7,6 +7,7 @@ with Pictlib.Internal.Drawing;
 with Pictlib.Internal.Metadata_Store;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Internal.Pixmaps;
+with Pictlib.Internal.QuickTime;
 with Pictlib.Internal.Regions;
 with Pictlib.Metadata;
 with Pictlib.Opcodes;
@@ -15,6 +16,7 @@ with Pictlib.Streams;
 package body Pictlib.Internal.Opcode_Reader is
    use type Interfaces.Unsigned_16;
    use type Errors.Error_Code;
+   use type Opcodes.Data_Rule;
 
    subtype Session is Sessions.Session;
 
@@ -193,6 +195,9 @@ package body Pictlib.Internal.Opcode_Reader is
    begin
       if not Results.Succeeded (Outcome) then
          return Outcome;
+      elsif Event.Op = Opcodes.Compressed_QuickTime and then Paint /= null then
+         --  Rendering reads the image; its payload is not retained as well.
+         return QuickTime.Draw (Paint.all, S, Event, Length);
       elsif Event.Op = Opcodes.Font_Name and then (S.Retention.Font_Names or else Paint /= null) then
          return Consume_Font_Name (S, Event, Length, Paint);
       elsif Event.Op in Opcodes.Compressed_QuickTime | Opcodes.Uncompressed_QuickTime
@@ -271,9 +276,8 @@ package body Pictlib.Internal.Opcode_Reader is
       end case;
    end Consume_Data;
 
-   --  Opcodes that draw but that this renderer does not draw yet: QuickTime images.
-   function Draws_Unsupported (Event : Pictures.Opcode_Event) return Boolean is
-     (Event.Op = Opcodes.Compressed_QuickTime);
+   function Rule_Of (Event : Pictures.Opcode_Event) return Opcodes.Data_Rule is
+     (Opcodes.Rule_For (Event.Op).Rule);
 
    function Next
      (S : in out Session;
@@ -330,11 +334,11 @@ package body Pictlib.Internal.Opcode_Reader is
             Handled : Boolean := False;
          begin
             if Paint /= null then
-               if Draws_Unsupported (Event) then
-                  Outcome := Rendering.Unsupported (S, Event);
-               else
-                  Outcome := Drawing.Consume (Paint.all, S, Event, Handled);
+               --  Only the opcode right after a QuickTime image is its placeholder.
+               if Rule_Of (Event) /= Opcodes.Bits_Data and then Event.Op /= Opcodes.Compressed_QuickTime then
+                  Paint.Skip_Next_Bits := False;
                end if;
+               Outcome := Drawing.Consume (Paint.all, S, Event, Handled);
             end if;
             if Results.Succeeded (Outcome) and then not Handled then
                Outcome := Consume_Data (S, Event, Paint);

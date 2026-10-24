@@ -31,6 +31,25 @@ package Pictlib_Testing.Builders is
    function Table_Header (Flags, Entries : Natural) return Bytes;
    --  One color table entry, 16-bit components.
    function Table_Entry (Value, Red, Green, Blue : Natural) return Bytes;
+   --  A CompressedQuickTime opcode (16#8200#), from Inside Macintosh: QuickTime: version 0, the matrix
+   --  [Scale_H 0 0 / 0 Scale_V 0 / Move_H Move_V 1] (16.16, the last column 2.30), the matte, the transfer
+   --  mode, srcRect, accuracy, the mask region, an 86-byte ImageDescription and the compressed data, padded to
+   --  an even length.
+   function QuickTime
+     (Codec : String;
+      Width, Height : Natural;
+      Data : Bytes;
+      Scale_H : Long_Long_Integer := 16#1_0000#;
+      Scale_V : Long_Long_Integer := 16#1_0000#;
+      Move_H : Long_Long_Integer := 0;
+      Move_V : Long_Long_Integer := 0;
+      Skew : Long_Long_Integer := 0;
+      Mode : Natural := 16#40#;
+      Source : Bytes := [1 .. 0 => 0];
+      Matte : Bytes := [1 .. 0 => 0];
+      Mask : Bytes := [1 .. 0 => 0];
+      Description_Size : Natural := 86) return Bytes
+     with Pre => Codec'Length = 4;
    --  The 36 PixMap bytes after rowBytes and bounds.
    function Pixmap_Tail (Pack_Type, Pixel_Size, Component_Count, Component_Size : Natural) return Bytes;
 end Pictlib_Testing.Builders;

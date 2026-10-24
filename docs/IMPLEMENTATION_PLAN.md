@@ -1,6 +1,6 @@
 # pictlib — Implementation Plan
 
-**Status:** M0–M4 implemented; M5 is next  
+**Status:** M0–M5 implemented; M6 is next  
 **Contract:** [SPECIFICATION.md](SPECIFICATION.md) (authoritative)  
 **Reference:** https://github.com/bracke/jpeglib
 
@@ -114,6 +114,15 @@ fonts committed under their license).
 font resolution and missing fonts behave as specified.
 
 ## M5 — QuickTime JPEG
+
+**Completed (2026-10-24):** Tasks 22–23 and Gate M5. `CompressedQuickTime` is
+parsed within its opcode and its JPEG decoded by jpeglib straight from the
+picture, then drawn through the matrix (translation and scaling), srcRect, mask,
+clip and transfer mode; the placeholder bitmap QuickTime writes after the image
+is skipped. Two QuickTime PICTs written by ImageMagick render within two levels
+of libjpeg's decoding of their JPEGs, and hand-built opcodes cover placement,
+masks, modes, the placeholder, unsupported codecs, mattes and matrices, broken
+JPEGs and the embedded budgets (95 tests).
 
 22. `Internal.QuickTime`: parse `16#8200#`/`16#8201#`, `ImageDescription`, matrix, matte, mask.
 23. Bridge to `jpeglib` decoding with byte/pixel budgets; error mapping; drawing via the matrix.

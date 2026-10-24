@@ -22,7 +22,10 @@ bounds a read, a skip, an allocation or a loop.
 | `Max_Polygon_Points` | each polygon, also while rendering | `Limit_Exceeded` |
 | `Max_Allocation_Bytes` | each opcode's row buffers, each font's glyph atlas | `Limit_Exceeded` |
 
-The embedded image limits take effect with M5. `Max_Canvas_Bytes` is reserved:
+| `Max_Embedded_Image_Bytes` | a QuickTime image's dataSize, before decoding | `Limit_Exceeded` |
+| `Max_Embedded_Image_Pixels` | a QuickTime image's width × height, before decoding, and jpeglib's pixel limit | `Limit_Exceeded` |
+
+`Max_Canvas_Bytes` is reserved:
 the renderer draws into the caller's view and allocates no canvas.
 
 ## Memory

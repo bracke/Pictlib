@@ -41,6 +41,9 @@ package Pictlib.Internal.Rendering is
       Oval_Height : Integer := 0;
       --  HiliteMode makes the next drawing operation highlight.
       Hilite_Next : Boolean := False;
+      --  A drawn QuickTime image makes the bits opcode right after it -- its placeholder for systems without
+      --  the codec -- skipped.
+      Skip_Next_Bits : Boolean := False;
       --  The last shapes, as read (local coordinates), for the "same" opcodes.
       Last_Rect : Geometry.Rect;
       Last_Polygon : Coverage.Point_Vectors.Vector;

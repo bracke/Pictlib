@@ -11,3 +11,11 @@ and requires the pixels of its source raster exactly.
 | `palette_magick.pict` | ImageMagick 7.1.1 | 21x9, 32-bit `DirectBitsRect` pack type 4, extended header |
 | `truecolor_magick.pict` | ImageMagick 7.1.1 | 37x23, 851 colors, `DirectBitsRect` |
 | `mono_magick.pict` | ImageMagick 7.1.1 | 30x30 from a 1-bit source, `DirectBitsRect` |
+| `truecolor_jpeg.pict` | ImageMagick 7.1.1 | 37x23, `CompressedQuickTime` with a JPEG at quality 95; reference `truecolor_embedded.ppm` |
+| `palette_jpeg.pict` | ImageMagick 7.1.1 | 21x9, `CompressedQuickTime` with a JPEG at quality 90; reference `palette_embedded.ppm` |
+
+For the QuickTime pictures the reference raster is the embedded JPEG decoded by
+libjpeg (through ImageMagick), and the tests allow the small differences two
+conforming JPEG decoders may show. `small.jpg` (8x6, quality 100, no chroma
+subsampling) and its libjpeg decoding `small_decoded.ppm` are wrapped by the
+tests in hand-built QuickTime opcodes.

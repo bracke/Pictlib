@@ -2,6 +2,16 @@
 
 ## 0.1.0-dev
 
+- Gate M5: `CompressedQuickTime` images with JPEG data render. jpeglib
+  reads the JPEG straight from the picture, at most the stated data size,
+  under the embedded byte, pixel and allocation budgets; the image is drawn
+  through the matrix (translation and positive scaling), srcRect, mask
+  region, clip and transfer mode, without colorizing. The placeholder bitmap
+  QuickTime writes after an image for systems without the codec is skipped,
+  as QuickTime skips it. Other codecs, mattes and skewing matrices are
+  unsupported; corrupt JPEGs are `Embedded_Image_Failed` and recoverable.
+  Two QuickTime PICTs from ImageMagick match libjpeg within two levels.
+  95 AUnit tests.
 - Gate M4: text renders with TrueType fonts through `textrender`, a new
   production dependency. `Pictlib.Fonts.Font_Table`, in the decode options,
   maps Macintosh families and font IDs to font files; a picture's `fontName`,

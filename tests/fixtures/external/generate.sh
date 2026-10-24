@@ -17,3 +17,25 @@ ppmtopict palette.ppm > palette_netpbm.pict     # 8-bit PackBitsRect, header ver
 magick palette.ppm palette_magick.pict          # 32-bit DirectBitsRect, pack type 4, extended header
 magick truecolor.ppm truecolor_magick.pict      # 851 colors, DirectBitsRect
 magick mono.pbm mono_magick.pict                # a 1-bit source, written as DirectBitsRect
+
+# QuickTime: CompressedQuickTime (16#8200#) pictures with an embedded JPEG. The
+# reference raster is the embedded JPEG decoded by libjpeg (through
+# ImageMagick), not the lossy source.
+magick truecolor.ppm -compress JPEG -quality 95 truecolor_jpeg.pict
+magick palette.ppm -compress JPEG -quality 90 palette_jpeg.pict
+for picture in truecolor palette; do
+  python3 -I -c '
+import sys
+data = open(sys.argv[1], "rb").read()
+first = data.find(b"\xff\xd8\xff")
+last = data.rfind(b"\xff\xd9")
+open(sys.argv[2], "wb").write(data[first:last + 2])' "${picture}_jpeg.pict" "${picture}_embedded.jpg"
+  magick "${picture}_embedded.jpg" -depth 8 "${picture}_embedded.ppm"
+  rm "${picture}_embedded.jpg"
+done
+
+# A small JPEG the tests wrap in hand-built QuickTime opcodes, and its libjpeg decoding.
+magick -size 8x6 xc: -channel R -fx 'i/w' -channel G -fx 'j/h' -channel B -fx '0.5' +channel -depth 8 small.ppm
+magick small.ppm -quality 100 -sampling-factor 1x1 small.jpg
+magick small.jpg -depth 8 small_decoded.ppm
+rm small.ppm

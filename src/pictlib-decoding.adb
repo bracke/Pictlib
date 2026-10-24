@@ -160,7 +160,7 @@ package body Pictlib.Decoding is
      (Code in Errors.Source_Unexpected_End | Errors.Opcode_Invalid | Errors.Opcode_Length_Invalid
             | Errors.Region_Invalid | Errors.Polygon_Invalid | Errors.Pixmap_Invalid | Errors.PackBits_Invalid
             | Errors.Color_Table_Invalid | Errors.Pattern_Invalid | Errors.Transfer_Mode_Invalid
-            | Errors.Missing_End_Opcode);
+            | Errors.Missing_End_Opcode | Errors.Embedded_Image_Failed);
 
    function Check_View (Object : Decoder; Output : Images.Mutable_Image_View) return Results.Result is
       Frame : constant Geometry.Rect := Object.Info.Frame;

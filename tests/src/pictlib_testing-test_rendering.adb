@@ -148,8 +148,9 @@ package body Pictlib_Testing.Test_Rendering is
    Truncated_Pixels : aliased constant Bytes :=
      V2_Prefix (0, 0, 2, 8) & Copy (16#98#, 2, Rect (0, 0, 2, 8), Rect (0, 0, 2, 8), Rect (0, 0, 2, 8))
      & B (16#A5#) & B (0) & B (16#0F#);
-   --  An empty CompressedQuickTime image; QuickTime renders from M5.
-   With_QuickTime : aliased constant Bytes := V2_Picture (0, 0, 2, 8, W (16#8200#) & L (0) & Bitmap_2x8);
+   --  A QuickTime image in a codec other than JPEG.
+   With_QuickTime : aliased constant Bytes :=
+     V2_Picture (0, 0, 2, 8, QuickTime ("rle ", 2, 2, [1, 2, 3]) & Bitmap_2x8);
    Dither_Copy : aliased constant Bytes := V2_Picture (0, 0, 2, 8, Bitmap_2x8 (Mode => 16#40#));
    Default_Colors : aliased constant Bytes :=
      V2_Picture (0, 0, 2, 8, W (16#1A#) & W (0) & W (0) & W (0) & W (16#1B#) & W (16#FFFF#) & W (16#FFFF#)

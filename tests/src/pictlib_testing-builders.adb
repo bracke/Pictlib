@@ -43,6 +43,39 @@ package body Pictlib_Testing.Builders is
    function Table_Entry (Value, Red, Green, Blue : Natural) return Bytes is
      (W (Value) & W (Red) & W (Green) & W (Blue));
 
+   function QuickTime
+     (Codec : String;
+      Width, Height : Natural;
+      Data : Bytes;
+      Scale_H : Long_Long_Integer := 16#1_0000#;
+      Scale_V : Long_Long_Integer := 16#1_0000#;
+      Move_H : Long_Long_Integer := 0;
+      Move_V : Long_Long_Integer := 0;
+      Skew : Long_Long_Integer := 0;
+      Mode : Natural := 16#40#;
+      Source : Bytes := [1 .. 0 => 0];
+      Matte : Bytes := [1 .. 0 => 0];
+      Mask : Bytes := [1 .. 0 => 0];
+      Description_Size : Natural := 86) return Bytes
+   is
+      function Fixed (Value : Long_Long_Integer) return Bytes is
+        (L (if Value < 0 then Value + 16#1_0000_0000# else Value));
+      Source_Rect : constant Bytes := (if Source'Length = 0 then Rect (0, 0, Height, Width) else Source);
+      Description : constant Bytes :=
+        L (Long_Long_Integer (Description_Size)) & Text (Codec) & L (0) & W (0) & W (0) & W (0) & W (0)
+        & Text ("appl") & L (0) & L (16#300#) & W (Width) & W (Height) & L (72 * 16#1_0000#) & L (72 * 16#1_0000#)
+        & L (Long_Long_Integer (Data'Length)) & W (1) & Zeros (32) & W (24) & W (-1)
+        & Zeros (Natural'Max (0, Description_Size - 86));
+      Payload : constant Bytes :=
+        W (0) & Fixed (Scale_H) & Fixed (Skew) & L (0) & L (0) & Fixed (Scale_V) & L (0)
+        & Fixed (Move_H) & Fixed (Move_V) & L (16#4000_0000#)
+        & L (Long_Long_Integer (Matte'Length)) & Rect (0, 0, 0, 0) & W (Mode) & Source_Rect & L (16#300#)
+        & L (Long_Long_Integer (Mask'Length)) & Matte & Mask & Description & Data;
+      Whole : constant Bytes := W (16#8200#) & L (Long_Long_Integer (Payload'Length)) & Payload;
+   begin
+      return (if Whole'Length mod 2 = 0 then Whole else Whole & B (0));
+   end QuickTime;
+
    function Pixmap_Tail (Pack_Type, Pixel_Size, Component_Count, Component_Size : Natural) return Bytes is
      (W (0) & W (Pack_Type) & L (0) & L (72 * 16#1_0000#) & L (72 * 16#1_0000#)
       & W ((if Pixel_Size >= 16 then 16 else 0)) & W (Pixel_Size) & W (Component_Count) & W (Component_Size)

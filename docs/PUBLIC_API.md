@@ -42,4 +42,6 @@ Available since Gate M4:
   `Set_Default`, `Resolve`), `Classic_Name`; `Decoding.Options.Fonts`.
 - `Errors.Font_Unavailable`.
 
-QuickTime JPEG and encoding arrive with Gates M5–M6.
+Gate M5 adds no public API: QuickTime JPEG images render through `Render`.
+
+Encoding arrives with Gate M6.

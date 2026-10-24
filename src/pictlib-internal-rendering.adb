@@ -30,6 +30,7 @@ package body Pictlib.Internal.Rendering is
       P.Oval_Width := 0;
       P.Oval_Height := 0;
       P.Hilite_Next := False;
+      P.Skip_Next_Bits := False;
       P.Last_Rect := (others => 0);
       P.Last_Polygon.Clear;
       P.Last_Region := Regions.Rectangle ((others => 0));
@@ -243,8 +244,13 @@ package body Pictlib.Internal.Rendering is
       Source : Geometry.Rect;
       Destination : constant Area := To_Picture (P, Header.Destination);
       Kind : Transfer_Modes.Mode_Kind;
-      Outcome : Results.Result := Mode (S, Event, Header.Mode, Kind);
+      Outcome : Results.Result;
    begin
+      if P.Skip_Next_Bits then
+         P.Skip_Next_Bits := False;
+         return Pixmaps.Skip_Pixels (S, Header);
+      end if;
+      Outcome := Mode (S, Event, Header.Mode, Kind);
       if P.Hilite_Next then
          Kind := Transfer_Modes.Hilite;
          P.Hilite_Next := False;

@@ -8,6 +8,7 @@ with Pictlib_Testing.Test_Foundation;
 with Pictlib_Testing.Test_Images;
 with Pictlib_Testing.Test_Opcodes;
 with Pictlib_Testing.Test_PackBits;
+with Pictlib_Testing.Test_QuickTime;
 with Pictlib_Testing.Test_Rendering;
 with Pictlib_Testing.Test_Shapes;
 with Pictlib_Testing.Test_Text;
@@ -42,6 +43,8 @@ package body Pictlib_Testing.Suite is
         new Pictlib_Testing.Test_Shapes.Test;
       Text : constant AUnit.Test_Cases.Test_Case_Access :=
         new Pictlib_Testing.Test_Text.Test;
+      QuickTime : constant AUnit.Test_Cases.Test_Case_Access :=
+        new Pictlib_Testing.Test_QuickTime.Test;
    begin
       Suite.Add_Test (Foundation);
       Suite.Add_Test (Streams);
@@ -56,6 +59,7 @@ package body Pictlib_Testing.Suite is
       Suite.Add_Test (External);
       Suite.Add_Test (Shapes);
       Suite.Add_Test (Text);
+      Suite.Add_Test (QuickTime);
       return Suite;
    end All_Tests;
 end Pictlib_Testing.Suite;

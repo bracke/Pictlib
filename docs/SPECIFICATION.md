@@ -226,15 +226,31 @@ are retained, never interpreted.
 
 - `ShortComment` (`16#00A0#`) and `LongComment` (`16#00A1#`) are retained in order under the
   metadata budget, with kind, data and opcode ordinal. They never change rendering.
-- `CompressedQuickTime` (`16#8200#`): the 32-bit-length payload is parsed (version, matrix, matte,
-  mode, source rect, accuracy, mask region, `ImageDescription`, image data). When the codec type
-  is `'jpeg'` the image data is decoded by `jpeglib` into a library-owned bounded buffer and drawn
-  through the matrix (translation and positive axis-aligned scale; any other matrix is
-  `Unsupported_Feature` in `Strict`, a skipped image with a warning otherwise), the matte and the
-  mask region. Other codec types are `Unsupported_Feature` in `Strict`; otherwise skipped with a
-  warning. The raw payload may be retained as metadata.
+- `CompressedQuickTime` (`16#8200#`): after its 32-bit length come a version word, a 3 × 3 matrix
+  (16.16 Fixed, the last column 2.30 Fract), `matteSize`, the matte rectangle, a transfer mode,
+  `srcRect`, the accuracy and `maskSize` (68 bytes), then the matte (`matteSize` bytes), the mask
+  region (`maskSize` bytes), an `ImageDescription` (`idSize`, at least 86 bytes: codec type at 4,
+  width at 32, height at 34, `dataSize` at 44) and `dataSize` bytes of image data. Parts that do not
+  fit the opcode fail with `Opcode_Length_Invalid`; a mask whose size disagrees with `maskSize`
+  fails with `Region_Invalid`.
+- Codec `'jpeg'` is decoded by `jpeglib`, which reads the data straight from the picture (never
+  more than `dataSize` bytes); the decoded RGB image is held on the heap. A JPEG whose size is not
+  the description's, or that `jpeglib` rejects, is `Embedded_Image_Failed`; `Recover_When_Safe`
+  keeps what was drawn before it as a partial picture. Any other codec, a non-empty matte (an alpha
+  image of its own), and a matrix other than positive scaling plus translation are
+  `Unsupported_Feature` in `Strict`; otherwise the image is skipped (the matte ignored) with an
+  `Approximated_Rendering` warning.
+- The image's `srcRect` (in image coordinates, clamped to the image) is mapped through the matrix
+  to a local destination rectangle (coordinates rounded to the nearest pixel), drawn nearest-
+  neighbor like a copy with the opcode's transfer mode, clipped by the clip region and the mask
+  region. Decompressed images are not colorized by the port's colors.
+- QuickTime writes a bits opcode after the image as a placeholder for systems without the codec.
+  After an image is drawn, the bits opcode immediately following is consumed without drawing; any
+  other opcode in between ends that. An image that is skipped leaves its placeholder to be drawn.
 - `UncompressedQuickTime` (`16#8201#`) is parsed and skipped; it carries no pixels that QuickDraw
   would draw.
+- While rendering, QuickTime payloads are read by the decoder and are not retained as metadata;
+  enumeration retains them when the policy asks.
 - `jpeglib` errors are mapped to `Embedded_Image_Failed` with the `jpeglib` identifier kept as the
   underlying code.
 
@@ -277,7 +293,7 @@ Pictlib.Internal.Rasterizer        -- shapes, pen, clipping
 Pictlib.Internal.Transfer_Modes
 Pictlib.Internal.Text              -- text state, Mac Roman, loaded fonts
 Pictlib.Internal.Typesetting       -- drawing text opcodes
-Pictlib.Internal.QuickTime         -- 8200/8201 parsing, jpeglib bridge
+Pictlib.Internal.QuickTime         -- 8200 parsing, jpeglib bridge, placement
 Pictlib.Internal.Writers           -- opcode and pixmap emission
 Pictlib.Internal.Ownership         -- allocation/budget accounting
 ```
@@ -423,7 +439,7 @@ Root `alire.toml`: `name = "pictlib"`, `0.1.0-dev`, MIT, `gnat_native = "^15"`, 
 | Copy | scaling up/down, clipping, mask regions, every transfer mode |
 | Shapes | each verb × shape, "same" variants, pen sizes, patterns, oval size, arcs at all quadrants |
 | Text | each text opcode, origins, font resolution by name, ID, classic name and default, Mac Roman, face bits, sizes, modes, spacing, clipping, missing fonts |
-| QuickTime | JPEG with identity/translated/scaled matrix, matte, mask, non-JPEG codec, corrupt JPEG |
+| QuickTime | JPEG with identity/translated/scaled matrix, srcRect, origin, matte, mask, clip, modes, placeholder bitmap, non-JPEG codec, skewing matrix, truncated/garbage/mis-sized JPEG, description and data sizes, embedded limits; independent QuickTime PICTs within decoder tolerance of libjpeg |
 | I/O | fragmented reads/writes, EOF, zero progress, destination failure |
 | Encoder | each layout, alpha, >256 colors, header on/off, decode by independent decoders |
 | Stress | huge frames with tight limits, many opcodes, repeated large fills, cancellation, reset |
