@@ -133,12 +133,13 @@ package body Pictlib.Internal.QuickTime is
       and then Header.Transform (6) = 0 and then Header.Transform (9) = Fract_One
       and then Header.Transform (1) > 0 and then Header.Transform (5) > 0);
 
-   --  The embedded limits, and the one buffer of pixels, indexed by Natural, whatever the budget allows.
+   --  The embedded limits, and the one buffer of pixels, indexed by Natural, whatever the budget allows; the
+   --  allocation budget is the session's to check, as for any allocation.
    function Check_Image (S : Sessions.Session; Event : Pictures.Opcode_Event; Item : Description)
      return Results.Result
    is
       Pixels : constant Byte_Count := Byte_Count (Item.Width) * Byte_Count (Item.Height);
-      Largest : constant Byte_Count := Byte_Count'Min (S.Budget.Max_Allocation_Bytes, Byte_Count (Natural'Last));
+      Largest : constant Byte_Count := Byte_Count (Natural'Last);
    begin
       if Byte_Count (Item.Data_Size) > S.Budget.Max_Embedded_Image_Bytes then
          return Sessions.Over_Limit
@@ -432,21 +433,28 @@ package body Pictlib.Internal.QuickTime is
 
       declare
          Pixel_Bytes : constant Byte_Count := Bytes_Per_Pixel * Byte_Count (Item.Width) * Byte_Count (Item.Height);
-         --  What is left of the per-allocation budget, but no more than a decode of this size needs.
-         Share : constant Byte_Count :=
-           Byte_Count'Min (S.Budget.Max_Allocation_Bytes - Pixel_Bytes,
-                           Jpeglib_Pixel_Factor * Pixel_Bytes + Jpeglib_Fixed_Bytes);
       begin
-         --  Decoding is drawing work, a unit per pixel and per row, drawn or not, as for a copied pixmap; the
-         --  pixels and jpeglib's share count against the aggregate allocation quota.
-         Outcome :=
-           Sessions.Charge_Work
-             (S, Pixel_Count (Item.Width) * Pixel_Count (Item.Height) + Pixel_Count (Item.Height));
+         --  The pixels are one allocation. Decoding is drawing work, a unit per pixel and per row, drawn or not,
+         --  as for a copied pixmap.
+         Outcome := Sessions.Admit_Allocation (S, Pixel_Bytes);
          if Results.Succeeded (Outcome) then
-            Outcome := Sessions.Admit_Aggregate (S, Pixel_Bytes + Share);
+            Outcome :=
+              Sessions.Charge_Work
+                (S, Pixel_Count (Item.Width) * Pixel_Count (Item.Height) + Pixel_Count (Item.Height));
          end if;
          if Results.Succeeded (Outcome) then
-            Outcome := Decode_JPEG (S, Event, Item, Share, Pixels);
+            declare
+               --  jpeglib's own buffers: what is left of the per-allocation budget once the pixels are admitted,
+               --  but no more than a decode of this size needs, counted against the session's total.
+               Share : constant Byte_Count :=
+                 Byte_Count'Min (S.Budget.Max_Allocation_Bytes - Pixel_Bytes,
+                                 Jpeglib_Pixel_Factor * Pixel_Bytes + Jpeglib_Fixed_Bytes);
+            begin
+               Outcome := Sessions.Admit_Aggregate (S, Share);
+               if Results.Succeeded (Outcome) then
+                  Outcome := Decode_JPEG (S, Event, Item, Share, Pixels);
+               end if;
+            end;
          end if;
       end;
       if Results.Succeeded (Outcome) then

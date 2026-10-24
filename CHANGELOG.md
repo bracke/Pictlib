@@ -90,6 +90,10 @@ place:
   render starts from it, so no field can keep a value from the last render.
 - `Opcode_Bytes` gives the size of an opcode, and of the version opcode's
   data, for every version in one place.
+- `Encode` reads as its steps: check the frame, choose the layout, check
+  the plan, write. A QuickTime image's pixel buffer is admitted like every
+  other allocation, and `Decide_Layout` keeps one check per pack type and
+  component count.
 
 ### Tooling
 

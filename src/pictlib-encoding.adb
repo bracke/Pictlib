@@ -352,13 +352,88 @@ package body Pictlib.Encoding is
       return Outcome;
    end Fail;
 
+   --  Choose layout: Auto takes Mono_1 only for pure black and white, which it must keep exactly, whatever the
+   --  threshold: one between the two does.
+   procedure Choose_Layout
+     (Image : Images.Image_View;
+      Colors : Palette;
+      Settings : in out Options;
+      Layout : out Layout_Kind) is
+   begin
+      Layout := Settings.Layout;
+      if Layout = Auto then
+         Layout :=
+           (if Alpha_Kept (Image, Settings) then Direct_32
+            elsif Colors.Black_And_White then Mono_1
+            elsif Natural (Colors.Colors.Length) <= Largest_Colors then Indexed_8
+            else Direct_32);
+         if Layout = Mono_1 then
+            Settings.Mono_Threshold := Default_Mono_Threshold;
+         end if;
+      end if;
+   end Choose_Layout;
+
+   --  Check plan: what the layout needs, against what a PICT and the budget allow.
+   function Check_Plan
+     (Image : Images.Image_View;
+      Settings : Options;
+      Layout : Layout_Kind;
+      Colors : Palette;
+      Budget : Limits.Limit_Set) return Results.Result
+   is
+      Item : constant Plan := Plan_For (Image, Settings, Layout);
+      Buffers : constant Byte_Count := Row_Buffer_Bytes (Item);
+   begin
+      if Layout = Indexed_8 and then Natural (Colors.Colors.Length) > Largest_Colors then
+         return Results.Failure
+           (Errors.Make
+              (Errors.Too_Many_Colors,
+               (Expected => Largest_Colors, Actual => Byte_Count (Colors.Colors.Length), others => <>)));
+      elsif Item.Stored > Largest_Row_Bytes then
+         --  rowBytes must stay below 16#4000#.
+         return Invalid (Largest_Row_Bytes, Byte_Count (Item.Stored));
+      elsif Buffers > Budget.Max_Allocation_Bytes then
+         return Internal.Failures.Over_Limit (Allocation_Byte_Limit, Budget.Max_Allocation_Bytes, Buffers);
+      end if;
+      return Results.Success;
+   end Check_Plan;
+
+   --  Write: picSize needs the picture's length before the picture is written, so a dry run measures it first.
+   function Write
+     (Object : in out Encoder;
+      Image : Images.Image_View;
+      Settings : Options;
+      Layout : Layout_Kind;
+      Colors : Palette) return Results.Result
+   is
+      Budget : Limits.Limit_Set renames Object.Encode_Limits;
+      Header_Bytes : constant Byte_Count := (if Settings.File_Header then Internal.File_Header_Bytes else 0);
+      Measure : Writers.Writer;
+      Output : Writers.Writer;
+      Outcome : Results.Result;
+   begin
+      Writers.Start (Measure, null, Budget.Max_Output_Bytes - Byte_Count'Min (Header_Bytes, Budget.Max_Output_Bytes));
+      Outcome := Write_Picture (Measure, Image, Settings, Layout, Colors, 0);
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
+      Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes);
+      if Settings.File_Header then
+         Outcome := Writers.Put (Output, [1 .. Internal.File_Header_Bytes => 0]);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Write_Picture (Output, Image, Settings, Layout, Colors, Writers.Picture_Count (Measure));
+      end if;
+      Object.Written := Writers.Count (Output);
+      return Outcome;
+   end Write;
+
    function Encode (Object : in out Encoder; Image : Images.Image_View) return Results.Result is
-      Settings : constant Options := Object.Encode_Options;
       --  The settings the picture is written with.
-      Effective : Options := Settings;
-      Budget : constant Limits.Limit_Set := Object.Encode_Limits;
+      Settings : Options := Object.Encode_Options;
       Colors : Palette;
       Layout : Layout_Kind;
+      Outcome : Results.Result;
    begin
       if Object.Current_State /= Ready then
          return Wrong_State (Object);
@@ -367,77 +442,22 @@ package body Pictlib.Encoding is
       elsif Settings.Horizontal_Resolution <= 0 or else Settings.Vertical_Resolution <= 0 then
          return Invalid (1, 0);
       end if;
-      declare
-         Framed : constant Results.Result :=
-           Internal.Failures.Check_Frame_Size
-             (Natural (Image.Descriptor.Width), Natural (Image.Descriptor.Height), Budget);
-      begin
-         if not Results.Succeeded (Framed) then
-            return Fail (Object, Framed);
-         end if;
-      end;
-
-      Survey (Image, Colors);
-      Layout := Settings.Layout;
-      if Layout = Auto then
-         Layout :=
-           (if Alpha_Kept (Image, Settings) then Direct_32
-            elsif Colors.Black_And_White then Mono_1
-            elsif Natural (Colors.Colors.Length) <= Largest_Colors then Indexed_8
-            else Direct_32);
-         --  Auto takes Mono_1 only for pure black and white, which it must keep exactly, whatever the
-         --  threshold: one between the two does.
-         if Layout = Mono_1 then
-            Effective.Mono_Threshold := Default_Mono_Threshold;
-         end if;
+      Outcome :=
+        Internal.Failures.Check_Frame_Size
+          (Natural (Image.Descriptor.Width), Natural (Image.Descriptor.Height), Object.Encode_Limits);
+      if Results.Succeeded (Outcome) then
+         Survey (Image, Colors);
+         Choose_Layout (Image, Colors, Settings, Layout);
+         Outcome := Check_Plan (Image, Settings, Layout, Colors, Object.Encode_Limits);
       end if;
-      if Layout = Indexed_8 and then Natural (Colors.Colors.Length) > Largest_Colors then
-         return Fail
-           (Object,
-            Results.Failure
-              (Errors.Make
-                 (Errors.Too_Many_Colors,
-                  (Expected => Largest_Colors, Actual => Byte_Count (Colors.Colors.Length), others => <>))));
+      if Results.Succeeded (Outcome) then
+         Outcome := Write (Object, Image, Settings, Layout, Colors);
       end if;
-      declare
-         Item : constant Plan := Plan_For (Image, Effective, Layout);
-         Buffers : constant Byte_Count := Row_Buffer_Bytes (Item);
-      begin
-         if Item.Stored > Largest_Row_Bytes then
-            --  rowBytes must stay below 16#4000#.
-            return Fail (Object, Invalid (Largest_Row_Bytes, Byte_Count (Item.Stored)));
-         elsif Buffers > Budget.Max_Allocation_Bytes then
-            return Fail
-              (Object, Internal.Failures.Over_Limit (Allocation_Byte_Limit, Budget.Max_Allocation_Bytes, Buffers));
-         end if;
-      end;
-
-      --  picSize needs the picture's length before the picture is written: measure it first.
-      declare
-         Header_Bytes : constant Byte_Count := (if Settings.File_Header then Internal.File_Header_Bytes else 0);
-         Measure : Writers.Writer;
-         Output : Writers.Writer;
-         Outcome : Results.Result;
-      begin
-         Writers.Start
-           (Measure, null, Budget.Max_Output_Bytes - Byte_Count'Min (Header_Bytes, Budget.Max_Output_Bytes));
-         Outcome := Write_Picture (Measure, Image, Effective, Layout, Colors, 0);
-         if Results.Succeeded (Outcome) then
-            Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes);
-            if Settings.File_Header then
-               Outcome := Writers.Put (Output, [1 .. Internal.File_Header_Bytes => 0]);
-            end if;
-            if Results.Succeeded (Outcome) then
-               Outcome := Write_Picture (Output, Image, Effective, Layout, Colors, Writers.Picture_Count (Measure));
-            end if;
-            Object.Written := Writers.Count (Output);
-         end if;
-         if Results.Succeeded (Outcome) then
-            Object.Layout := Layout;
-            Object.Current_State := Encoded;
-         end if;
-         return Fail (Object, Outcome);
-      end;
+      if Results.Succeeded (Outcome) then
+         Object.Layout := Layout;
+         Object.Current_State := Encoded;
+      end if;
+      return Fail (Object, Outcome);
    end Encode;
 
    function Finish (Object : in out Encoder) return Results.Result is

@@ -212,12 +212,10 @@ package body Pictlib.Internal.Rendering is
             P.Machine.Row_Spans := Coverage.Row (Shape, Y);
             if not P.Machine.Row_Spans.Is_Empty then
                Outcome := Clip_Row (P, S, Y);
-               if not Results.Succeeded (Outcome) then
-                  null;
-               elsif Effect = Transfer_Modes.Constant_Color then
-                  Outcome := Paint_Row_Color (P, S, Y, Color);
-               else
-                  Outcome := Paint (P, S, Y);
+               if Results.Succeeded (Outcome) then
+                  Outcome :=
+                    (if Effect = Transfer_Modes.Constant_Color then Paint_Row_Color (P, S, Y, Color)
+                     else Paint (P, S, Y));
                end if;
             end if;
          end loop;

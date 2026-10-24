@@ -272,23 +272,17 @@ package body Pictlib.Internal.Pixmaps is
          Header.Raw_Length := 3 * Header.Width;
          Header.Unpacked_Length := Header.Raw_Length;
       elsif Depth = 16 then
-         if Pack not in 0 | 3 then
-            return Invalid (3, Pack);
-         elsif Header.Row_Bytes mod 2 /= 0 then
+         --  Pack type 0 or 3: the checks above leave no other.
+         if Header.Row_Bytes mod 2 /= 0 then
             return Invalid (Header.Row_Bytes + 1, Header.Row_Bytes);
          end if;
          Header.Layout := Packed_Words;
          Header.Unpacked_Length := Header.Row_Bytes;
       elsif Depth = 32 then
-         if Pack not in 0 | 4 then
-            return Invalid (4, Pack);
-         end if;
+         --  Pack type 0 or 4, with 3 or 4 components, as checked above. The planes are counted from cmpCount,
+         --  so where the opcode ends depends on it too.
          Header.Layout := Packed_Bytes;
          Header.Encoding := Planar;
-         --  The planes are counted from cmpCount, so where the opcode ends depends on it too.
-         if Header.Fields.Component_Count not in 3 | 4 then
-            return Invalid (3, Header.Fields.Component_Count);
-         end if;
          Header.Unpacked_Length := Header.Fields.Component_Count * Header.Width;
       else
          Header.Layout := Packed_Bytes;
