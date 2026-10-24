@@ -2,6 +2,14 @@
 
 ## 0.1.0-dev
 
+- Fixes from the fifth review. A PixPat's decoding work is checked against
+  the drawing budget before its tile is set aside, and the port's old tile
+  is released before the new one is decoded, so only one tile is held per
+  pattern opcode. A tile too large to index is `Pattern_Invalid`, and a tile
+  that fails to decode is never left in the port. Bit patterns are read
+  before they are charged. One allocation check in `Pixmaps.Start` covers a
+  tile and its row buffers, and drawing-work overruns share one report
+  (`Sessions.Over_Work`).
 - Fixes from the fourth review. A PixPat's tile and row buffers are checked
   together against `Max_Allocation_Bytes`, a tile too large to index is
   `Limit_Exceeded`, and the tile is set aside once at its size and moved,

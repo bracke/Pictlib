@@ -138,10 +138,22 @@ package body Pictlib_Testing.Test_Hostile is
         & Table_Entry (1, 0, 0, 0) & B (0);
       --  A 200 x 200 tile: 120,000 bytes, and 881 for its row buffers (255 stored, 26 unpacked, 600 colors), all
       --  one opcode's allocation.
+      --  Every row is one run of 26 zero bytes.
       Grown_Tile : aliased constant Bytes :=
-        V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 26) & Rect (0, 0, 200, 200)
+        Pic (8, 2, W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 26) & Rect (0, 0, 200, 200)
+                   & Pixmap_Tail (0, 1, 1, 1) & Table_Header (16#8000#, 2) & Table_Entry (0, 0, 0, 0)
+                   & Table_Entry (1, 0, 0, 0) & Repeat (B (2) & B (16#E7#) & B (0), 200));
+      --  An 18000 x 18000 PixPat that ends at once: under the allocation budget, but not the drawing budget, so
+      --  nothing is set aside for it.
+      Unaffordable_Tile : aliased constant Bytes :=
+        V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 2_250) & Rect (0, 0, 18_000, 18_000)
         & Pixmap_Tail (0, 1, 1, 1) & Table_Header (16#8000#, 2) & Table_Entry (0, 0, 0, 0)
         & Table_Entry (1, 0, 0, 0) & B (0);
+      --  A 65535 x 65535 PixPat has more pixels than a tile can index.
+      Unindexable_Tile : aliased constant Bytes :=
+        V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 8_192)
+        & Rect (-32_768, -32_768, 32_767, 32_767) & Pixmap_Tail (0, 1, 1, 1) & Table_Header (16#8000#, 2)
+        & Table_Entry (0, 0, 0, 0) & Table_Entry (1, 0, 0, 0) & B (0);
       --  An 8 x 20 tile, 9 units of decoding per row, under 100 units of drawing work.
       Costly_Tile : aliased constant Bytes :=
         Pic (8, 2, W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 2) & Rect (0, 0, 20, 8)
@@ -175,13 +187,17 @@ package body Pictlib_Testing.Test_Hostile is
       Both (Deep_Tile, Errors.Pattern_Invalid, "32-bit PixPat");
       Both (Empty_Tile, Errors.Pattern_Invalid, "empty PixPat");
       Both (Cut_Tile, Errors.Source_Unexpected_End, "PixPat cut after its type");
-      Over (Huge_Tile, Pictlib.Limits.Default_Limits, Pictlib.Allocation_Byte_Limit, "18000 x 18000 PixPat");
+      Over (Huge_Tile, Pictlib.Limits.Default_Limits, Pictlib.Allocation_Byte_Limit, "20000 x 20000 PixPat");
+      Tight.Max_Drawing_Work := 100;
+      Over (Unaffordable_Tile, Tight, Pictlib.Drawing_Work_Limit, "18000 x 18000 PixPat on a small budget");
+      Tight := Pictlib.Limits.Default_Limits;
+      Canvases.Expect_Failure (Unindexable_Tile, 8, 2, Errors.Pattern_Invalid, "65535 x 65535 PixPat", 16#14#);
       Tight.Max_Allocation_Bytes := 120_880;
       Over (Grown_Tile, Tight, Pictlib.Allocation_Byte_Limit, "a tile and its row buffers over the budget");
       Tight.Max_Allocation_Bytes := 120_881;
       Canvases.Render (Grown_Tile, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Budget => Tight);
-      Assert (Outcome.First_Error.Code /= Errors.Limit_Exceeded, "a tile and its row buffers within the budget "
-              & "were rejected");
+      Assert (Pictlib.Results.Succeeded (Outcome), "a tile and its row buffers within the budget failed with "
+              & Outcome.First_Error.Code'Image);
       Tight := Pictlib.Limits.Default_Limits;
       Tight.Max_Drawing_Work := 100;
       Over (Costly_Tile, Tight, Pictlib.Drawing_Work_Limit, "a tile that costs more than the budget");

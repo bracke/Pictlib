@@ -41,6 +41,11 @@ package body Pictlib.Internal.Sessions is
            (Errors.Limit_Exceeded,
             (Source => S.Stream.Offset, Expected => Expected, Actual => Actual, Limit => Limit, others => <>))));
 
+   function Over_Work (S : Session; Used, Units : Pixel_Count) return Results.Result is
+     (Over_Limit
+        (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
+         (if Units > Pixel_Count'Last - Used then Byte_Count'Last else Byte_Count (Used + Units))));
+
    function Claim_Ordinal (S : in out Session; Ordinal : out Opcode_Ordinal) return Results.Result is
    begin
       Ordinal := S.Next_Ordinal;

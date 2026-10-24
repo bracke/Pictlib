@@ -44,22 +44,17 @@ package Pictlib.Internal.Patterns is
    function Read_Bit_Pattern (S : in out Sessions.Session; Item : out Pattern) return Results.Result;
    --  Read pixel pattern.
    --  @param S Session positioned at a PixPat.
-   --  @param Item The pattern.
+   --  @param Item The pattern; its old tile is released before the new one is set aside, and it is the default
+   --  pattern on failure.
    --  @param Allowance Drawing work decoding it may take: a unit for the pattern, and one per pixel and per row.
-   --  @param Work The drawing work it took, for the caller to charge; above Allowance when decoding stopped
-   --  there, leaving Item incomplete.
-   --  @return Success, Pattern_Invalid for an unknown type, Limit_Exceeded past the allocation budget, or the
-   --  pixmap's failure.
+   --  @param Work The drawing work it took, at most Allowance, for the caller to charge.
+   --  @return Success, Pattern_Invalid for an unknown type or a tile too large to index, Limit_Exceeded past
+   --  Allowance or the allocation budget, or the pixmap's failure.
    function Read_Pixel_Pattern
      (S : in out Sessions.Session;
       Item : out Pattern;
       Allowance : Pixel_Count;
       Work : out Pixel_Count) return Results.Result;
-
-   --  Move.
-   --  @param Target Pattern to replace.
-   --  @param Source Pattern moved into Target without copying its tile; left a default pattern.
-   procedure Move (Target : in out Pattern; Source : in out Pattern);
 
 private
    package Color_Vectors is new Ada.Containers.Vectors (Natural, Images.RGB_Color, Images."=");

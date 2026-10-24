@@ -372,38 +372,29 @@ package body Pictlib.Internal.Drawing is
          when 16#0001# =>  --  Clip, kept in local coordinates
             Outcome := Regions.Read (S, P.Clip);
             P.Has_Clip := Results.Succeeded (Outcome);
-         --  Every pattern costs at least a unit of drawing work.
-         when 16#0002# =>
-            Outcome := Rendering.Charge (P, S, Natural'(1));
+         --  Every pattern is read, then charged: at least a unit of drawing work.
+         when 16#0002# | 16#0009# | 16#000A# =>
+            case Event.Op is
+               when 16#0002# => Outcome := Patterns.Read_Bit_Pattern (S, P.Back_Pattern);
+               when 16#0009# => Outcome := Patterns.Read_Bit_Pattern (S, P.Pen_Pattern);
+               when others => Outcome := Patterns.Read_Bit_Pattern (S, P.Fill_Pattern);
+            end case;
             if Results.Succeeded (Outcome) then
-               Outcome := Patterns.Read_Bit_Pattern (S, P.Back_Pattern);
-            end if;
-         when 16#0009# =>
-            Outcome := Rendering.Charge (P, S, Natural'(1));
-            if Results.Succeeded (Outcome) then
-               Outcome := Patterns.Read_Bit_Pattern (S, P.Pen_Pattern);
-            end if;
-         when 16#000A# =>
-            Outcome := Rendering.Charge (P, S, Natural'(1));
-            if Results.Succeeded (Outcome) then
-               Outcome := Patterns.Read_Bit_Pattern (S, P.Fill_Pattern);
+               Outcome := Rendering.Charge (P, S, Natural'(1));
             end if;
          when 16#0012# .. 16#0014# =>
+            --  Decoded straight into the port's pattern, whose old tile goes first: a tile is held once.
             declare
-               Item : Patterns.Pattern;
+               Allowed : constant Pixel_Count := Rendering.Allowance (P, S);
                Work : Pixel_Count;
             begin
-               Outcome := Patterns.Read_Pixel_Pattern (S, Item, Rendering.Allowance (P, S), Work);
+               case Event.Op is
+                  when 16#0012# => Outcome := Patterns.Read_Pixel_Pattern (S, P.Back_Pattern, Allowed, Work);
+                  when 16#0013# => Outcome := Patterns.Read_Pixel_Pattern (S, P.Pen_Pattern, Allowed, Work);
+                  when others => Outcome := Patterns.Read_Pixel_Pattern (S, P.Fill_Pattern, Allowed, Work);
+               end case;
                if Results.Succeeded (Outcome) then
                   Outcome := Rendering.Charge (P, S, Work);
-               end if;
-               if Results.Succeeded (Outcome) then
-                  --  Moved, not copied: a tile is held once.
-                  case Event.Op is
-                     when 16#0012# => Patterns.Move (P.Back_Pattern, Item);
-                     when 16#0013# => Patterns.Move (P.Pen_Pattern, Item);
-                     when others => Patterns.Move (P.Fill_Pattern, Item);
-                  end case;
                end if;
             end;
          when 16#0007# =>

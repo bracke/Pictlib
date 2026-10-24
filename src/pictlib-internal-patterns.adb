@@ -91,21 +91,31 @@ package body Pictlib.Internal.Patterns is
       if Results.Succeeded (Outcome) then
          Outcome := Pixmaps.Decide_Layout (S, Header, For_Decoding => True);
       end if;
-      --  The tile and the row buffers are one opcode's allocation; the tile is set aside whole, once.
+      --  A tile has to be indexable: Count_Type'Last pixels and no more.
+      if Results.Succeeded (Outcome)
+        and then Byte_Count (Header.Width) * Byte_Count (Header.Height) > Byte_Count (Ada.Containers.Count_Type'Last)
+      then
+         Outcome := Sessions.Fail
+           (S, Errors.Pattern_Invalid, Byte_Count (Ada.Containers.Count_Type'Last),
+            Byte_Count (Header.Width) * Byte_Count (Header.Height));
+      end if;
+      --  Decoding is drawing work, a unit per pixel and per row, like converting a copied row: checked before
+      --  anything is set aside, so a picture without the budget for its tile never allocates it.
       if Results.Succeeded (Outcome) then
          declare
-            Pixels : constant Byte_Count := Byte_Count (Header.Width) * Byte_Count (Header.Height);
-            Total : constant Byte_Count := 3 * Pixels + Pixmaps.Buffer_Bytes (Header);
+            Needed : constant Pixel_Count := Pixel_Count (Header.Width + 1) * Pixel_Count (Header.Height);
          begin
-            if Total > S.Budget.Max_Allocation_Bytes
-              or else Pixels > Byte_Count (Ada.Containers.Count_Type'Last)
-            then
-               Outcome := Sessions.Over_Limit (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Total);
+            if Needed > Allowance - Pixel_Count'Min (Work, Allowance) then
+               Outcome := Sessions.Over_Work (S, S.Budget.Max_Drawing_Work - Allowance, Work + Needed);
+            else
+               Work := Work + Needed;
             end if;
          end;
       end if;
+      --  The tile and the row buffers are one opcode's allocation; the tile is set aside whole, once.
       if Results.Succeeded (Outcome) then
-         Outcome := Pixmaps.Start (S, Decoder, Header);
+         Outcome := Pixmaps.Start
+           (S, Decoder, Header, Extra => 3 * Byte_Count (Header.Width) * Byte_Count (Header.Height));
       end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
@@ -117,10 +127,6 @@ package body Pictlib.Internal.Patterns is
       Item.Tile.Reserve_Capacity
         (Ada.Containers.Count_Type (Byte_Count (Header.Width) * Byte_Count (Header.Height)));
       for Row in 0 .. Header.Height - 1 loop
-         --  Decoding a row is drawing work, like converting a copied row; past Allowance decoding stops and
-         --  the caller's charge of Work reports it.
-         Work := Work + Pixel_Count (Header.Width + 1);
-         exit when Work > Allowance;
          Outcome := Pixmaps.Read_Row (S, Decoder, Row);
          exit when not Results.Succeeded (Outcome);
          for Column in 0 .. Header.Width - 1 loop
@@ -128,6 +134,10 @@ package body Pictlib.Internal.Patterns is
          end loop;
       end loop;
       Pixmaps.Finish (Decoder);
+      --  An incomplete tile is never left to be sampled.
+      if not Results.Succeeded (Outcome) then
+         Item := (others => <>);
+      end if;
       return Outcome;
    end Read_Color_Tile;
 
@@ -167,15 +177,4 @@ package body Pictlib.Internal.Patterns is
             return Sessions.Fail (S, Errors.Pattern_Invalid, 2, Byte_Count (Pattern_Type));
       end case;
    end Read_Pixel_Pattern;
-
-   procedure Move (Target : in out Pattern; Source : in out Pattern) is
-   begin
-      Target.Kind := Source.Kind;
-      Target.Bits := Source.Bits;
-      Target.Color := Source.Color;
-      Target.Width := Source.Width;
-      Target.Height := Source.Height;
-      Color_Vectors.Move (Target => Target.Tile, Source => Source.Tile);
-      Source := (others => <>);
-   end Move;
 end Pictlib.Internal.Patterns;

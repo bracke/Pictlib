@@ -76,6 +76,13 @@ package Pictlib.Internal.Sessions is
    --  @return A Limit_Exceeded failure.
    function Over_Limit (S : Session; Limit : Limit_Kind; Expected, Actual : Byte_Count) return Results.Result;
 
+   --  Over work.
+   --  @param S Session whose drawing budget was crossed.
+   --  @param Used Drawing work already done.
+   --  @param Units Work asked for on top of it.
+   --  @return The Limit_Exceeded failure for drawing work, Used + Units saturated: the one report of it.
+   function Over_Work (S : Session; Used, Units : Pixel_Count) return Results.Result;
+
    --  Claim ordinal.
    --  @param S Session counting opcodes.
    --  @param Ordinal The next opcode ordinal.

@@ -44,11 +44,8 @@ package body Pictlib.Internal.Rendering is
    function Charge (P : in out Painter; S : Sessions.Session; Units : Natural) return Results.Result is
      (Charge (P, S, Pixel_Count (Units)));
 
-   --  The one report of drawing work past the budget: the work done so far plus Units, saturated.
    function Over_Budget (P : Painter; S : Sessions.Session; Units : Pixel_Count) return Results.Result is
-     (Sessions.Over_Limit
-        (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
-         (if Units > Pixel_Count'Last - P.Work then Byte_Count'Last else Byte_Count (P.Work + Units))));
+     (Sessions.Over_Work (S, P.Work, Units));
 
    function Charge (P : in out Painter; S : Sessions.Session; Units : Pixel_Count) return Results.Result is
    begin
