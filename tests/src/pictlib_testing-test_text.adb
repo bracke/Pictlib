@@ -17,6 +17,8 @@ package body Pictlib_Testing.Test_Text is
    use AUnit.Assertions;
    use Pictlib_Testing.Builders;
    use type Pictlib.Errors.Error_Code;
+   use type Pictlib.Errors.Warning_Code;
+   use type Pictlib.Limit_Kind;
    use type Pictlib.Images.RGB_Color;
    use type Pictlib.Streams.Byte_Array;
    use type Textrender.Alpha;
@@ -67,7 +69,8 @@ package body Pictlib_Testing.Test_Text is
       Bold : Boolean := False;
       Color : Character := 'B';
       Extra : Float := 0.0;
-      Space_Extra : Float := 0.0)
+      Space_Extra : Float := 0.0;
+      Style : Textrender.Font_Style := Textrender.Regular)
    is
       Font : Textrender.Renderer;
       Cell : constant Positive := 2 * Size + 2;
@@ -79,7 +82,7 @@ package body Pictlib_Testing.Test_Text is
          declare
             Metric : Textrender.Glyph_Metric;
          begin
-            Assert (Font.Get_Glyph (Code, Metric) = Textrender.Success, "oracle glyph missing");
+            Assert (Font.Get_Glyph (Code, Metric, Style) = Textrender.Success, "oracle glyph missing");
             declare
                Left : constant Integer := Integer (Float'Rounding (Pen + Metric.Bearing_X));
                Top : constant Integer := Baseline - Integer (Metric.Bearing_Y);
@@ -161,6 +164,13 @@ package body Pictlib_Testing.Test_Text is
    Stretched : aliased constant Bytes :=
      Pic (W (16#10#) & W (2) & W (1) & W (1) & W (1) & Long_Text (15, 2, "Hi"));
    Too_Large : aliased constant Bytes := Pic (Size_Op (600) & Long_Text (15, 2, "Hi"));
+   Italic_Text : aliased constant Bytes := Pic (Face_Op (2) & Long_Text (15, 2, "Hi"));
+   Condensed : aliased constant Bytes := Pic (Face_Op (32) & Long_Text (15, 2, "Hi"));
+   Extended : aliased constant Bytes := Pic (Face_Op (64) & Long_Text (15, 2, "Hi"));
+   --  Mac Roman 16#F0# is the Apple logo, U+F8FF, which DejaVu Sans does not have.
+   Missing_Glyph : aliased constant Bytes :=
+     Pic (Long_Text_Bytes (15, 2, [Character'Pos ('a'), 16#F0#, Character'Pos ('b'), 16#F0#]));
+   Big_Atlas : aliased constant Bytes := Pic (Size_Op (100) & Long_Text (15, 2, "H"));
    Red_Text : aliased constant Bytes := Pic (W (16#1A#) & W (16#FFFF#) & W (0) & W (0) & Long_Text (15, 2, "Hi"));
    Black_Under : constant Bytes := W (16#31#) & Rect (0, 0, Height, Width);
    Xor_Text : aliased constant Bytes := Pic (Black_Under & Mode_Op (2) & Long_Text (15, 2, "Hi"));
@@ -299,6 +309,56 @@ package body Pictlib_Testing.Test_Text is
                                With_Fonts);
       Canvases.Expect_Failure (Too_Large, Width, Height, Pictlib.Errors.Unsupported_Feature, "TxSize 600", 16#28#,
                                With_Fonts);
+      --  Italic is textrender's synthetic oblique; condense and extend take one pixel off or add one to every
+      --  advance.
+      declare
+         Slanted, Narrow, Wide : Grid := Blank;
+      begin
+         Ink (Slanted, Sans, 12, 2.0, 15, Points ("Hi"), Pen_End, Style => Textrender.Italic);
+         Canvases.Expect_Raster (Italic_Text, Width, Height, Image (Slanted), "italic", With_Fonts);
+         Ink (Narrow, Sans, 12, 2.0, 15, Points ("Hi"), Pen_End, Extra => -1.0);
+         Canvases.Expect_Raster (Condensed, Width, Height, Image (Narrow), "condense", With_Fonts);
+         Ink (Wide, Sans, 12, 2.0, 15, Points ("Hi"), Pen_End, Extra => 1.0);
+         Canvases.Expect_Raster (Extended, Width, Height, Image (Wide), "extend", With_Fonts);
+         --  Each face changes something.
+         Assert (Image (Slanted) /= Expected (Sans, 12, 2, 15, "Hi")
+                 and then Image (Narrow) /= Expected (Sans, 12, 2, 15, "Hi")
+                 and then Image (Wide) /= Expected (Sans, 12, 2, 15, "Hi"),
+                 "a face's oracle is plain text");
+      end;
+      --  A character the font lacks advances half the size, and the opcode warns once, however many it has.
+      declare
+         Holes : Grid := Blank;
+         Storage : aliased Bytes := [1 .. 3 * Width * Height => 0];
+         Output : constant Pictlib.Images.Mutable_Image_View := Canvases.View (Storage'Access, Width, Height);
+         Decoder : Pictlib.Decoding.Decoder;
+         Outcome : Pictlib.Results.Result;
+         Losses : Natural := 0;
+      begin
+         Ink (Holes, Sans, 12, 2.0, 15, Points ("a"), Pen_End);
+         Ink (Holes, Sans, 12, Pen_End + 6.0, 15, Points ("b"), Pen_End);
+         Canvases.Render (Missing_Glyph, Decoder, Output, Outcome, With_Fonts);
+         Assert (Pictlib.Results.Succeeded (Outcome), "a missing glyph failed: " & Outcome.First_Error.Code'Image);
+         Assert (Canvases.Picture_Of (Output) = Image (Holes), "a missing glyph: wrong advance");
+         for Index in 1 .. Pictlib.Decoding.Warning_Count (Decoder) loop
+            if Pictlib.Decoding.Warning_At (Decoder, Index).Code = Pictlib.Errors.Data_Loss then
+               Losses := Losses + 1;
+            end if;
+         end loop;
+         Assert (Losses = 1, "two missing glyphs in one opcode warned" & Losses'Image & " times");
+      end;
+      --  A size 100 font's atlas is 808 x 808 bytes: over a smaller allocation budget, it is never loaded.
+      declare
+         Storage : aliased Bytes := [1 .. 3 * Width * Height => 0];
+         Decoder : Pictlib.Decoding.Decoder;
+         Outcome : Pictlib.Results.Result;
+      begin
+         Canvases.Render (Big_Atlas, Decoder, Canvases.View (Storage'Access, Width, Height), Outcome, With_Fonts,
+                          (Pictlib.Limits.Default_Limits with delta Max_Allocation_Bytes => 600_000));
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
+                 and then Outcome.First_Error.Context.Limit = Pictlib.Allocation_Byte_Limit,
+                 "a size 100 atlas over the allocation budget: " & Outcome.First_Error.Code'Image);
+      end;
    end Faces;
 
    procedure Modes_And_Colors (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -346,7 +406,6 @@ package body Pictlib_Testing.Test_Text is
    procedure Text_Work (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
       use type Pictlib.Pixel_Count;
-      use type Pictlib.Limit_Kind;
       Big_Font : aliased constant Bytes := Pic (Size_Op (500) & Long_Text (500, 2, "A"));
       Many_Glyphs : aliased constant Bytes := Pic (Size_Op (12) & Long_Text (500, 2, [1 .. 255 => 'A']));
       One_Glyph : aliased constant Bytes := Pic (Size_Op (12) & Long_Text (500, 2, "A"));

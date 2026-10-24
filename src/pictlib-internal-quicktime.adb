@@ -279,7 +279,9 @@ package body Pictlib.Internal.QuickTime is
             Decoder : Jpeglib.Decoding.Decoder;
             Width : constant Natural := Natural (Image_Width);
             Height : constant Natural := Natural (Image_Height);
-            Pixels : Pixel_Buffer_Access := new Jpeglib.Streams.Byte_Array (1 .. 3 * Width * Height);
+            --  Set aside only once the JPEG's header agrees with the description, so a picture with a garbage
+            --  JPEG allocates nothing for its claimed size.
+            Pixels : Pixel_Buffer_Access := null;
             Decoded : Jpeglib.Results.Result;
 
             function Rejected return Results.Result is
@@ -296,7 +298,9 @@ package body Pictlib.Internal.QuickTime is
                (Output_Format => Jpeglib.Images.RGB_24, others => <>),
                (Jpeglib.Limits.Default_Limits with delta
                   Max_Pixels => Jpeglib.Pixel_Count (S.Budget.Max_Embedded_Image_Pixels),
-                  Max_Allocation_Bytes => Jpeglib.Byte_Count (S.Budget.Max_Allocation_Bytes)));
+                  --  The decoded pixels and jpeglib's own buffers share the one allocation budget.
+                  Max_Allocation_Bytes =>
+                    Jpeglib.Byte_Count (S.Budget.Max_Allocation_Bytes - 3 * Byte_Count (Width) * Byte_Count (Height))));
             Decoded := Jpeglib.Decoding.Read_Header (Decoder);
             if Jpeglib.Results.Succeeded (Decoded)
               and then (Natural (Jpeglib.Decoding.Header (Decoder).Width) /= Width
@@ -308,6 +312,7 @@ package body Pictlib.Internal.QuickTime is
                return Results.Failure (Errors.Make (Errors.Embedded_Image_Failed, Context_Of (Event)));
             end if;
             if Jpeglib.Results.Succeeded (Decoded) then
+               Pixels := new Jpeglib.Streams.Byte_Array (1 .. 3 * Width * Height);
                declare
                   View : Jpeglib.Images.Mutable_Image_View :=
                     (Descriptor =>
@@ -383,6 +388,8 @@ package body Pictlib.Internal.QuickTime is
                         for Span of P.Row_Spans loop
                            exit when not Results.Succeeded (Outcome);
                            Outcome := Rendering.Charge (P, S, Natural'Max (0, Span.Right - Span.Left));
+                           --  Nothing is drawn past the budget.
+                           exit when not Results.Succeeded (Outcome);
                            for X in Span.Left .. Span.Right - 1 loop
                               declare
                                  Column : constant Natural :=

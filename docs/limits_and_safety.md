@@ -24,7 +24,7 @@ bounds a read, a skip, an allocation or a loop.
 
 | `Max_Embedded_Image_Bytes` | a QuickTime image's dataSize, before decoding | `Limit_Exceeded` |
 | `Max_Embedded_Image_Pixels` | a QuickTime image's width × height, before decoding, and jpeglib's pixel limit | `Limit_Exceeded` |
-| `Max_Allocation_Bytes` | a QuickTime image's RGB buffer, which is also never above 2^31 − 1 bytes | `Limit_Exceeded` |
+| `Max_Allocation_Bytes` | a QuickTime image's RGB buffer, which is also never above 2^31 − 1 bytes, set aside only once the JPEG's header agrees with the description; jpeglib's own buffers get what is left | `Limit_Exceeded` |
 
 Coordinates are bounded rather than budgeted: line ends and the text origin
 stay within ±2^24, the origin within ±(2^24 − 2^15) so that any 16-bit point

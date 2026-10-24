@@ -1,4 +1,10 @@
 with AUnit.Assertions;
+with Jpeglib;
+with Jpeglib.Decoding;
+with Jpeglib.Images;
+with Jpeglib.Limits;
+with Jpeglib.Results;
+with Jpeglib.Streams;
 
 with Pictlib;
 with Pictlib.Decoding;
@@ -318,5 +324,62 @@ package body Pictlib_Testing.Test_QuickTime is
       Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded
               and then Outcome.First_Error.Context.Limit = Pictlib.Allocation_Byte_Limit,
               "the allocation limit was not enforced");
+      --  The decoded pixels and jpeglib's own buffers share the one budget: the least budget the picture renders
+      --  under is the least jpeglib decodes the JPEG under, measured through jpeglib's own API, plus the 144
+      --  bytes of pixels, where jpeglib used to be given the whole budget again.
+      declare
+         use type Pictlib.Byte_Count;
+         use type Jpeglib.Byte_Count;
+         Data : constant Jpeglib.Streams.Const_Byte_Array_Access :=
+           new Jpeglib.Streams.Byte_Array'([for Item of JPEG => Jpeglib.Byte (Item)]);
+         Pixels : constant Jpeglib.Streams.Byte_Array_Access := new Jpeglib.Streams.Byte_Array (1 .. 144);
+
+         function Jpeglib_Decodes (Budget : Jpeglib.Byte_Count) return Boolean is
+            Source : aliased Jpeglib.Streams.Memory_Source;
+            Alone : Jpeglib.Decoding.Decoder;
+            Result : Jpeglib.Results.Result;
+            View : Jpeglib.Images.Mutable_Image_View :=
+              (Descriptor => (Width => 8, Height => 6, Format => Jpeglib.Images.RGB_24, Stride => 24,
+                              Accessible_Bytes => 144),
+               Storage => Pixels);
+         begin
+            Jpeglib.Streams.Open (Source, Data);
+            Jpeglib.Decoding.Initialize
+              (Alone, Source'Unchecked_Access, (Output_Format => Jpeglib.Images.RGB_24, others => <>),
+               (Jpeglib.Limits.Default_Limits with delta Max_Allocation_Bytes => Budget));
+            Result := Jpeglib.Decoding.Read_Header (Alone);
+            if Jpeglib.Results.Succeeded (Result) then
+               Result := Jpeglib.Decoding.Decode_Image (Alone, View);
+            end if;
+            Jpeglib.Decoding.Finalize (Alone);
+            return Jpeglib.Results.Succeeded (Result);
+         end Jpeglib_Decodes;
+
+         function Pictlib_Renders (Budget : Pictlib.Byte_Count) return Boolean is
+         begin
+            Canvases.Render (Picture, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome,
+                             Budget => (Defaults with delta Max_Allocation_Bytes => Budget));
+            return Pictlib.Results.Succeeded (Outcome);
+         end Pictlib_Renders;
+
+         Low, High, Middle : Jpeglib.Byte_Count;
+         Least_Jpeglib : Jpeglib.Byte_Count;
+      begin
+         Low := 0;
+         High := 1_048_576;
+         while Low < High loop
+            Middle := (Low + High) / 2;
+            if Jpeglib_Decodes (Middle) then
+               High := Middle;
+            else
+               Low := Middle + 1;
+            end if;
+         end loop;
+         Least_Jpeglib := High;
+         Assert (Pictlib_Renders (Pictlib.Byte_Count (Least_Jpeglib) + 144)
+                 and then not Pictlib_Renders (Pictlib.Byte_Count (Least_Jpeglib) + 143),
+                 "the pixels and jpeglib do not share the allocation budget (jpeglib alone needs"
+                 & Least_Jpeglib'Image & ")");
+      end;
    end Limits;
 end Pictlib_Testing.Test_QuickTime;

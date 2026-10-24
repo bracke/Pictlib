@@ -245,6 +245,14 @@ procedure Pictlib_Conformance is
             & (if Wrong = Natural'Last then "no readable result" else Wrong'Image & " pixels differ"));
       end if;
    end Report;
+   --  Every result a case reads is made in this run: what an earlier run left is removed first, so a tool
+   --  that exits 0 without writing cannot pass on old output.
+   procedure Discard (File : String) is
+   begin
+      if Ada.Directories.Exists (File) then
+         Ada.Directories.Delete_File (File);
+      end if;
+   end Discard;
 begin
    Ada.Directories.Create_Path (Directory);
    if Magick'Length = 0 then
@@ -262,6 +270,10 @@ begin
          declare
             Name : constant String := To_String (Item.Name);
          begin
+            Discard (Path (Name, "magick.ppm"));
+            Discard (Path (Name, "svg"));
+            Discard (Path (Name, "png"));
+            Discard (Path (Name, "soffice.ppm"));
             if Magick'Length > 0
               and then (not Item.Settings.File_Header or else Item.Settings.Layout = Encoding.Mono_1
                         or else Row_Bytes (Item) < 8)

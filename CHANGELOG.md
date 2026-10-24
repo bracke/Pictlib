@@ -2,6 +2,16 @@
 
 ## 0.1.0-dev
 
+- Fixes from the full-project review, part 2. A QuickTime image's pixel
+  buffer is set aside only once its JPEG header agrees with the
+  description, and jpeglib's own buffers share the allocation budget with
+  it, where one opcode could hold twice the budget; a test measures
+  jpeglib's need through its own API and pins the sum. The QuickTime draw
+  loop stops at the budget instead of drawing the row past it.
+  `pictlib_conformance` deletes each case's old results before converting,
+  so a tool that exits 0 without writing cannot pass on a previous run's
+  output. Text tests cover italic, condense, extend, the missing-glyph
+  advance and its single warning, and the atlas allocation limit.
 - Fixes from the full-project review, part 1: the drawing budget now bounds
   shapes and text. A shape holds only the rows it reaches, each charged as it
   is added, and painting walks only those rows, charging each and a unit for
