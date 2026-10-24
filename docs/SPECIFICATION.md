@@ -124,10 +124,11 @@ are retained, never interpreted.
   colorized; a dither `PixPat` (type 2) is drawn as its RGB color. Pattern opcodes are read, then
   charged, like every other opcode: a unit of drawing work for every pattern, and for a color
   `PixPat` a unit per pixel and per row of the tile it decodes. A tile of more than 2^31 − 1
-  pixels, more than a tile can index, is never decoded, so no budget applies to it: it is
-  `Unsupported_Feature` in `Strict`, its rows unread, and otherwise an `Approximated_Rendering`
-  warning, its rows skipped at no cost beyond the pattern's unit and its 1-bit pattern standing
-  in; either diagnostic gives the bound as Expected and the tile's pixels as Actual. Any other
+  pixels, more than a tile can index, is never decoded, so no budget applies to it: its rows are
+  read past, like any opcode's data, and it is then `Unsupported_Feature` in `Strict`, before
+  the pattern's unit is charged, and otherwise an `Approximated_Rendering` warning once that unit
+  is charged, its 1-bit pattern standing in; either diagnostic gives the bound as Expected and
+  the tile's pixels as Actual. Any other
   color `PixPat` is decoded only once the drawing budget admits that work and then the allocation
   budget its tile and row buffers. A pattern
   opcode that fails, in reading or in its charge, leaves that pattern QuickDraw's default (white

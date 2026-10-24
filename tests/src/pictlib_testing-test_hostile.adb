@@ -23,6 +23,7 @@ package body Pictlib_Testing.Test_Hostile is
    use type Pictlib.Streams.Byte_Array;
    use type Pictlib.Byte_Count;
    use type Pictlib.Errors.Error_Code;
+   use type Pictlib.Errors.Warning_Code;
    use type Pictlib.Images.RGB_Color;
    use type Pictlib.Limit_Kind;
    use type Pictlib.Opcode;
@@ -193,20 +194,11 @@ package body Pictlib_Testing.Test_Hostile is
       Tight.Max_Allocation_Bytes := 1_000;
       Over (Unaffordable_Tile, Tight, Pictlib.Drawing_Work_Limit, "18000 x 18000 PixPat on small budgets");
       Tight := Pictlib.Limits.Default_Limits;
-      --  A tile of more than the 2^31 - 1 pixels a tile can index is never decoded, so no budget applies: strictly
-      --  it is unsupported at once, its rows unread, whatever the budgets; leniently its rows are skipped, so this
-      --  one, which has none, is cut short.
-      Tight.Max_Drawing_Work := 100;
-      Tight.Max_Allocation_Bytes := 1_000;
-      Canvases.Render (Unindexable_Tile, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Budget => Tight);
-      Assert (Outcome.First_Error.Code = Errors.Unsupported_Feature
-              and then Outcome.First_Error.Context.Op = 16#14#
-              and then Outcome.First_Error.Context.Expected = 2 ** 31 - 1
-              and then Outcome.First_Error.Context.Actual = 65_535 * 65_535,
-              "65535 x 65535 PixPat, strictly on small budgets: " & Outcome.First_Error.Code'Image);
+      --  A tile of more than the 2^31 - 1 pixels a tile can index is never decoded, so no budget applies; its
+      --  rows are skipped in every mode, so this one, which has none, is cut short either way.
+      Canvases.Expect_Failure (Unindexable_Tile, 8, 2, Errors.Source_Unexpected_End, "65535 x 65535 PixPat");
       Canvases.Expect_Failure (Unindexable_Tile, 8, 2, Errors.Source_Unexpected_End, "65535 x 65535 PixPat",
                                Options => Compatible);
-      Tight := Pictlib.Limits.Default_Limits;
       --  The same skip with every row present: drawing goes on, with the black pat1Data in the tile's place.
       declare
          Rows : constant := 32_769;
@@ -230,6 +222,18 @@ package body Pictlib_Testing.Test_Hostile is
          Assert (Pictlib.Results.Succeeded (Outcome) and then Recorders.Has_Warning
                    (Decoder, Errors.Approximated_Rendering),
                  "65535 x 32769 PixPat with its rows: " & Outcome.First_Error.Code'Image);
+         --  The warning says why: the bound and the tile's pixels, at the opcode.
+         for Index in 1 .. Pictlib.Decoding.Warning_Count (Decoder) loop
+            declare
+               Item : constant Errors.Warning := Pictlib.Decoding.Warning_At (Decoder, Index);
+            begin
+               if Item.Code = Errors.Approximated_Rendering then
+                  Assert (Item.Context.Op = 16#14# and then Item.Context.Expected = 2 ** 31 - 1
+                          and then Item.Context.Actual = 65_535 * Rows,
+                          "65535 x 32769 PixPat: the warning does not say why");
+               end if;
+            end;
+         end loop;
          Assert (Canvases.Picture_Of (Canvases.View (Storage'Access, 8, 2)) = "BBBBBBBB/BBBBBBBB",
                  "65535 x 32769 PixPat: pat1Data did not stand in, drew "
                  & Canvases.Picture_Of (Canvases.View (Storage'Access, 8, 2)));
@@ -240,11 +244,16 @@ package body Pictlib_Testing.Test_Hostile is
          Assert (Pictlib.Results.Succeeded (Outcome),
                  "the skipped tile was charged more than its unit: " & Outcome.First_Error.Code'Image);
          Tight := Pictlib.Limits.Default_Limits;
+         --  Strictly it is unsupported whatever the budgets, even with none left for the pattern's unit.
+         Tight.Max_Drawing_Work := 0;
+         Tight.Max_Allocation_Bytes := 1_000;
          Canvases.Render (Whole.all, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome,
                           (Strictness => Pictlib.Strict, others => <>), Budget => Tight);
          Assert (Outcome.First_Error.Code = Errors.Unsupported_Feature
-                 and then Outcome.First_Error.Context.Op = 16#14#,
-                 "65535 x 32769 PixPat, strictly: " & Outcome.First_Error.Code'Image);
+                 and then Outcome.First_Error.Context.Op = 16#14#
+                 and then Outcome.First_Error.Context.Expected = 2 ** 31 - 1
+                 and then Outcome.First_Error.Context.Actual = 65_535 * Rows,
+                 "65535 x 32769 PixPat, strictly on no budget: " & Outcome.First_Error.Code'Image);
       end;
       --  Limits apply only to rendering: enumeration reads on, to the rows this picture does not have.
       Recorders.Decode (Unindexable_Tile, Decoder, Events, Outcome);

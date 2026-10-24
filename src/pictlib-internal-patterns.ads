@@ -42,6 +42,9 @@ package Pictlib.Internal.Patterns is
    --  @param Item The pattern.
    --  @return Operation result.
    function Read_Bit_Pattern (S : in out Sessions.Session; Item : out Pattern) return Results.Result;
+   --  The most pixels a color tile can hold: what its storage can index, whatever the budgets.
+   Max_Tile_Pixels : constant Byte_Count := Byte_Count (Ada.Containers.Count_Type'Last);
+
    --  Read pixel pattern.
    --  @param S Session positioned at a PixPat.
    --  @param Item The pattern; its old tile is released before the new one is set aside. After a failure it is
@@ -50,9 +53,9 @@ package Pictlib.Internal.Patterns is
    --  only when that fits.
    --  @param Work The drawing work it took, for the caller to charge: a unit for any pattern, plus a decoded
    --  tile's pixels and rows. The unit alone may exceed Allowance; the charge then fails.
-   --  @param Too_Large The tile's pixels when it has more than Count_Type'Last, otherwise 0. Such a tile is
-   --  never decoded, whatever the budgets: Item holds pat1Data, its rows are skipped when the session is
-   --  lenient and left unread when strict, and the caller reports it unsupported.
+   --  @param Too_Large True when the tile has more than Max_Tile_Pixels pixels. Such a tile is never decoded,
+   --  whatever the budgets: its rows are skipped, Item holds pat1Data, and the caller reports it unsupported.
+   --  @param Tile_Pixels The pixels a color tile declares, for the caller's diagnostic; 0 for other patterns.
    --  @return Success, Pattern_Invalid for an unknown type, Limit_Exceeded past Allowance or the allocation
    --  budget, or the pixmap's failure.
    function Read_Pixel_Pattern
@@ -60,7 +63,8 @@ package Pictlib.Internal.Patterns is
       Item : out Pattern;
       Allowance : Pixel_Count;
       Work : out Pixel_Count;
-      Too_Large : out Byte_Count) return Results.Result;
+      Too_Large : out Boolean;
+      Tile_Pixels : out Byte_Count) return Results.Result;
 
 private
    package Color_Vectors is new Ada.Containers.Vectors (Natural, Images.RGB_Color, Images."=");

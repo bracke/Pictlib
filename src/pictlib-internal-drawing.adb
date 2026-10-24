@@ -1,4 +1,3 @@
-with Ada.Containers;
 with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Geometry;
@@ -386,23 +385,31 @@ package body Pictlib.Internal.Drawing is
             declare
                Slot : constant Rendering.Pattern_Slot := Slot_Of (Event.Op);
                Work : Pixel_Count := 1;
-               Too_Large : Byte_Count := 0;
+               Too_Large : Boolean := False;
+               Tile_Pixels : Byte_Count := 0;
+
+               --  A tile too large to index is unsupported, its 1-bit pattern standing in when lenient.
+               function Unsupported_Tile return Results.Result is
+                 (Rendering.Unsupported (S, Event, Expected => Patterns.Max_Tile_Pixels, Actual => Tile_Pixels));
             begin
                if Event.Op in 16#0012# .. 16#0014# then
                   --  Decoded straight into the port's pattern, whose old tile goes first: a tile is held once.
                   Outcome :=
-                    Patterns.Read_Pixel_Pattern (S, P.Pattern_Set (Slot), Rendering.Allowance (P, S), Work, Too_Large);
+                    Patterns.Read_Pixel_Pattern
+                      (S, P.Pattern_Set (Slot), Rendering.Allowance (P, S), Work, Too_Large, Tile_Pixels);
                else
                   Outcome := Patterns.Read_Bit_Pattern (S, P.Pattern_Set (Slot));
+               end if;
+               --  Strictly the tile fails before the charge, so no budget hides it; leniently the fallback is
+               --  reported after the charge, only when it stands.
+               if Results.Succeeded (Outcome) and then Too_Large and then not Sessions.Is_Lenient (S) then
+                  Outcome := Unsupported_Tile;
                end if;
                if Results.Succeeded (Outcome) then
                   Outcome := Rendering.Charge (P, S, Work);
                end if;
-               --  Charged first, so a fallback is only reported when it stands: a tile too large to index is
-               --  unsupported, its 1-bit pattern standing in when lenient.
-               if Results.Succeeded (Outcome) and then Too_Large > 0 then
-                  Outcome := Rendering.Unsupported
-                    (S, Event, Expected => Byte_Count (Ada.Containers.Count_Type'Last), Actual => Too_Large);
+               if Results.Succeeded (Outcome) and then Too_Large then
+                  Outcome := Unsupported_Tile;
                end if;
                if not Results.Succeeded (Outcome) then
                   P.Pattern_Set (Slot) := Rendering.Default_Pattern (Slot);

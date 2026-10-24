@@ -2,6 +2,13 @@
 
 ## 0.1.0-dev
 
+- Fixes from the eleventh review. A PixPat tile too large to index has its
+  rows read past in every mode, so a pattern read that succeeds has always
+  consumed its opcode; strictly it is then unsupported before the pattern's
+  unit is charged, so no budget hides it. `Patterns.Max_Tile_Pixels` names
+  the bound, the reader reports a plain `Too_Large` flag and the tile's
+  pixels, and `Pixmaps.Start` checks its allocation itself again. Tests
+  cover a strict tile on no budget and the lenient warning's counts.
 - Fixes from the tenth review. A PixPat tile too large to index is checked
   first and never decoded, so no budget gates it: strictly it is
   `Unsupported_Feature` at once, its rows unread; leniently its rows are
