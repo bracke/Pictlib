@@ -334,7 +334,7 @@ package body Pictlib.Internal.Pixmaps is
          return Outcome;
       end if;
 
-      Header.Is_Pixmap := Direct or else (Raw_Row_Bytes and 16#8000#) /= 0;
+      Header.Is_Pixmap := Direct or else (Raw_Row_Bytes and Pixmap_Flag) /= 0;
       Header.Row_Bytes :=
         Natural (Raw_Row_Bytes and (if Header.Is_Pixmap then Pixmap_Row_Bytes_Mask else Bitmap_Row_Bytes_Mask));
       if Header.Is_Pixmap then

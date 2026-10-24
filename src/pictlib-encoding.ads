@@ -15,12 +15,15 @@ package Pictlib.Encoding is
       Indexed_8,  --  PackBitsRect, an 8-bit PixMap with an exact color table
       Mono_1);    --  PackBitsRect, a 1-bit BitMap: black below Mono_Threshold luminance, white otherwise
 
+   --  The luminance below which Mono_1 writes black, and the one Auto uses for black-and-white images.
+   Default_Mono_Threshold : constant Byte := 128;
+
    type Options is record
       Layout : Layout_Kind := Auto;
       File_Header : Boolean := True;
       Horizontal_Resolution : Geometry.Fixed := Geometry.Fixed_72;
       Vertical_Resolution : Geometry.Fixed := Geometry.Fixed_72;
-      Mono_Threshold : Byte := 128;
+      Mono_Threshold : Byte := Default_Mono_Threshold;
       --  Direct_32 from a 32-bit view: write its alpha as a fourth component plane.
       Keep_Alpha : Boolean := False;
    end record;

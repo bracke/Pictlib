@@ -4,12 +4,17 @@ package Pictlib.Internal is
    --  PICT format constants shared by readers and the writer.
 
    --  rowBytes keeps its row length in the low bits: 14 for a PixMap, whose top bit marks it, 15 for a BitMap.
+   Pixmap_Flag : constant := 16#8000#;
    Pixmap_Row_Bytes_Mask : constant := 16#3FFF#;
    Bitmap_Row_Bytes_Mask : constant := 16#7FFF#;
    --  A packed row's length is a byte up to this rowBytes and a word above it.
    Byte_Count_Row_Bytes : constant := 250;
    --  Rows shorter than this are stored unpacked.
    Smallest_Packed_Row_Bytes : constant := 8;
+
+   --  The version opcode's data in version 2, and the HeaderOp version of an extended version 2 picture (-2).
+   Version_2_Word : constant := 16#02FF#;
+   Extended_Header_Version : constant := 16#FFFE#;
 
    --  The application header of a PICT file, before the picture.
    File_Header_Bytes : constant := 512;

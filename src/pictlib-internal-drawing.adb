@@ -4,6 +4,7 @@ with Pictlib.Geometry;
 with Pictlib.Images;
 with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Coverage;
+with Pictlib.Internal.Text;
 with Pictlib.Internal.Typesetting;
 with Pictlib.Internal.Patterns;
 with Pictlib.Opcodes;
@@ -113,39 +114,51 @@ package body Pictlib.Internal.Drawing is
    function Inset (Item : Area; Width, Height : Integer) return Area is
      ((Item.Top + Height, Item.Left + Width, Item.Bottom - Height, Item.Right - Width));
 
+   --  A shape opcode is 16 times its kind (from 3), plus 8 for its "same" form, plus its verb. Verbs 5 .. 7 are
+   --  reserved and never drawn.
+   type Shape_Kind is (Rect_Shape, Round_Rect_Shape, Oval_Shape, Arc_Shape, Polygon_Shape, Region_Shape);
+   subtype Rect_Like_Kind is Shape_Kind range Rect_Shape .. Arc_Shape;
+   type Shape_Verb is (Framed, Painted, Erased, Inverted, Filled);
+
+   function Kind_Of (Op : Opcode) return Shape_Kind is (Shape_Kind'Val (Natural (Op / 16) - 3))
+     with Pre => Op in Opcodes.First_Shape .. Opcodes.Last_Shape;
+   function Verb_Of (Op : Opcode) return Shape_Verb is (Shape_Verb'Val (Natural (Op mod 8)))
+     with Pre => Op mod 8 <= 4;
+   function Is_Same (Op : Opcode) return Boolean is (Op mod 16 >= 8);
+
    --  How frame and paint (pen), erase (background pattern), invert and fill (fill pattern) change pixels.
-   function Paint_For (P : Rendering.Painter; Verb : Natural) return Rendering.Paint is
+   function Paint_For (P : Rendering.Painter; Verb : Shape_Verb) return Rendering.Paint is
      (case Verb is
-         when 0 | 1 => (Rendering.Pattern_Paint, Rendering.Pen_Slot, P.Pen_Mode),
-         when 2 => (Rendering.Pattern_Paint, Rendering.Back_Slot, Transfer_Modes.Copy),
-         when 3 => (Rendering.Invert_Paint, Rendering.Pen_Slot, Transfer_Modes.Copy),
-         when others => (Rendering.Pattern_Paint, Rendering.Fill_Slot, Transfer_Modes.Copy));
+         when Framed | Painted => (Rendering.Pattern_Paint, Rendering.Pen_Slot, P.Pen_Mode),
+         when Erased => (Rendering.Pattern_Paint, Rendering.Back_Slot, Transfer_Modes.Copy),
+         when Inverted => (Rendering.Invert_Paint, Rendering.Pen_Slot, Transfer_Modes.Copy),
+         when Filled => (Rendering.Pattern_Paint, Rendering.Fill_Slot, Transfer_Modes.Copy));
 
    --  The port pattern a pattern opcode sets: BkPat and BkPixPat, PnPat and PnPixPat, FillPat and FillPixPat.
    function Slot_Of (Op : Opcode) return Rendering.Pattern_Slot is
      (case Op is
-         when 16#0002# | 16#0012# => Rendering.Back_Slot,
-         when 16#0009# | 16#0013# => Rendering.Pen_Slot,
+         when Opcodes.Background_Pattern | Opcodes.Background_Pixel_Pattern => Rendering.Back_Slot,
+         when Opcodes.Pen_Pattern | Opcodes.Pen_Pixel_Pattern => Rendering.Pen_Slot,
          when others => Rendering.Fill_Slot);
 
-   --  The pixels a shape verb changes, for the rect, round rect, oval and arc groups.
+   --  The pixels a shape verb changes, for the rect, round rect, oval and arc kinds.
    procedure Rect_Like
      (P : Rendering.Painter;
-      Group : Natural;
-      Verb : Natural;
+      Kind : Rect_Like_Kind;
+      Verb : Shape_Verb;
       Bounds : Area;
       Start_Angle, Arc_Angle : Integer;
       Shape : in out Coverage.Shape)
    is
-      Frame : constant Boolean := Verb = 0;
+      Frame : constant Boolean := Verb = Framed;
       Inner : Coverage.Shape;
 
       procedure Interior (Item : in out Coverage.Shape; Box : Area; Oval_Width, Oval_Height : Integer) is
       begin
-         case Group is
-            when 3 => Coverage.Rectangle (Item, Box);
-            when 4 => Coverage.Round_Rect (Item, Box, Oval_Width, Oval_Height);
-            when others => Coverage.Oval (Item, Box);
+         case Kind is
+            when Rect_Shape => Coverage.Rectangle (Item, Box);
+            when Round_Rect_Shape => Coverage.Round_Rect (Item, Box, Oval_Width, Oval_Height);
+            when Oval_Shape | Arc_Shape => Coverage.Oval (Item, Box);
          end case;
       end Interior;
    begin
@@ -159,7 +172,7 @@ package body Pictlib.Internal.Drawing is
                    P.Oval_Width - 2 * P.Pen_Width, P.Oval_Height - 2 * P.Pen_Height);
          Coverage.Subtract (Shape, Inner);
       end if;
-      if Group = 6 then
+      if Kind = Arc_Shape then
          Coverage.Wedge (Shape, Bounds, Start_Angle, Arc_Angle);
       end if;
    end Rect_Like;
@@ -169,31 +182,31 @@ package body Pictlib.Internal.Drawing is
       S : in out Sessions.Session;
       Event : Pictures.Opcode_Event) return Results.Result
    is
-      Group : constant Natural := Natural (Event.Op / 16);
-      Verb : constant Natural := Natural (Event.Op mod 8);
-      Same : constant Boolean := Event.Op mod 16 >= 8;
+      Kind : constant Shape_Kind := Kind_Of (Event.Op);
+      Verb : constant Shape_Verb := Verb_Of (Event.Op);
+      Same : constant Boolean := Is_Same (Event.Op);
       Shape : Coverage.Shape;
       Outcome : Results.Result := Results.Success;
    begin
       --  Each shape starts once its data is read and charged, so its allowance is what the budget has left.
-      case Group is
-         when 3 .. 6 =>
+      case Kind is
+         when Rect_Like_Kind =>
             declare
                Start_Angle, Arc_Angle : Integer := 0;
             begin
                if not Same then
                   Outcome := Sessions.Read_Bounds (S, P.Last_Rect);
                end if;
-               if Results.Succeeded (Outcome) and then Group = 6 then
+               if Results.Succeeded (Outcome) and then Kind = Arc_Shape then
                   Outcome := Read_Size (S, Start_Angle, Arc_Angle);
                end if;
                if not Results.Succeeded (Outcome) then
                   return Outcome;
                end if;
                Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
-               Rect_Like (P, Group, Verb, Rendering.To_Picture (P, P.Last_Rect), Start_Angle, Arc_Angle, Shape);
+               Rect_Like (P, Kind, Verb, Rendering.To_Picture (P, P.Last_Rect), Start_Angle, Arc_Angle, Shape);
             end;
-         when 7 =>
+         when Polygon_Shape =>
             if not Same then
                Outcome := Read_Polygon (S, P.Last_Polygon);
                if not Results.Succeeded (Outcome) then
@@ -212,7 +225,7 @@ package body Pictlib.Internal.Drawing is
                for Item of P.Last_Polygon loop
                   Points.Append (Point'(H => Item.H - P.Origin_H, V => Item.V - P.Origin_V));
                end loop;
-               if Verb /= 0 then
+               if Verb /= Framed then
                   Coverage.Polygon (Shape, Points);
                elsif Natural (Points.Length) >= 2 then
                   --  FramePoly draws the polygon's lines; it does not close the polygon.
@@ -221,7 +234,7 @@ package body Pictlib.Internal.Drawing is
                   end loop;
                end if;
             end;
-         when others =>
+         when Region_Shape =>
             if not Same then
                Outcome := Region_Reader.Read (S, P.Last_Region);
                if not Results.Succeeded (Outcome) then
@@ -244,7 +257,7 @@ package body Pictlib.Internal.Drawing is
             begin
                Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
                Regions.Translate (Region, -P.Origin_H, -P.Origin_V);
-               if Verb = 0 then
+               if Verb = Framed then
                   Coverage.Region_Frame (Shape, Region, P.Pen_Width, P.Pen_Height);
                else
                   Coverage.From_Region (Shape, Region);
@@ -283,13 +296,13 @@ package body Pictlib.Internal.Drawing is
       To : Point;
       Outcome : Results.Result := Results.Success;
    begin
-      if Event.Op in 16#0020# | 16#0022# then
+      if Event.Op in Opcodes.Line | Opcodes.Short_Line then
          Outcome := Read_Point (P, S, From);
       end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
-      if Event.Op in 16#0020# | 16#0021# then
+      if Event.Op in Opcodes.Line | Opcodes.Line_From then
          Outcome := Read_Point (P, S, To);
       else
          --  ShortLine and ShortLineFrom: a signed byte dh, then dv.
@@ -318,7 +331,7 @@ package body Pictlib.Internal.Drawing is
       Outcome : Results.Result := Results.Success;
       Count : Byte := 0;
    begin
-      if Event.Op = 16#0028# then
+      if Event.Op = Opcodes.Long_Text then
          declare
             Origin : Point;
          begin
@@ -331,11 +344,11 @@ package body Pictlib.Internal.Drawing is
          declare
             Offset : Byte := 0;
          begin
-            if Event.Op in 16#0029# | 16#002B# then
+            if Event.Op in Opcodes.DH_Text | Opcodes.DHDV_Text then
                Outcome := Sessions.Read_Count_Byte (S, Offset);
                P.Text_State.Origin_H := P.Text_State.Origin_H + Natural (Offset);
             end if;
-            if Results.Succeeded (Outcome) and then Event.Op in 16#002A# | 16#002B# then
+            if Results.Succeeded (Outcome) and then Event.Op in Opcodes.DV_Text | Opcodes.DHDV_Text then
                Outcome := Sessions.Read_Count_Byte (S, Offset);
                P.Text_State.Origin_V := P.Text_State.Origin_V + Natural (Offset);
             end if;
@@ -363,6 +376,195 @@ package body Pictlib.Internal.Drawing is
       return Outcome;
    end Consume_Text;
 
+   --  Every pattern opcode is read, then charged (at least a unit of drawing work), like every other opcode;
+   --  whatever fails leaves the slot its default pattern.
+   function Consume_Pattern
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event) return Results.Result
+   is
+      Slot : constant Rendering.Pattern_Slot := Slot_Of (Event.Op);
+      Work : Pixel_Count := 1;
+      Outcome : Results.Result;
+   begin
+      if Event.Op in Opcodes.Background_Pixel_Pattern .. Opcodes.Fill_Pixel_Pattern then
+         --  Decoded straight into the port's pattern, whose old tile goes first: a tile is held once.
+         Outcome := Patterns.Read_Pixel_Pattern (S, Event, P.Pattern_Set (Slot), Sessions.Work_Left (S), Work);
+      else
+         Outcome := Patterns.Read_Bit_Pattern (S, P.Pattern_Set (Slot));
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Sessions.Charge_Work (S, Work);
+      end if;
+      if not Results.Succeeded (Outcome) then
+         P.Pattern_Set (Slot) := Rendering.Default_Pattern (Slot);
+      end if;
+      return Outcome;
+   end Consume_Pattern;
+
+   --  The pen, the oval size and the origin.
+   function Consume_Port
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event) return Results.Result
+   is
+      Outcome : Results.Result := Results.Success;
+   begin
+      case Event.Op is
+         when Opcodes.Pen_Size =>
+            Outcome := Read_Size (S, P.Pen_Height, P.Pen_Width);
+         when Opcodes.Pen_Mode =>
+            declare
+               Value : Interfaces.Unsigned_16;
+            begin
+               Outcome := Sessions.Read_Word (S, Value);
+               if Results.Succeeded (Outcome) then
+                  Outcome := Rendering.Mode (S, Event, Value, P.Pen_Mode);
+               end if;
+            end;
+         when Opcodes.Oval_Size =>
+            Outcome := Read_Size (S, P.Oval_Height, P.Oval_Width);
+         when others =>  --  Origin: the clip region keeps its local coordinates
+            declare
+               Dh, Dv : Integer;
+            begin
+               --  Origin's data is dh, then dv.
+               Outcome := Read_Size (S, Dh, Dv);
+               if Results.Succeeded (Outcome) then
+                  if not Rendering.Origin_Within_Reach (P.Origin_H + Dh) then
+                     return Out_Of_Reach (Event, P.Origin_H + Dh);
+                  elsif not Rendering.Origin_Within_Reach (P.Origin_V + Dv) then
+                     return Out_Of_Reach (Event, P.Origin_V + Dv);
+                  end if;
+                  P.Origin_H := P.Origin_H + Dh;
+                  P.Origin_V := P.Origin_V + Dv;
+               end if;
+            end;
+      end case;
+      return Outcome;
+   end Consume_Port;
+
+   --  The port's colors and highlighting.
+   function Consume_Color
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event) return Results.Result
+   is
+      Outcome : Results.Result := Results.Success;
+   begin
+      case Event.Op is
+         when Opcodes.Foreground_Color | Opcodes.Background_Color =>
+            declare
+               Value : Interfaces.Unsigned_32;
+               Color : Images.RGB_Color;
+            begin
+               Outcome := Sessions.Read_Long (S, Value);
+               if Results.Succeeded (Outcome) then
+                  if not Planar_Color (Value, Color) then
+                     Outcome := Rendering.Unsupported (S, Event);
+                  elsif Event.Op = Opcodes.Foreground_Color then
+                     P.Colors.Foreground := Color;
+                  else
+                     P.Colors.Background := Color;
+                  end if;
+               end if;
+            end;
+         when Opcodes.RGB_Foreground_Color =>
+            Outcome := Sessions.Read_RGB (S, P.Colors.Foreground);
+         when Opcodes.RGB_Background_Color =>
+            Outcome := Sessions.Read_RGB (S, P.Colors.Background);
+         when Opcodes.Hilite_Color =>
+            Outcome := Sessions.Read_RGB (S, P.Colors.Highlight);
+         when Opcodes.Op_Color =>
+            Outcome := Sessions.Read_RGB (S, P.Colors.Operation);
+         when Opcodes.Hilite_Mode =>
+            P.Hilite_Next := True;
+         when others =>  --  DefHilite: black, so highlighting inverts black and white
+            P.Colors.Highlight := Images.Black;
+      end case;
+      return Outcome;
+   end Consume_Color;
+
+   --  The text state the text opcodes draw with.
+   function Consume_Text_State
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event) return Results.Result
+   is
+      State : Text.Text_State renames P.Text_State;
+      Outcome : Results.Result := Results.Success;
+      Value : Interfaces.Unsigned_16 := 0;
+   begin
+      case Event.Op is
+         when Opcodes.Text_Font =>
+            Outcome := Sessions.Read_Word (S, Value);
+            State.Font := Fonts.Font_ID (Value);
+         when Opcodes.Text_Face =>
+            Outcome := Sessions.Read_Count_Byte (S, State.Face);
+         when Opcodes.Text_Mode =>
+            Outcome := Sessions.Read_Word (S, State.Mode);
+         when Opcodes.Space_Extra =>
+            declare
+               Long : Interfaces.Unsigned_32;
+            begin
+               Outcome := Sessions.Read_Long (S, Long);
+               State.Space_Extra := Geometry.Fixed (Bytes.To_Signed_32 (Long));
+            end;
+         when Opcodes.Text_Size =>
+            Outcome := Sessions.Read_Word (S, Value);
+            State.Size := Natural (Value);
+         when Opcodes.Text_Ratio =>  --  numerator and denominator points
+            declare
+               Numerator_V, Numerator_H, Denominator_V, Denominator_H : Integer;
+            begin
+               Outcome := Read_Size (S, Numerator_V, Numerator_H);
+               if Results.Succeeded (Outcome) then
+                  Outcome := Read_Size (S, Denominator_V, Denominator_H);
+               end if;
+               State.Unit_Ratio := Numerator_V = Denominator_V and then Numerator_H = Denominator_H;
+            end;
+         when others =>  --  ChExtra
+            Outcome := Sessions.Read_Word (S, Value);
+            State.Char_Extra := Signed (Value);
+      end case;
+      return Outcome;
+   end Consume_Text_State;
+
+   --  A bits opcode copied, or a QuickTime image drawn.
+   function Consume_Image
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event) return Results.Result
+   is
+      Outcome : Results.Result;
+   begin
+      if Event.Op = Opcodes.Compressed_QuickTime then
+         --  Its data is a long length, then the image; rendering reads the image instead of retaining it.
+         declare
+            Length : Interfaces.Unsigned_32;
+         begin
+            Outcome := Sessions.Read_Long (S, Length);
+            if Results.Succeeded (Outcome) then
+               Outcome := Sessions.Admit_Data (S, Byte_Count (Length));
+            end if;
+            if Results.Succeeded (Outcome) then
+               Outcome := QuickTime.Draw (P, S, Event, Byte_Count (Length));
+            end if;
+         end;
+         return Outcome;
+      end if;
+      declare
+         Header : Pixmaps.Bits_Header;
+         Mask : Regions.Region;
+      begin
+         Outcome := Pixmaps.Read_Bits_Header (S, Event.Op, Header, Mask, Read_Mask => True, For_Decoding => True);
+         if Results.Succeeded (Outcome) then
+            Outcome := Rendering.Copy_Bits (P, S, Header, Mask, Event);
+         end if;
+      end;
+      return Outcome;
+   end Consume_Image;
+
    function Consume
      (P : in out Rendering.Painter;
       S : in out Sessions.Session;
@@ -377,165 +579,35 @@ package body Pictlib.Internal.Drawing is
          P.Skip_Next_Bits := False;
       end if;
       case Event.Op is
-         when 16#0001# =>  --  Clip, kept in local coordinates
+         when Opcodes.Clip =>  --  kept in local coordinates
             Outcome := Region_Reader.Read (S, P.Clip);
             P.Has_Clip := Results.Succeeded (Outcome);
-         --  Every pattern opcode is read, then charged (at least a unit of drawing work), like every other
-         --  opcode; whatever fails leaves the slot its default pattern.
-         when 16#0002# | 16#0009# | 16#000A# | 16#0012# .. 16#0014# =>
-            declare
-               Slot : constant Rendering.Pattern_Slot := Slot_Of (Event.Op);
-               Work : Pixel_Count := 1;
-            begin
-               if Event.Op in 16#0012# .. 16#0014# then
-                  --  Decoded straight into the port's pattern, whose old tile goes first: a tile is held once.
-                  Outcome :=
-                    Patterns.Read_Pixel_Pattern (S, Event, P.Pattern_Set (Slot), Sessions.Work_Left (S), Work);
-               else
-                  Outcome := Patterns.Read_Bit_Pattern (S, P.Pattern_Set (Slot));
-               end if;
-               if Results.Succeeded (Outcome) then
-                  Outcome := Sessions.Charge_Work (S, Work);
-               end if;
-               if not Results.Succeeded (Outcome) then
-                  P.Pattern_Set (Slot) := Rendering.Default_Pattern (Slot);
-               end if;
-            end;
-         when 16#0007# =>
-            Outcome := Read_Size (S, P.Pen_Height, P.Pen_Width);
-         when 16#0008# =>
-            declare
-               Value : Interfaces.Unsigned_16;
-            begin
-               Outcome := Sessions.Read_Word (S, Value);
-               if Results.Succeeded (Outcome) then
-                  Outcome := Rendering.Mode (S, Event, Value, P.Pen_Mode);
-               end if;
-            end;
-         when 16#000B# =>
-            Outcome := Read_Size (S, P.Oval_Height, P.Oval_Width);
-         when 16#000C# =>  --  Origin: the clip region keeps its local coordinates
-            declare
-               Dh, Dv : Integer;
-            begin
-               Outcome := Read_Size (S, Dh, Dv);
-               --  Origin's data is dh, then dv.
-               if Results.Succeeded (Outcome) then
-                  if not Rendering.Origin_Within_Reach (P.Origin_H + Dh) then
-                     return Out_Of_Reach (Event, P.Origin_H + Dh);
-                  elsif not Rendering.Origin_Within_Reach (P.Origin_V + Dv) then
-                     return Out_Of_Reach (Event, P.Origin_V + Dv);
-                  end if;
-                  P.Origin_H := P.Origin_H + Dh;
-                  P.Origin_V := P.Origin_V + Dv;
-               end if;
-            end;
-         when 16#000E# | 16#000F# =>
-            declare
-               Value : Interfaces.Unsigned_32;
-               Color : Images.RGB_Color;
-            begin
-               Outcome := Sessions.Read_Long (S, Value);
-               if Results.Succeeded (Outcome) then
-                  if not Planar_Color (Value, Color) then
-                     Outcome := Rendering.Unsupported (S, Event);
-                  elsif Event.Op = 16#000E# then
-                     P.Colors.Foreground := Color;
-                  else
-                     P.Colors.Background := Color;
-                  end if;
-               end if;
-            end;
-         when 16#001A# =>
-            Outcome := Sessions.Read_RGB (S, P.Colors.Foreground);
-         when 16#001B# =>
-            Outcome := Sessions.Read_RGB (S, P.Colors.Background);
-         when 16#001D# =>
-            Outcome := Sessions.Read_RGB (S, P.Colors.Highlight);
-         when 16#001F# =>
-            Outcome := Sessions.Read_RGB (S, P.Colors.Operation);
-         when 16#001C# =>
-            P.Hilite_Next := True;
-         when 16#001E# =>
-            --  The default highlight: black, so highlighting inverts black and white.
-            P.Colors.Highlight := Images.Black;
-         when 16#0020# .. 16#0023# =>
+         when Opcodes.Background_Pattern | Opcodes.Pen_Pattern | Opcodes.Fill_Pattern
+            | Opcodes.Background_Pixel_Pattern .. Opcodes.Fill_Pixel_Pattern
+         =>
+            Outcome := Consume_Pattern (P, S, Event);
+         when Opcodes.Pen_Size | Opcodes.Pen_Mode | Opcodes.Oval_Size | Opcodes.Origin =>
+            Outcome := Consume_Port (P, S, Event);
+         when Opcodes.Foreground_Color | Opcodes.Background_Color
+            | Opcodes.RGB_Foreground_Color .. Opcodes.Op_Color
+         =>
+            Outcome := Consume_Color (P, S, Event);
+         when Opcodes.Text_Font .. Opcodes.Space_Extra | Opcodes.Text_Size | Opcodes.Text_Ratio | Opcodes.Char_Extra =>
+            Outcome := Consume_Text_State (P, S, Event);
+         when Opcodes.Line .. Opcodes.Short_Line_From =>
             Outcome := Consume_Line (P, S, Event);
-         when 16#0003# =>
-            declare
-               Value : Interfaces.Unsigned_16;
-            begin
-               Outcome := Sessions.Read_Word (S, Value);
-               P.Text_State.Font := Fonts.Font_ID (Value);
-            end;
-         when 16#0004# =>
-            Outcome := Sessions.Read_Count_Byte (S, P.Text_State.Face);
-         when 16#0005# =>
-            Outcome := Sessions.Read_Word (S, P.Text_State.Mode);
-         when 16#0006# =>
-            declare
-               Value : Interfaces.Unsigned_32;
-            begin
-               Outcome := Sessions.Read_Long (S, Value);
-               P.Text_State.Space_Extra := Geometry.Fixed (Bytes.To_Signed_32 (Value));
-            end;
-         when 16#000D# =>
-            declare
-               Value : Interfaces.Unsigned_16;
-            begin
-               Outcome := Sessions.Read_Word (S, Value);
-               P.Text_State.Size := Natural (Value);
-            end;
-         when 16#0010# =>  --  TxRatio: numerator and denominator points
-            declare
-               Numerator_V, Numerator_H, Denominator_V, Denominator_H : Integer;
-            begin
-               Outcome := Read_Size (S, Numerator_V, Numerator_H);
-               if Results.Succeeded (Outcome) then
-                  Outcome := Read_Size (S, Denominator_V, Denominator_H);
-               end if;
-               P.Text_State.Unit_Ratio := Numerator_V = Denominator_V and then Numerator_H = Denominator_H;
-            end;
-         when 16#0016# =>
-            declare
-               Value : Interfaces.Unsigned_16;
-            begin
-               Outcome := Sessions.Read_Word (S, Value);
-               P.Text_State.Char_Extra := Signed (Value);
-            end;
-         when 16#0028# .. 16#002B# =>
+         when Opcodes.Long_Text .. Opcodes.DHDV_Text =>
             Outcome := Consume_Text (P, S, Event);
-         when 16#0030# .. 16#008F# =>
+         when Opcodes.First_Shape .. Opcodes.Last_Shape =>
             if Event.Reserved then
                Handled := False;
             else
                Outcome := Draw_Shape (P, S, Event);
             end if;
          when Opcodes.Bits_Rect | Opcodes.Bits_Region | Opcodes.Pack_Bits_Rect | Opcodes.Pack_Bits_Region
-            | Opcodes.Direct_Bits_Rect | Opcodes.Direct_Bits_Region
+            | Opcodes.Direct_Bits_Rect | Opcodes.Direct_Bits_Region | Opcodes.Compressed_QuickTime
          =>
-            declare
-               Header : Pixmaps.Bits_Header;
-               Mask : Regions.Region;
-            begin
-               Outcome := Pixmaps.Read_Bits_Header (S, Event.Op, Header, Mask, Read_Mask => True, For_Decoding => True);
-               if Results.Succeeded (Outcome) then
-                  Outcome := Rendering.Copy_Bits (P, S, Header, Mask, Event);
-               end if;
-            end;
-         when Opcodes.Compressed_QuickTime =>
-            --  Its data is a long length, then the image; rendering reads the image instead of retaining it.
-            declare
-               Length : Interfaces.Unsigned_32;
-            begin
-               Outcome := Sessions.Read_Long (S, Length);
-               if Results.Succeeded (Outcome) then
-                  Outcome := Sessions.Admit_Data (S, Byte_Count (Length));
-               end if;
-               if Results.Succeeded (Outcome) then
-                  Outcome := QuickTime.Draw (P, S, Event, Byte_Count (Length));
-               end if;
-            end;
+            Outcome := Consume_Image (P, S, Event);
          when others =>
             Handled := False;
       end case;

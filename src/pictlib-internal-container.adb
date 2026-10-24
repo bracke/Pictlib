@@ -136,7 +136,7 @@ package body Pictlib.Internal.Container is
             Outcome := Streams.Skip_Exact (S.Stream, 4);
          end if;
          return Outcome;
-      elsif First = 16#FFFE# then
+      elsif First = Extended_Header_Version then
          Info.Version := Extended_Version_2;
          Outcome := Bytes.Read_Fixed (S.Stream, Info.Horizontal_Resolution, Context);
          if Results.Succeeded (Outcome) then
@@ -167,23 +167,17 @@ package body Pictlib.Internal.Container is
       return (if Results.Succeeded (Outcome) then Streams.Skip_Exact (S.Stream, Header_Op_Bytes - 4) else Outcome);
    end Read_Header_Op_Data;
 
-   function Read_Header
+   --  Which version the look-ahead shows, after a file header or not as the policy decides.
+   function Detect_Layout
      (S : in out Sessions.Session;
       Policy : Header_Policy;
-      Info : out Pictures.Header_Info;
-      Events : out Header_Events;
-      Event_Count : out Natural) return Results.Result
+      File_Header_Present : out Boolean;
+      Detected : out Detected_Version) return Results.Result
    is
-      Outcome : Results.Result;
-      Detected : Detected_Version;
-      File_Header_Present : Boolean;
-      Word : Interfaces.Unsigned_16;
+      Outcome : constant Results.Result := Picture_Stream.Fill_Lookahead (S.Stream, Picture_Stream.Lookahead_Capacity);
    begin
-      Info := (others => <>);
-      Events := [others => (others => <>)];
-      Event_Count := 0;
-
-      Outcome := Picture_Stream.Fill_Lookahead (S.Stream, Picture_Stream.Lookahead_Capacity);
+      File_Header_Present := False;
+      Detected := None;
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
@@ -207,7 +201,120 @@ package body Pictlib.Internal.Container is
       elsif Detected = None then
          return Fail (S, Errors.Version_Invalid);
       end if;
+      return Results.Success;
+   end Detect_Layout;
 
+   --  picSize and picFrame.
+   function Read_Frame (S : in out Sessions.Session; Info : in out Pictures.Header_Info) return Results.Result is
+      Outcome : Results.Result := Bytes.Read_U16_BE (S.Stream, Info.Picture_Size);
+   begin
+      if Results.Succeeded (Outcome) then
+         Outcome := Bytes.Read_Rect (S.Stream, Info.Frame);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Check_Frame (S, Info.Frame);
+      end if;
+      Info.Source_Rect := Info.Frame;
+      return Outcome;
+   end Read_Frame;
+
+   --  The version opcode, the picture's first event; its bytes were checked in the look-ahead.
+   function Read_Version_Opcode
+     (S : in out Sessions.Session;
+      Detected : Detected_Version;
+      Info : in out Pictures.Header_Info;
+      Event : out Pictures.Opcode_Event) return Results.Result
+   is
+      Outcome : Results.Result;
+   begin
+      Event := (Offset => S.Stream.Offset, Op => Opcodes.Version_Op, others => <>);
+      Outcome := Sessions.Claim_Ordinal (S, Event.Ordinal);
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
+      Info.Version := (if Detected = Detected_1 then Version_1 else Version_2);
+      S.Version := Info.Version;
+      Event.Data_Length := (if Detected = Detected_1 then 1 else 2);
+      return Sessions.Attributed (Streams.Skip_Exact (S.Stream, (if Detected = Detected_1 then 2 else 4)), Event);
+   end Read_Version_Opcode;
+
+   --  Version 2 continues with the HeaderOp at an even offset.
+   function Read_Header_Op
+     (S : in out Sessions.Session;
+      Info : in out Pictures.Header_Info;
+      Version_Event : Pictures.Opcode_Event;
+      Event : out Pictures.Opcode_Event;
+      Found : out Boolean) return Results.Result
+   is
+      Header_Offset : constant Source_Offset := S.Stream.Offset;
+      Word : Interfaces.Unsigned_16;
+      Outcome : Results.Result := Bytes.Read_U16_BE (S.Stream, Word);
+
+      --  The opcode where HeaderOp belongs, with the ordinal HeaderOp would have had.
+      function In_Place_Of_Header_Op (Op : Opcode) return Errors.Diagnostic_Context is
+        ((Source => Header_Offset, Op => Op, Has_Opcode => True, Ordinal => Version_Event.Ordinal + 1,
+          others => <>));
+   begin
+      Event := (others => <>);
+      Found := False;
+      if not Results.Succeeded (Outcome)
+        and then Outcome.First_Error.Code = Errors.Source_Unexpected_End
+        and then S.Stream.Offset = Header_Offset
+      then
+         --  The input ends right after the version opcode, at an opcode boundary: the picture has no
+         --  HeaderOp, and leniently it then ends without its end opcode, as the opcode reader reports.
+         return Sessions.Reject_Or_Warn
+           (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility,
+            In_Place_Of_Header_Op (Opcodes.Header_Op));
+      elsif not Results.Succeeded (Outcome) then
+         return Outcome;
+      elsif Opcode (Word) /= Opcodes.Header_Op then
+         --  Leniently the opcode found is the first one the opcode reader reads.
+         Outcome := Sessions.Reject_Or_Warn
+           (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility,
+            In_Place_Of_Header_Op (Opcode (Word)));
+         if Results.Succeeded (Outcome) then
+            Sessions.Defer_Opcode (S, Opcode (Word), Header_Offset);
+         end if;
+         return Outcome;
+      end if;
+
+      Found := True;
+      Event := (Offset => Header_Offset, Op => Opcodes.Header_Op, Data_Length => Header_Op_Bytes, others => <>);
+      Outcome := Sessions.Claim_Ordinal (S, Event.Ordinal);
+      if Results.Succeeded (Outcome) then
+         Outcome := Sessions.Attributed (Read_Header_Op_Data (S, Info), Event);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Info.Has_Header_Opcode := True;
+         S.Version := Info.Version;
+         if Info.Version /= Extended_Version_2 then
+            Info.Source_Rect := Info.Frame;
+         end if;
+      end if;
+      return Outcome;
+   end Read_Header_Op;
+
+   function Read_Header
+     (S : in out Sessions.Session;
+      Policy : Header_Policy;
+      Info : out Pictures.Header_Info;
+      Events : out Header_Events;
+      Event_Count : out Natural) return Results.Result
+   is
+      Outcome : Results.Result;
+      Detected : Detected_Version;
+      File_Header_Present : Boolean;
+      Found : Boolean;
+   begin
+      Info := (others => <>);
+      Events := [others => (others => <>)];
+      Event_Count := 0;
+
+      Outcome := Detect_Layout (S, Policy, File_Header_Present, Detected);
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
       Info.Has_File_Header := File_Header_Present;
       if File_Header_Present then
          Outcome := Read_File_Header (S);
@@ -217,86 +324,21 @@ package body Pictlib.Internal.Container is
       end if;
 
       Picture_Stream.Start_Picture (S.Stream);
-      Outcome := Bytes.Read_U16_BE (S.Stream, Info.Picture_Size);
-      if Results.Succeeded (Outcome) then
-         Outcome := Bytes.Read_Rect (S.Stream, Info.Frame);
-      end if;
-      if Results.Succeeded (Outcome) then
-         Outcome := Check_Frame (S, Info.Frame);
-      end if;
+      Outcome := Read_Frame (S, Info);
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
-      Info.Source_Rect := Info.Frame;
 
-      --  The version opcode; its bytes were checked in the look-ahead.
       Event_Count := 1;
-      Events (1).Offset := S.Stream.Offset;
-      Events (1).Op := Opcodes.Version_Op;
-      Outcome := Sessions.Claim_Ordinal (S, Events (1).Ordinal);
-      if not Results.Succeeded (Outcome) then
-         return Outcome;
-      end if;
-      if Detected = Detected_1 then
-         S.Version := Version_1;
-         Info.Version := Version_1;
-         Events (1).Data_Length := 1;
-         return Sessions.Attributed (Streams.Skip_Exact (S.Stream, 2), Events (1));
-      end if;
-      S.Version := Version_2;
-      Info.Version := Version_2;
-      Events (1).Data_Length := 2;
-      Outcome := Sessions.Attributed (Streams.Skip_Exact (S.Stream, 4), Events (1));
-      if not Results.Succeeded (Outcome) then
+      Outcome := Read_Version_Opcode (S, Detected, Info, Events (1));
+      if not Results.Succeeded (Outcome) or else Detected = Detected_1 then
          return Outcome;
       end if;
 
-      --  Version 2 continues with the HeaderOp at an even offset.
-      declare
-         Header_Offset : constant Source_Offset := S.Stream.Offset;
-
-         --  The opcode where HeaderOp belongs, with the ordinal HeaderOp would have had.
-         function In_Place_Of_Header_Op (Op : Opcode) return Errors.Diagnostic_Context is
-           ((Source => Header_Offset, Op => Op, Has_Opcode => True, Ordinal => Events (1).Ordinal + 1,
-             others => <>));
-      begin
-         Outcome := Bytes.Read_U16_BE (S.Stream, Word);
-         if not Results.Succeeded (Outcome)
-           and then Outcome.First_Error.Code = Errors.Source_Unexpected_End
-           and then S.Stream.Offset = Header_Offset
-         then
-            --  The input ends right after the version opcode, at an opcode boundary: the picture has no
-            --  HeaderOp, and leniently it then ends without its end opcode, as the opcode reader reports.
-            return Sessions.Reject_Or_Warn
-              (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility,
-               In_Place_Of_Header_Op (Opcodes.Header_Op));
-         elsif not Results.Succeeded (Outcome) then
-            return Outcome;
-         elsif Opcode (Word) /= Opcodes.Header_Op then
-            --  Leniently the opcode found is the first one the opcode reader reads.
-            Outcome := Sessions.Reject_Or_Warn
-              (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility,
-               In_Place_Of_Header_Op (Opcode (Word)));
-            if Results.Succeeded (Outcome) then
-               Sessions.Defer_Opcode (S, Opcode (Word), Header_Offset);
-            end if;
-            return Outcome;
-         end if;
-
+      Outcome := Read_Header_Op (S, Info, Events (1), Events (2), Found);
+      if Found then
          Event_Count := 2;
-         Events (2) := (Offset => Header_Offset, Op => Opcodes.Header_Op, Data_Length => Header_Op_Bytes, others => <>);
-         Outcome := Sessions.Claim_Ordinal (S, Events (2).Ordinal);
-         if Results.Succeeded (Outcome) then
-            Outcome := Sessions.Attributed (Read_Header_Op_Data (S, Info), Events (2));
-         end if;
-         if Results.Succeeded (Outcome) then
-            Info.Has_Header_Opcode := True;
-            S.Version := Info.Version;
-            if Info.Version /= Extended_Version_2 then
-               Info.Source_Rect := Info.Frame;
-            end if;
-         end if;
-         return Outcome;
-      end;
+      end if;
+      return Outcome;
    end Read_Header;
 end Pictlib.Internal.Container;

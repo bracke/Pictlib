@@ -34,6 +34,8 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - Encoding (`Pictlib.Encoding`): raster PICT version 2 as `Direct_32`,
   `Indexed_8`, `Mono_1` or `Auto`, with an extended header and an optional
   file header; picSize is measured by a dry run.
+- `Pictlib.Opcodes` names every opcode pictlib draws, and
+  `Pictlib.Encoding.Default_Mono_Threshold` the default Mono_1 threshold.
 - Strictness modes `Strict`, `Compatible` and `Recover_When_Safe`, with
   structured, non-raising results, stable `pict.*` identifiers and warnings.
 
@@ -65,6 +67,8 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   wrong or missing HeaderOp, a dropped metadata item, a bad color index and
   an oversized pattern tile now name their offset, opcode and ordinal both
   ways, and every failure inside an opcode names its ordinal.
+- The encoder checks `Max_Allocation_Bytes` against the row buffers of the
+  layout it writes, not always against 32-bit rows.
 
 ### Tooling
 

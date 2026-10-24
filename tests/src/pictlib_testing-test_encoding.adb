@@ -293,10 +293,17 @@ package body Pictlib_Testing.Test_Encoding is
               and then Picture.Outcome.First_Error.Context.Limit = Pictlib.Output_Byte_Limit
               and then Picture.Length = 0,
               "the output limit was not enforced before writing");
-      Picture := Encode (Samples.Gradient, 40, 4, Budget => (Defaults with delta Max_Allocation_Bytes => 100));
+      --  The row buffers are a row before packing and its worst case packed: 120 + 121 bytes for 40 direct
+      --  pixels, 40 + 41 for 40 indexed ones.
+      Picture := Encode (Samples.Gradient, 40, 4, (Layout => Encoding.Direct_32, others => <>),
+                         Budget => (Defaults with delta Max_Allocation_Bytes => 240));
       Assert (Picture.Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
-              and then Picture.Outcome.First_Error.Context.Limit = Pictlib.Allocation_Byte_Limit,
+              and then Picture.Outcome.First_Error.Context.Limit = Pictlib.Allocation_Byte_Limit
+              and then Picture.Outcome.First_Error.Context.Actual = 241,
               "the allocation limit was not enforced");
+      Picture := Encode (Samples.Gradient, 40, 4, (Layout => Encoding.Indexed_8, others => <>),
+                         Budget => (Defaults with delta Max_Allocation_Bytes => 81));
+      Assert (Pictlib.Results.Succeeded (Picture.Outcome), "indexed row buffers were sized as direct ones");
 
       Pictlib.Streams.Open (Output, Storage);
       Encoding.Initialize (Encoder, Output'Access);

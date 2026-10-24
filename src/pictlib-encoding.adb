@@ -15,8 +15,17 @@ package body Pictlib.Encoding is
 
    procedure Streams_Free is new Ada.Unchecked_Deallocation (Streams.Byte_Array, Streams.Byte_Array_Access);
 
-   --  rowBytes keeps flags in its two high bits.
-   Largest_Row_Bytes : constant := 16#3FFE#;
+   --  The longest even rowBytes a PixMap can state.
+   Largest_Row_Bytes : constant := Internal.Pixmap_Row_Bytes_Mask - 1;
+   --  The PixMap fields this encoder writes: packType 0 (none) or 4 (each component plane packed), pixelType
+   --  0 (indexed) or 16 (RGBDirect), and the baseAddr QuickDraw writes for a DirectBitsRect.
+   Pack_None : constant := 0;
+   Pack_Component_Planes : constant := 4;
+   Indexed_Pixels : constant := 0;
+   Direct_Pixels : constant := 16;
+   Direct_Base_Address : constant := 16#0000_00FF#;
+   --  Every color table entry's components, 8 bits widened to 16.
+   Widen_Component : constant := 257;
    Largest_Colors : constant := 256;
 
    type Pixel is record
@@ -80,6 +89,216 @@ package body Pictlib.Encoding is
          when Indexed_8 => Width + Width mod 2,
          when others => ((Width + 7) / 8 + 1) / 2 * 2);
 
+   --  What one image is written as.
+   type Plan is record
+      Width : Natural := 0;
+      Height : Natural := 0;
+      Frame : Geometry.Rect;
+      Layout : Layout_Kind := Direct_32;
+      Components : Natural := 3;
+      --  rowBytes, and the bytes of a row before packing.
+      Stored : Natural := 0;
+      Unpacked_Length : Natural := 0;
+   end record;
+
+   function Plan_For (Image : Images.Image_View; Settings : Options; Layout : Layout_Kind) return Plan is
+      Width : constant Natural := Natural (Image.Descriptor.Width);
+      Height : constant Natural := Natural (Image.Descriptor.Height);
+      Components : constant Natural :=
+        (if Settings.Keep_Alpha and then Image.Descriptor.Format in RGBA_32 | BGRA_32 | ARGB_32 then 4 else 3);
+      Stored : constant Natural := Row_Bytes (Layout, Width);
+   begin
+      return
+        (Width => Width, Height => Height, Frame => (0, 0, Coordinate (Height), Coordinate (Width)),
+         Layout => Layout, Components => Components, Stored => Stored,
+         --  Packed direct rows are component planes; anything stored unpacked is the stored row.
+         Unpacked_Length =>
+           (if Layout = Direct_32 and then Stored >= Internal.Smallest_Packed_Row_Bytes then Components * Width
+            else Stored));
+   end Plan_For;
+
+   --  The row buffers writing a picture allocates: a row before packing, and its worst case packed.
+   function Row_Buffer_Bytes (Item : Plan) return Byte_Count is
+     (Byte_Count (Item.Unpacked_Length) + Byte_Count (Internal.PackBits.Worst_Case (Item.Unpacked_Length, 1)));
+
+   --  Every write after a failure is still made, against a writer that refuses it; the first failure is kept.
+   procedure Step (Outcome : in out Results.Result; Item : Results.Result) is
+   begin
+      if Results.Succeeded (Outcome) then
+         Outcome := Item;
+      end if;
+   end Step;
+
+   --  picSize, picFrame, the version opcode, an extended version 2 HeaderOp, DefHilite and a clip of the frame.
+   procedure Put_Header
+     (Out_Bytes : in out Writers.Writer;
+      Settings : Options;
+      Item : Plan;
+      Picture_Size : Byte_Count;
+      Outcome : in out Results.Result) is
+   begin
+      Writers.Start_Picture (Out_Bytes);
+      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Picture_Size mod 16#1_0000#)));
+      Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
+      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Version_Op)));
+      Step (Outcome, Writers.Put_Word (Out_Bytes, Internal.Version_2_Word));
+      --  HeaderOp: its version, reserved, the resolution, the frame, reserved.
+      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Header_Op)));
+      Step (Outcome, Writers.Put_Word (Out_Bytes, Internal.Extended_Header_Version));
+      Step (Outcome, Writers.Put_Word (Out_Bytes, 0));
+      Step (Outcome, Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Horizontal_Resolution)));
+      Step (Outcome, Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Vertical_Resolution)));
+      Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
+      Step (Outcome, Writers.Put_Long (Out_Bytes, 0));
+      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Default_Hilite)));
+      --  A rectangular region: its size word and box.
+      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Clip)));
+      Step (Outcome, Writers.Put_Word (Out_Bytes, Internal.Smallest_Region));
+      Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
+   end Put_Header;
+
+   --  The bits opcode up to its pixel data: rowBytes, bounds, a PixMap's fields and color table, srcRect,
+   --  dstRect and srcCopy.
+   procedure Put_Bits_Header
+     (Out_Bytes : in out Writers.Writer;
+      Settings : Options;
+      Item : Plan;
+      Colors : Palette;
+      Outcome : in out Results.Result)
+   is
+      procedure Put_Pixmap_Tail (Pack, Pixel_Type, Pixel_Size, Component_Count, Component_Size : Natural) is
+      begin
+         Step (Outcome, Writers.Put_Word (Out_Bytes, 0));
+         Step (Outcome, Writers.Put_Word (Out_Bytes, Pack));
+         Step (Outcome, Writers.Put_Long (Out_Bytes, 0));
+         Step (Outcome, Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Horizontal_Resolution)));
+         Step (Outcome, Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Vertical_Resolution)));
+         Step (Outcome, Writers.Put_Word (Out_Bytes, Pixel_Type));
+         Step (Outcome, Writers.Put_Word (Out_Bytes, Pixel_Size));
+         Step (Outcome, Writers.Put_Word (Out_Bytes, Component_Count));
+         Step (Outcome, Writers.Put_Word (Out_Bytes, Component_Size));
+         for Index in 1 .. 3 loop  --  planeBytes, pmTable, pmReserved
+            Step (Outcome, Writers.Put_Long (Out_Bytes, 0));
+         end loop;
+      end Put_Pixmap_Tail;
+   begin
+      case Item.Layout is
+         when Direct_32 =>
+            Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Direct_Bits_Rect)));
+            Step (Outcome, Writers.Put_Long (Out_Bytes, Direct_Base_Address));
+            Step (Outcome, Writers.Put_Word (Out_Bytes, Internal.Pixmap_Flag + Item.Stored));
+            Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
+            Put_Pixmap_Tail (Pack => Pack_Component_Planes, Pixel_Type => Direct_Pixels, Pixel_Size => 32,
+                             Component_Count => Item.Components, Component_Size => 8);
+         when Indexed_8 =>
+            Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Pack_Bits_Rect)));
+            Step (Outcome, Writers.Put_Word (Out_Bytes, Internal.Pixmap_Flag + Item.Stored));
+            Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
+            Put_Pixmap_Tail (Pack => Pack_None, Pixel_Type => Indexed_Pixels, Pixel_Size => 8, Component_Count => 1,
+                             Component_Size => 8);
+            --  The color table: ctSeed, ctFlags, ctSize, then each entry's value, which is its index.
+            Step (Outcome, Writers.Put_Long (Out_Bytes, 0));
+            Step (Outcome, Writers.Put_Word (Out_Bytes, 0));
+            Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Colors.Colors.Length) - 1));
+            for Index in 0 .. Natural (Colors.Colors.Length) - 1 loop
+               declare
+                  Color : constant Images.RGB_Color := Colors.Colors (Index);
+               begin
+                  Step (Outcome, Writers.Put_Word (Out_Bytes, Index));
+                  Step (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Red)));
+                  Step (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Green)));
+                  Step (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Blue)));
+               end;
+            end loop;
+         when others =>
+            Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Pack_Bits_Rect)));
+            Step (Outcome, Writers.Put_Word (Out_Bytes, Item.Stored));
+            Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
+      end case;
+      Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));  --  srcRect
+      Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));  --  dstRect
+      Step (Outcome, Writers.Put_Word (Out_Bytes, 0));           --  srcCopy
+   end Put_Bits_Header;
+
+   --  One row as it is stored before packing.
+   procedure Fill_Row
+     (Image : Images.Image_View;
+      Settings : Options;
+      Item : Plan;
+      Colors : Palette;
+      Y : Natural;
+      Row : out Streams.Byte_Array)
+   is
+      Width : constant Natural := Item.Width;
+   begin
+      Row := [others => 0];
+      for X in 0 .. Width - 1 loop
+         declare
+            Source : constant Pixel := Pixel_At (Image, X, Y);
+         begin
+            case Item.Layout is
+               when Direct_32 =>
+                  if Item.Stored < Internal.Smallest_Packed_Row_Bytes then
+                     --  Unpacked chunky pixels: pad (or alpha), red, green, blue.
+                     Row (Row'First + 4 * X .. Row'First + 4 * X + 3) :=
+                       [(if Item.Components = 4 then Source.Alpha else 0), Source.Color.Red, Source.Color.Green,
+                        Source.Color.Blue];
+                  else
+                     declare
+                        Red_Plane : constant Natural := (if Item.Components = 4 then Width else 0);
+                     begin
+                        if Item.Components = 4 then
+                           Row (Row'First + X) := Source.Alpha;
+                        end if;
+                        Row (Row'First + Red_Plane + X) := Source.Color.Red;
+                        Row (Row'First + Red_Plane + Width + X) := Source.Color.Green;
+                        Row (Row'First + Red_Plane + 2 * Width + X) := Source.Color.Blue;
+                     end;
+                  end if;
+               when Indexed_8 =>
+                  Row (Row'First + X) := Byte (Colors.Indexes.Element (Key (Source.Color)));
+               when others =>
+                  if Luminance (Source.Color) < Natural (Settings.Mono_Threshold) then
+                     Row (Row'First + X / 8) := Row (Row'First + X / 8) or Byte (2 ** (7 - X mod 8));
+                  end if;
+            end case;
+         end;
+      end loop;
+   end Fill_Row;
+
+   --  Rows: unpacked below 8 rowBytes, otherwise PackBits behind a byte count, or a word count above 250.
+   procedure Put_Rows
+     (Out_Bytes : in out Writers.Writer;
+      Image : Images.Image_View;
+      Settings : Options;
+      Item : Plan;
+      Colors : Palette;
+      Outcome : in out Results.Result)
+   is
+      Row : Streams.Byte_Array_Access := new Streams.Byte_Array (1 .. Item.Unpacked_Length);
+      Packed : Streams.Byte_Array_Access :=
+        new Streams.Byte_Array (1 .. Internal.PackBits.Worst_Case (Item.Unpacked_Length, 1));
+      Packed_Length : Natural;
+   begin
+      for Y in 0 .. Item.Height - 1 loop
+         exit when not Results.Succeeded (Outcome);
+         Fill_Row (Image, Settings, Item, Colors, Y, Row.all);
+         if Item.Stored < Internal.Smallest_Packed_Row_Bytes then
+            Step (Outcome, Writers.Put (Out_Bytes, Row.all));
+         else
+            Internal.PackBits.Pack (Row.all, 1, Packed.all, Packed_Length);
+            if Item.Stored > Internal.Byte_Count_Row_Bytes then
+               Step (Outcome, Writers.Put_Word (Out_Bytes, Packed_Length));
+            else
+               Step (Outcome, Writers.Put_Byte (Out_Bytes, Packed_Length));
+            end if;
+            Step (Outcome, Writers.Put (Out_Bytes, Packed (1 .. Packed_Length)));
+         end if;
+      end loop;
+      Streams_Free (Row);
+      Streams_Free (Packed);
+   end Put_Rows;
+
    --  One picture, measured or written.
    function Write_Picture
      (Out_Bytes : in out Writers.Writer;
@@ -89,160 +308,14 @@ package body Pictlib.Encoding is
       Colors : Palette;
       Picture_Size : Byte_Count) return Results.Result
    is
-      Width : constant Natural := Natural (Image.Descriptor.Width);
-      Height : constant Natural := Natural (Image.Descriptor.Height);
-      Frame : constant Geometry.Rect := (0, 0, Coordinate (Height), Coordinate (Width));
-      Components : constant Natural :=
-        (if Settings.Keep_Alpha and then Image.Descriptor.Format in RGBA_32 | BGRA_32 | ARGB_32 then 4 else 3);
-      Stored : constant Natural := Row_Bytes (Layout, Width);
-      --  Packed direct rows are component planes; anything stored unpacked is the stored row.
-      Unpacked_Length : constant Natural :=
-        (if Layout = Direct_32 and then Stored >= Internal.Smallest_Packed_Row_Bytes then Components * Width
-         else Stored);
+      Item : constant Plan := Plan_For (Image, Settings, Layout);
       Outcome : Results.Result := Results.Success;
-
-      procedure Step (Item : Results.Result) is
-      begin
-         if Results.Succeeded (Outcome) then
-            Outcome := Item;
-         end if;
-      end Step;
-
-      procedure Put_Pixmap_Tail (Pack, Pixel_Type, Pixel_Size, Component_Count, Component_Size : Natural) is
-      begin
-         Step (Writers.Put_Word (Out_Bytes, 0));
-         Step (Writers.Put_Word (Out_Bytes, Pack));
-         Step (Writers.Put_Long (Out_Bytes, 0));
-         Step (Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Horizontal_Resolution)));
-         Step (Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Vertical_Resolution)));
-         Step (Writers.Put_Word (Out_Bytes, Pixel_Type));
-         Step (Writers.Put_Word (Out_Bytes, Pixel_Size));
-         Step (Writers.Put_Word (Out_Bytes, Component_Count));
-         Step (Writers.Put_Word (Out_Bytes, Component_Size));
-         for Index in 1 .. 3 loop  --  planeBytes, pmTable, pmReserved
-            Step (Writers.Put_Long (Out_Bytes, 0));
-         end loop;
-      end Put_Pixmap_Tail;
-
-      --  One row as it is stored before packing.
-      procedure Fill_Row (Y : Natural; Row : out Streams.Byte_Array) is
-      begin
-         Row := [others => 0];
-         for X in 0 .. Width - 1 loop
-            declare
-               Item : constant Pixel := Pixel_At (Image, X, Y);
-            begin
-               case Layout is
-                  when Direct_32 =>
-                     if Stored < Internal.Smallest_Packed_Row_Bytes then
-                        --  Unpacked chunky pixels: pad (or alpha), red, green, blue.
-                        Row (Row'First + 4 * X .. Row'First + 4 * X + 3) :=
-                          [(if Components = 4 then Item.Alpha else 0), Item.Color.Red, Item.Color.Green,
-                           Item.Color.Blue];
-                     else
-                        declare
-                           Red_Plane : constant Natural := (if Components = 4 then Width else 0);
-                        begin
-                           if Components = 4 then
-                              Row (Row'First + X) := Item.Alpha;
-                           end if;
-                           Row (Row'First + Red_Plane + X) := Item.Color.Red;
-                           Row (Row'First + Red_Plane + Width + X) := Item.Color.Green;
-                           Row (Row'First + Red_Plane + 2 * Width + X) := Item.Color.Blue;
-                        end;
-                     end if;
-                  when Indexed_8 =>
-                     Row (Row'First + X) := Byte (Colors.Indexes.Element (Key (Item.Color)));
-                  when others =>
-                     if Luminance (Item.Color) < Natural (Settings.Mono_Threshold) then
-                        Row (Row'First + X / 8) := Row (Row'First + X / 8) or Byte (2 ** (7 - X mod 8));
-                     end if;
-               end case;
-            end;
-         end loop;
-      end Fill_Row;
    begin
-      Writers.Start_Picture (Out_Bytes);
-      Step (Writers.Put_Word (Out_Bytes, Natural (Picture_Size mod 16#1_0000#)));
-      Step (Writers.Put_Rect (Out_Bytes, Frame));
-      Step (Writers.Put_Word (Out_Bytes, Natural (Opcodes.Version_Op)));
-      Step (Writers.Put_Word (Out_Bytes, 16#02FF#));
-      --  HeaderOp, extended version 2: -2, reserved, the resolution, the frame, reserved.
-      Step (Writers.Put_Word (Out_Bytes, Natural (Opcodes.Header_Op)));
-      Step (Writers.Put_Word (Out_Bytes, -2));
-      Step (Writers.Put_Word (Out_Bytes, 0));
-      Step (Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Horizontal_Resolution)));
-      Step (Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Vertical_Resolution)));
-      Step (Writers.Put_Rect (Out_Bytes, Frame));
-      Step (Writers.Put_Long (Out_Bytes, 0));
-      Step (Writers.Put_Word (Out_Bytes, Natural (Opcodes.Default_Hilite)));
-      Step (Writers.Put_Word (Out_Bytes, Natural (Opcodes.Clip)));
-      Step (Writers.Put_Word (Out_Bytes, 10));
-      Step (Writers.Put_Rect (Out_Bytes, Frame));
-
-      case Layout is
-         when Direct_32 =>
-            Step (Writers.Put_Word (Out_Bytes, Natural (Opcodes.Direct_Bits_Rect)));
-            Step (Writers.Put_Long (Out_Bytes, 16#0000_00FF#));  --  baseAddr
-            Step (Writers.Put_Word (Out_Bytes, 16#8000# + Stored));
-            Step (Writers.Put_Rect (Out_Bytes, Frame));
-            Put_Pixmap_Tail (Pack => 4, Pixel_Type => 16, Pixel_Size => 32, Component_Count => Components,
-                             Component_Size => 8);
-         when Indexed_8 =>
-            Step (Writers.Put_Word (Out_Bytes, Natural (Opcodes.Pack_Bits_Rect)));
-            Step (Writers.Put_Word (Out_Bytes, 16#8000# + Stored));
-            Step (Writers.Put_Rect (Out_Bytes, Frame));
-            Put_Pixmap_Tail (Pack => 0, Pixel_Type => 0, Pixel_Size => 8, Component_Count => 1, Component_Size => 8);
-            --  The color table: each entry's value is its index; 8-bit components widened to 16 bits.
-            Step (Writers.Put_Long (Out_Bytes, 0));
-            Step (Writers.Put_Word (Out_Bytes, 0));
-            Step (Writers.Put_Word (Out_Bytes, Natural (Colors.Colors.Length) - 1));
-            for Index in 0 .. Natural (Colors.Colors.Length) - 1 loop
-               declare
-                  Color : constant Images.RGB_Color := Colors.Colors (Index);
-               begin
-                  Step (Writers.Put_Word (Out_Bytes, Index));
-                  Step (Writers.Put_Word (Out_Bytes, 257 * Natural (Color.Red)));
-                  Step (Writers.Put_Word (Out_Bytes, 257 * Natural (Color.Green)));
-                  Step (Writers.Put_Word (Out_Bytes, 257 * Natural (Color.Blue)));
-               end;
-            end loop;
-         when others =>
-            Step (Writers.Put_Word (Out_Bytes, Natural (Opcodes.Pack_Bits_Rect)));
-            Step (Writers.Put_Word (Out_Bytes, Stored));
-            Step (Writers.Put_Rect (Out_Bytes, Frame));
-      end case;
-      Step (Writers.Put_Rect (Out_Bytes, Frame));  --  srcRect
-      Step (Writers.Put_Rect (Out_Bytes, Frame));  --  dstRect
-      Step (Writers.Put_Word (Out_Bytes, 0));      --  srcCopy
-
-      --  Rows: unpacked below 8 rowBytes, otherwise PackBits behind a byte count, or a word count above 250.
-      declare
-         Row : Streams.Byte_Array_Access := new Streams.Byte_Array (1 .. Unpacked_Length);
-         Packed : Streams.Byte_Array_Access :=
-           new Streams.Byte_Array (1 .. Internal.PackBits.Worst_Case (Unpacked_Length, 1));
-         Packed_Length : Natural;
-      begin
-         for Y in 0 .. Height - 1 loop
-            exit when not Results.Succeeded (Outcome);
-            Fill_Row (Y, Row.all);
-            if Stored < Internal.Smallest_Packed_Row_Bytes then
-               Step (Writers.Put (Out_Bytes, Row.all));
-            else
-               Internal.PackBits.Pack (Row.all, 1, Packed.all, Packed_Length);
-               if Stored > Internal.Byte_Count_Row_Bytes then
-                  Step (Writers.Put_Word (Out_Bytes, Packed_Length));
-               else
-                  Step (Writers.Put_Byte (Out_Bytes, Packed_Length));
-               end if;
-               Step (Writers.Put (Out_Bytes, Packed (1 .. Packed_Length)));
-            end if;
-         end loop;
-         Streams_Free (Row);
-         Streams_Free (Packed);
-      end;
-      Step (Writers.Align (Out_Bytes));
-      Step (Writers.Put_Word (Out_Bytes, Natural (Opcodes.End_Picture)));
+      Put_Header (Out_Bytes, Settings, Item, Picture_Size, Outcome);
+      Put_Bits_Header (Out_Bytes, Settings, Item, Colors, Outcome);
+      Put_Rows (Out_Bytes, Image, Settings, Item, Colors, Outcome);
+      Step (Outcome, Writers.Align (Out_Bytes));
+      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.End_Picture)));
       return Outcome;
    end Write_Picture;
 
@@ -324,7 +397,7 @@ package body Pictlib.Encoding is
          --  Auto takes Mono_1 only for pure black and white, which it must keep exactly, whatever the
          --  threshold: one between the two does.
          if Layout = Mono_1 then
-            Effective.Mono_Threshold := 128;
+            Effective.Mono_Threshold := Default_Mono_Threshold;
          end if;
       end if;
       if Layout = Indexed_8 and then Natural (Colors.Colors.Length) > Largest_Colors then
@@ -336,14 +409,12 @@ package body Pictlib.Encoding is
                   (Expected => Largest_Colors, Actual => Byte_Count (Colors.Colors.Length), others => <>))));
       end if;
       declare
-         Width : constant Natural := Natural (Image.Descriptor.Width);
-         Stored : constant Natural := Row_Bytes (Layout, Width);
-         Buffers : constant Byte_Count :=
-           Byte_Count (4 * Width) + Byte_Count (Internal.PackBits.Worst_Case (4 * Width, 1));
+         Item : constant Plan := Plan_For (Image, Effective, Layout);
+         Buffers : constant Byte_Count := Row_Buffer_Bytes (Item);
       begin
-         if Stored > Largest_Row_Bytes then
+         if Item.Stored > Largest_Row_Bytes then
             --  rowBytes must stay below 16#4000#.
-            return Fail (Object, Invalid (Largest_Row_Bytes, Byte_Count (Stored)));
+            return Fail (Object, Invalid (Largest_Row_Bytes, Byte_Count (Item.Stored)));
          elsif Buffers > Budget.Max_Allocation_Bytes then
             return Fail
               (Object,
