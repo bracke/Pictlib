@@ -4,7 +4,8 @@
 --  limits, not the clock, so time only reports: an input taking longer than Slow_Seconds is slow, one taking
 --  longer than Stuck_Seconds stuck, and both are saved under artifacts/fuzz for replay; a stuck input fails the
 --  run only with --fail-stuck, for a machine whose speed is known. Arguments: [iterations] [seed]
---  [--fail-stuck]; seeds are taken in file-name order, so a pair is deterministic everywhere.
+--  [--fail-stuck]; seeds are taken in file-name order, so a pair is deterministic everywhere. With --replay
+--  FILE..., each saved input is run through the same checks instead, and its time printed.
 --  Run from the tests directory.
 with Ada.Calendar;
 with Ada.Command_Line;
@@ -44,10 +45,14 @@ procedure Pictlib_Fuzz is
 
    Fail_Stuck : constant Boolean :=
      (for some Index in 1 .. Ada.Command_Line.Argument_Count => Ada.Command_Line.Argument (Index) = "--fail-stuck");
+   Replay : constant Boolean :=
+     Ada.Command_Line.Argument_Count >= 1 and then Ada.Command_Line.Argument (1) = "--replay";
    Iterations : constant Natural :=
-     (if Ada.Command_Line.Argument_Count >= 1 then Natural'Value (Ada.Command_Line.Argument (1)) else 2_000);
+     (if Ada.Command_Line.Argument_Count >= 1 and then not Replay then Natural'Value (Ada.Command_Line.Argument (1))
+      else 2_000);
    State : Interfaces.Unsigned_64 :=
-     (if Ada.Command_Line.Argument_Count >= 2 then Interfaces.Unsigned_64'Value (Ada.Command_Line.Argument (2))
+     (if Ada.Command_Line.Argument_Count >= 2 and then not Replay
+      then Interfaces.Unsigned_64'Value (Ada.Command_Line.Argument (2))
       else 16#9E37_79B9_7F4A_7C15#);
 
    --  xorshift64*.
@@ -310,7 +315,40 @@ procedure Pictlib_Fuzz is
    end Save;
 
    Defects, Slow, Stuck : Natural := 0;
+
+   --  Run each saved input named after --replay through the same checks, printing how long it took.
+   procedure Replay_Inputs is
+   begin
+      for Index in 2 .. Ada.Command_Line.Argument_Count loop
+         declare
+            use Ada.Streams.Stream_IO;
+            Name : constant String := Ada.Command_Line.Argument (Index);
+            File : File_Type;
+            Data : constant Pictlib.Streams.Byte_Array_Access :=
+              new Bytes (1 .. Natural (Ada.Directories.Size (Name)));
+            Started : Ada.Calendar.Time;
+         begin
+            Open (File, In_File, Name);
+            Bytes'Read (Stream (File), Data.all);
+            Close (File);
+            Started := Ada.Calendar.Clock;
+            Exercise (Data.all);
+            Ada.Text_IO.Put_Line (Name & Duration'Image (Ada.Calendar.Clock - Started) & " s");
+         exception
+            when Error : others =>
+               Defects := Defects + 1;
+               Ada.Text_IO.Put_Line ("DEFECT " & Name & ": " & Ada.Exceptions.Exception_Information (Error));
+         end;
+      end loop;
+   end Replay_Inputs;
 begin
+   if Replay then
+      Replay_Inputs;
+      if Defects > 0 then
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+      end if;
+      return;
+   end if;
    Add_Files ("fixtures/external");
    Add_Files ("fixtures/real_world/libreoffice/pass");
    Add_Encoded (Pictlib_Testing.Samples.Gradient, Pictlib.Encoding.Direct_32);

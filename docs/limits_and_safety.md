@@ -54,6 +54,8 @@ repeats short chunks up to 64 KiB, as runaway origins, pens and text do.
   machine can be that slow.
 - Seeds are taken in file-name order, so a run's arguments reproduce it on
   any machine.
+- `pictlib_fuzz --replay FILE...` runs saved inputs through the same checks
+  and prints how long each took.
 
 `hostile.*` in the AUnit suite holds the cases that once overflowed or worked
 without bound; they assert what work costs through the budgets, never the
