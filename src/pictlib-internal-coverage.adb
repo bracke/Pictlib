@@ -34,14 +34,6 @@ package body Pictlib.Internal.Coverage is
 
    function Cosine (Degrees : Integer) return Wide is (Sine (Degrees + 90));
 
-   function Floor_Divide (Left, Right : Long_Long_Integer) return Long_Long_Integer is
-     (if Left >= 0 then Left / Right else -((-Left + Right - 1) / Right))
-     with Pre => Right > 0;
-
-   function Ceiling_Divide (Left, Right : Long_Long_Integer) return Long_Long_Integer is
-     (-Floor_Divide (-Left, Right))
-     with Pre => Right > 0;
-
    function Square_Root (Value : Long_Long_Integer) return Long_Long_Integer is
       Guess : Long_Long_Integer;
       Next : Long_Long_Integer;

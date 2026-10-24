@@ -13,7 +13,6 @@ package body Pictlib.Internal.Container is
    use type Geometry.Fixed;
    use type Errors.Error_Code;
 
-   File_Header_Bytes : constant := 512;
    --  picSize and picFrame precede the version opcode.
    Version_Offset : constant := 10;
    Header_Op_Bytes : constant := 24;

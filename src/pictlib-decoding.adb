@@ -11,16 +11,20 @@ with Pictlib.Opcodes;
 package body Pictlib.Decoding is
    use type Errors.Error_Code;
 
-   procedure Bind (Object : in out Decoder; Input : not null access Streams.Source'Class) is
+   --  Everything known about the last picture goes; the options and limits stay.
+   procedure Discard_Picture (Object : in out Decoder) is
    begin
-      Internal.Sessions.Clear (Object.Inner.Session);
-      Internal.Picture_Stream.Bind (Object.Inner.Session.Stream, Input, Object.Inner.Session.Budget.Max_Picture_Bytes);
-      Object.Inner.Session.Strictness := Object.Decode_Options.Strictness;
-      Object.Inner.Session.Retention := Object.Decode_Options.Retention;
       Object.Inner.Info := (others => <>);
       Object.Inner.Header_Events := [others => (others => <>)];
       Object.Inner.Header_Event_Count := 0;
       Object.First_Error := Errors.Make (Errors.No_Error);
+   end Discard_Picture;
+
+   procedure Bind (Object : in out Decoder; Input : not null access Streams.Source'Class) is
+   begin
+      Internal.Sessions.Start
+        (Object.Inner.Session, Input, Object.Decode_Options.Strictness, Object.Decode_Options.Retention);
+      Discard_Picture (Object);
       Object.Current_State := Ready;
    end Bind;
 
@@ -287,9 +291,7 @@ package body Pictlib.Decoding is
    procedure Finalize (Object : in out Decoder) is
    begin
       Internal.Sessions.Clear (Object.Inner.Session);
-      Object.Inner.Info := (others => <>);
-      Object.Inner.Header_Event_Count := 0;
-      Object.First_Error := Errors.Make (Errors.No_Error);
+      Discard_Picture (Object);
       Object.Current_State := Created;
    end Finalize;
 end Pictlib.Decoding;

@@ -5,6 +5,7 @@ with Pictlib;
 with Pictlib.Errors;
 with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Checked_Arithmetic;
+with Pictlib.Internal.Writers;
 with Pictlib.Results;
 with Pictlib.Streams;
 
@@ -16,12 +17,14 @@ package body Pictlib_Testing.Test_Bytes is
    use type Pictlib.Byte_Count;
    use type Pictlib.Coordinate;
    use type Pictlib.Errors.Error_Code;
+   use type Pictlib.Limit_Kind;
    use type Pictlib.Opcode;
    use type Pictlib.Source_Offset;
    use type Pictlib.Streams.Byte_Array;
 
    package Bytes renames Pictlib.Internal.Bytes;
    package Arithmetic renames Pictlib.Internal.Checked_Arithmetic;
+   package Writers renames Pictlib.Internal.Writers;
 
    procedure Big_Endian_Reads (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Truncated_Reads_Carry_Opcode (T : in out AUnit.Test_Cases.Test_Case'Class);
@@ -98,27 +101,26 @@ package body Pictlib_Testing.Test_Bytes is
    procedure Big_Endian_Writes (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
       Storage : aliased Pictlib.Streams.Byte_Array := [1 .. 9 => 0];
-      Short : aliased Pictlib.Streams.Byte_Array := [1 .. 3 => 0];
-      Destination : Pictlib.Streams.Fixed_Buffer_Destination;
+      Destination : aliased Pictlib.Streams.Fixed_Buffer_Destination;
+      Writer : Writers.Writer;
       Outcome : Pictlib.Results.Result;
    begin
       Pictlib.Streams.Open (Destination, Storage'Unchecked_Access, Max_Transfer => 1);
-      Outcome := Bytes.Write_Byte (Destination, 16#FF#);
+      Writers.Start (Writer, Destination'Access, Max_Bytes => 9);
+      Outcome := Writers.Put_Byte (Writer, 16#FF#);
       Assert (Pictlib.Results.Succeeded (Outcome), "byte write failed");
-      Outcome := Bytes.Write_U16_BE (Destination, 16#0C00#);
+      Outcome := Writers.Put_Word (Writer, 16#0C00#);
       Assert (Pictlib.Results.Succeeded (Outcome), "16-bit write failed");
-      Outcome := Bytes.Write_U32_BE (Destination, 16#FFFE_0000#);
+      Outcome := Writers.Put_Long (Writer, 16#FFFE_0000#);
       Assert (Pictlib.Results.Succeeded (Outcome), "32-bit write failed");
-      Outcome := Bytes.Write_Coordinate (Destination, -2);
+      Outcome := Writers.Put_Word (Writer, -2);
       Assert (Pictlib.Results.Succeeded (Outcome), "coordinate write failed");
       Assert (Storage = [16#FF#, 16#0C#, 16#00#, 16#FF#, 16#FE#, 16#00#, 16#00#, 16#FF#, 16#FE#],
               "writes are not big-endian");
-
-      Pictlib.Streams.Open (Destination, Short'Unchecked_Access);
-      Outcome := Bytes.Write_U32_BE (Destination, 1, Bytes.Within (16#00FF#));
-      Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded, "overfull write has the wrong error");
-      Assert (Outcome.First_Error.Context.Has_Opcode and then Outcome.First_Error.Context.Op = 16#00FF#,
-              "overfull write lost the opcode context");
+      Outcome := Writers.Put_Byte (Writer, 0);
+      Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
+              and then Outcome.First_Error.Context.Limit = Pictlib.Output_Byte_Limit,
+              "a write past the writer's limit has the wrong error");
    end Big_Endian_Writes;
 
    procedure Coordinates_Are_Twos_Complement (T : in out AUnit.Test_Cases.Test_Case'Class) is

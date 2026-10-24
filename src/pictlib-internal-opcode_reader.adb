@@ -12,7 +12,6 @@ with Pictlib.Opcodes;
 with Pictlib.Streams;
 
 package body Pictlib.Internal.Opcode_Reader is
-   use type Interfaces.Unsigned_16;
    use type Errors.Error_Code;
    use type Opcodes.Data_Rule;
 
@@ -28,7 +27,7 @@ package body Pictlib.Internal.Opcode_Reader is
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
-      return Sessions.Skip_Data (S, Sessions.Smallest_Polygon - 2 + 4 * Byte_Count (Points));
+      return Sessions.Skip_Data (S, Smallest_Polygon - 2 + Polygon_Point_Bytes * Byte_Count (Points));
    end Skip_Polygon;
 
    function Skip_Pixel_Pattern (S : in out Session) return Results.Result is
@@ -38,22 +37,22 @@ package body Pictlib.Internal.Opcode_Reader is
       Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
    begin
       if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Skip_Data (S, 8);  --  pat1Data, the 1-bit fallback pattern
+         Outcome := Sessions.Skip_Data (S, Bit_Pattern_Bytes);  --  pat1Data, the 1-bit fallback pattern
       end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
       case Pattern_Type is
-         when 1 =>
+         when Color_Pattern_Type =>
             Outcome := Pixmaps.Read_Pattern_Header (S, Header, For_Decoding => False);
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
             return Pixmaps.Skip_Pixels (S, Header);
-         when 2 =>
-            return Sessions.Skip_Data (S, 6);  --  an RGB color to dither
+         when Dither_Pattern_Type =>
+            return Sessions.Skip_Data (S, RGB_Color_Bytes);
          when others =>
-            return Sessions.Fail (S, Errors.Pattern_Invalid, 2, Byte_Count (Pattern_Type));
+            return Sessions.Fail (S, Errors.Pattern_Invalid, Dither_Pattern_Type, Byte_Count (Pattern_Type));
       end case;
    end Skip_Pixel_Pattern;
 
@@ -123,8 +122,7 @@ package body Pictlib.Internal.Opcode_Reader is
       end if;
       declare
          Name_Length : constant Natural := Natural (Data (3));
-         Font : constant Interfaces.Unsigned_16 :=
-           Interfaces.Shift_Left (Interfaces.Unsigned_16 (Data (1)), 8) or Interfaces.Unsigned_16 (Data (2));
+         Font : constant Interfaces.Unsigned_16 := Bytes.Word_At (Data.all, Data'First);
       begin
          if Paint /= null then
             Outcome := Sessions.Admit_Aggregate (S, Byte_Count (Name_Length) + Sessions.Item_Overhead_Bytes);

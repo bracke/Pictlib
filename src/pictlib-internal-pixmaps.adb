@@ -1,6 +1,7 @@
 with Pictlib.Internal.Checked_Arithmetic;
 with Ada.Unchecked_Deallocation;
 with Pictlib.Errors;
+with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Region_Reader;
 with Pictlib.Internal.PackBits;
 with Pictlib.Opcodes;
@@ -14,6 +15,98 @@ package body Pictlib.Internal.Pixmaps is
    Color_Entry_Bytes : constant := 8;
 
    procedure Free is new Ada.Unchecked_Deallocation (Color_Row, Color_Row_Access);
+
+   --  Read pixmap tail.
+   --  @param S Session positioned after a PixMap's rowBytes and bounds.
+   --  @param Fields Pack type, pixel size and component count.
+   --  @return Success, or Pixmap_Invalid for an unknown pixel size or pack type.
+   function Read_Pixmap_Tail (S : in out Sessions.Session; Fields : out Pixmap_Fields) return Results.Result;
+   --  Read color table.
+   --  @param S Session positioned at a color table.
+   --  @param Table The colors it defines, reduced to 8 bits.
+   --  @return Success, or Color_Table_Invalid for more than 256 entries or (strictly) an index above 255.
+   function Read_Color_Table (S : in out Sessions.Session; Table : out Color_Table) return Results.Result;
+   --  Skip color table.
+   --  @param S Session positioned at a color table.
+   --  @return Success, or Color_Table_Invalid for more than 256 entries.
+   function Skip_Color_Table (S : in out Sessions.Session) return Results.Result;
+
+   --  Decide layout.
+   --  @param S Session, for diagnostics.
+   --  @param Header A header whose Op, Is_Pixmap, Row_Bytes, Width and Fields are set; its row layout and pixel
+   --  encoding are filled in.
+   --  @param For_Decoding True to also check that rows cover the width, as decoding needs.
+   --  @return Success, or Pixmap_Invalid when depth, pack type, components and row length disagree.
+   function Decide_Layout (S : Sessions.Session; Header : in out Bits_Header; For_Decoding : Boolean)
+     return Results.Result;
+
+   --  Read packed count: the byte count before a packed row, a byte when Row_Bytes is at most 250, else a word.
+   --  @param S Session positioned at the count.
+   --  @param Row_Bytes The pixmap's row length.
+   --  @param Count The packed row's length.
+   --  @return Operation result.
+   function Read_Packed_Count (S : in out Sessions.Session; Row_Bytes : Natural; Count : out Natural)
+     return Results.Result is
+   begin
+      if Row_Bytes > Byte_Count_Row_Bytes then
+         declare
+            Word : Interfaces.Unsigned_16;
+            Outcome : constant Results.Result := Sessions.Read_Word (S, Word);
+         begin
+            Count := Natural (Word);
+            return Outcome;
+         end;
+      end if;
+      declare
+         Small : Byte;
+         Outcome : constant Results.Result := Sessions.Read_Count_Byte (S, Small);
+      begin
+         Count := Natural (Small);
+         return Outcome;
+      end;
+   end Read_Packed_Count;
+
+   --  Skip rows: unpacked rows of Raw_Row_Length bytes, or rows each prefixed by its packed count.
+   function Skip_Rows
+     (S : in out Sessions.Session;
+      Row_Bytes : Natural;
+      Height : Natural;
+      Packed : Boolean;
+      Raw_Row_Length : Byte_Count) return Results.Result
+   is
+      Outcome : Results.Result;
+      Count : Natural;
+   begin
+      if not Packed then
+         --  A saturated product is refused by the per-opcode budget.
+         return Sessions.Skip_Data (S, Checked_Arithmetic.Saturating_Multiply (Raw_Row_Length, Byte_Count (Height)));
+      end if;
+      for Row in 0 .. Height - 1 loop
+         Outcome := Read_Packed_Count (S, Row_Bytes, Count);
+         if Results.Succeeded (Outcome) then
+            Outcome := Sessions.Skip_Data (S, Byte_Count (Count));
+         end if;
+         if not Results.Succeeded (Outcome) then
+            return Results.Failure
+              ((Outcome.First_Error with delta
+                  Context => (Outcome.First_Error.Context with delta Row => Row_Index (Row))));
+         end if;
+      end loop;
+      return Results.Success;
+   end Skip_Rows;
+
+   --  A pixmap's extent: Pixmap_Invalid for inverted bounds.
+   function Extent (S : Sessions.Session; Bounds : Geometry.Rect; Width, Height : out Natural) return Results.Result is
+   begin
+      Width := 0;
+      Height := 0;
+      if Geometry.Width (Bounds) < 0 or else Geometry.Height (Bounds) < 0 then
+         return Sessions.Fail (S, Errors.Pixmap_Invalid);
+      end if;
+      Width := Geometry.Width (Bounds);
+      Height := Geometry.Height (Bounds);
+      return Results.Success;
+   end Extent;
 
    function Read_Pixmap_Tail (S : in out Sessions.Session; Fields : out Pixmap_Fields) return Results.Result is
       Version, Pack, Pixel_Type, Pixel_Size, Component_Count : Interfaces.Unsigned_16 := 0;
@@ -112,7 +205,7 @@ package body Pictlib.Internal.Pixmaps is
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
-            Value := Interfaces.Shift_Left (Interfaces.Unsigned_16 (Item (1)), 8) or Interfaces.Unsigned_16 (Item (2));
+            Value := Bytes.Word_At (Item, 1);
             Index := (if (Flags and Device) /= 0 then Position else Natural (Value));
             if Index > 255 then
                --  Leniently the entry is dropped.
@@ -270,7 +363,7 @@ package body Pictlib.Internal.Pixmaps is
          Outcome := (if Read_Mask then Region_Reader.Read (S, Mask) else Region_Reader.Skip (S));
       end if;
       if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Extent (S, Header.Bounds, Header.Width, Header.Height);
+         Outcome := Extent (S, Header.Bounds, Header.Width, Header.Height);
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Decide_Layout (S, Header, For_Decoding);
@@ -280,8 +373,8 @@ package body Pictlib.Internal.Pixmaps is
 
    function Skip_Pixels (S : in out Sessions.Session; Header : Bits_Header) return Results.Result is
      (if Header.Layout = Unpacked
-      then Sessions.Skip_Rows (S, Header.Row_Bytes, Header.Height, False, Byte_Count (Header.Raw_Length))
-      else Sessions.Skip_Rows (S, Header.Row_Bytes, Header.Height, True, 0));
+      then Skip_Rows (S, Header.Row_Bytes, Header.Height, False, Byte_Count (Header.Raw_Length))
+      else Skip_Rows (S, Header.Row_Bytes, Header.Height, True, 0));
 
    function Stored_Length (Header : Bits_Header) return Natural is
      (if Header.Layout = Unpacked then Header.Raw_Length
@@ -316,7 +409,7 @@ package body Pictlib.Internal.Pixmaps is
          Outcome := (if For_Decoding then Read_Color_Table (S, Header.Table) else Skip_Color_Table (S));
       end if;
       if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Extent (S, Header.Bounds, Header.Width, Header.Height);
+         Outcome := Extent (S, Header.Bounds, Header.Width, Header.Height);
       end if;
       if Results.Succeeded (Outcome) and then (Header.Width = 0 or else Header.Height = 0) then
          Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 1, 0);
@@ -404,9 +497,7 @@ package body Pictlib.Internal.Pixmaps is
          when RGB_555 =>
             for X in 0 .. Width - 1 loop
                declare
-                  Word : constant Interfaces.Unsigned_16 :=
-                    Interfaces.Shift_Left (Interfaces.Unsigned_16 (Data (First + 2 * X)), 8)
-                    or Interfaces.Unsigned_16 (Data (First + 2 * X + 1));
+                  Word : constant Interfaces.Unsigned_16 := Bytes.Word_At (Data, First + 2 * X);
                begin
                   Decoder.Colors (X) :=
                     (Red => Expand_5 (Interfaces.Shift_Right (Word, 10) and 31),
@@ -451,21 +542,7 @@ package body Pictlib.Internal.Pixmaps is
             Written : Natural;
             Status : PackBits.Unpack_Status;
          begin
-            if Header.Row_Bytes > Byte_Count_Row_Bytes then
-               declare
-                  Word : Interfaces.Unsigned_16;
-               begin
-                  Outcome := Sessions.Read_Word (S, Word);
-                  Count := Natural (Word);
-               end;
-            else
-               declare
-                  Small : Byte;
-               begin
-                  Outcome := Sessions.Read_Count_Byte (S, Small);
-                  Count := Natural (Small);
-               end;
-            end if;
+            Outcome := Read_Packed_Count (S, Header.Row_Bytes, Count);
             if Results.Succeeded (Outcome) then
                Outcome := Sessions.Read_Into (S, Decoder.Stored (1 .. Count));
             end if;

@@ -1,5 +1,3 @@
-with Pictlib.Streams;
-
 package body Pictlib.Internal.Canvas is
    procedure Bind (Target : out Canvas; View : Images.Mutable_Image_View) is
    begin
@@ -7,9 +5,7 @@ package body Pictlib.Internal.Canvas is
    end Bind;
 
    function Position (Target : Canvas; X, Y : Natural) return Positive is
-     (Target.View.Storage'First
-      + Natural (Byte_Count (Y) * Byte_Count (Target.View.Descriptor.Stride)
-                 + Byte_Count (X) * Images.Bytes_Per_Pixel (Target.View.Descriptor.Format)));
+     (Target.View.Storage'First + Pixel_Offset (Target.View.Descriptor, X, Y));
 
    procedure Put (Target : in out Canvas; X, Y : Natural; Color : Images.RGB_Color) is
       At_Pixel : constant Positive := Position (Target, X, Y);
@@ -55,18 +51,7 @@ package body Pictlib.Internal.Canvas is
    end Put_Span;
 
    function Get (Target : Canvas; X, Y : Natural) return Images.RGB_Color is
-      At_Pixel : constant Positive := Position (Target, X, Y);
-      Storage : Streams.Byte_Array renames Target.View.Storage.all;
-   begin
-      case Target.View.Descriptor.Format is
-         when RGB_24 | RGBA_32 =>
-            return (Storage (At_Pixel), Storage (At_Pixel + 1), Storage (At_Pixel + 2));
-         when BGR_24 | BGRA_32 =>
-            return (Storage (At_Pixel + 2), Storage (At_Pixel + 1), Storage (At_Pixel));
-         when ARGB_32 =>
-            return (Storage (At_Pixel + 1), Storage (At_Pixel + 2), Storage (At_Pixel + 3));
-      end case;
-   end Get;
+     (Color_At (Target.View.Descriptor.Format, Target.View.Storage.all, Position (Target, X, Y)));
 
    --  The first row pixel by pixel, then every other row as a copy of it.
    procedure Fill (Target : in out Canvas; Color : Images.RGB_Color) is

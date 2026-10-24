@@ -1,3 +1,4 @@
+with Pictlib.Internal.Canvas;
 with Ada.Containers.Hashed_Maps;
 with Ada.Unchecked_Deallocation;
 with Ada.Containers.Vectors;
@@ -24,20 +25,11 @@ package body Pictlib.Encoding is
    end record;
 
    function Pixel_At (Image : Images.Image_View; X, Y : Natural) return Pixel is
-      Descriptor : constant Images.Image_Descriptor := Image.Descriptor;
-      At_Pixel : constant Positive :=
-        Image.Storage'First
-        + Natural (Byte_Count (Y) * Byte_Count (Descriptor.Stride)
-                   + Byte_Count (X) * Images.Bytes_Per_Pixel (Descriptor.Format));
-      Data : Streams.Byte_Array renames Image.Storage.all;
+      Format : constant Pixel_Format := Image.Descriptor.Format;
+      At_Pixel : constant Positive := Image.Storage'First + Internal.Canvas.Pixel_Offset (Image.Descriptor, X, Y);
    begin
-      case Descriptor.Format is
-         when RGB_24 => return ((Data (At_Pixel), Data (At_Pixel + 1), Data (At_Pixel + 2)), 16#FF#);
-         when BGR_24 => return ((Data (At_Pixel + 2), Data (At_Pixel + 1), Data (At_Pixel)), 16#FF#);
-         when RGBA_32 => return ((Data (At_Pixel), Data (At_Pixel + 1), Data (At_Pixel + 2)), Data (At_Pixel + 3));
-         when BGRA_32 => return ((Data (At_Pixel + 2), Data (At_Pixel + 1), Data (At_Pixel)), Data (At_Pixel + 3));
-         when ARGB_32 => return ((Data (At_Pixel + 1), Data (At_Pixel + 2), Data (At_Pixel + 3)), Data (At_Pixel));
-      end case;
+      return (Internal.Canvas.Color_At (Format, Image.Storage.all, At_Pixel),
+              Internal.Canvas.Alpha_At (Format, Image.Storage.all, At_Pixel));
    end Pixel_At;
 
    function Key (Color : Images.RGB_Color) return Natural is
@@ -365,7 +357,7 @@ package body Pictlib.Encoding is
 
       --  picSize needs the picture's length before the picture is written: measure it first.
       declare
-         Header_Bytes : constant Byte_Count := (if Settings.File_Header then 512 else 0);
+         Header_Bytes : constant Byte_Count := (if Settings.File_Header then Internal.File_Header_Bytes else 0);
          Measure : Writers.Writer;
          Output : Writers.Writer;
          Outcome : Results.Result;
@@ -376,7 +368,7 @@ package body Pictlib.Encoding is
          if Results.Succeeded (Outcome) then
             Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes);
             if Settings.File_Header then
-               Outcome := Writers.Put (Output, [1 .. 512 => 0]);
+               Outcome := Writers.Put (Output, [1 .. Internal.File_Header_Bytes => 0]);
             end if;
             if Results.Succeeded (Outcome) then
                Outcome := Write_Picture (Output, Image, Effective, Layout, Colors, Writers.Picture_Count (Measure));

@@ -2,6 +2,7 @@ with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Geometry;
 with Pictlib.Images;
+with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Coverage;
 with Pictlib.Internal.Typesetting;
 with Pictlib.Internal.Patterns;
@@ -16,14 +17,11 @@ with Pictlib.Streams;
 
 package body Pictlib.Internal.Drawing is
    use type Opcodes.Data_Rule;
-   use type Interfaces.Unsigned_16;
-   use type Interfaces.Unsigned_32;
 
    subtype Area is Regions.Area;
    subtype Point is Coverage.Point;
 
-   function Signed (Value : Interfaces.Unsigned_16) return Integer is
-     (if Value >= 16#8000# then Integer (Value) - 16#1_0000# else Integer (Value));
+   function Signed (Value : Interfaces.Unsigned_16) return Integer is (Integer (Bytes.To_Coordinate (Value)));
 
    function Signed (Value : Byte) return Integer is
      (if Value >= 16#80# then Integer (Value) - 16#100# else Integer (Value));
@@ -52,15 +50,6 @@ package body Pictlib.Internal.Drawing is
       Width := Signed (H);
       return Outcome;
    end Read_Size;
-
-   function Read_Color (S : in out Sessions.Session; Color : out Images.RGB_Color) return Results.Result is
-      Data : Streams.Byte_Array (1 .. 6);
-      Outcome : constant Results.Result := Sessions.Read_Into (S, Data);
-   begin
-      --  The high byte of each 16-bit component.
-      Color := (Data (1), Data (3), Data (5));
-      return Outcome;
-   end Read_Color;
 
    --  Classic QuickDraw's eight planar colors, as Color QuickDraw shows them.
    function Planar_Color (Value : Interfaces.Unsigned_32; Color : out Images.RGB_Color) return Boolean is
@@ -91,7 +80,7 @@ package body Pictlib.Internal.Drawing is
       Points.Clear;
       --  The points are kept, counted against the session's allocation total.
       if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Admit_Aggregate (S, Sessions.Point_Bytes * Byte_Count (Count));
+         Outcome := Sessions.Admit_Aggregate (S, Sessions.Point_Cost_Bytes * Byte_Count (Count));
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Sessions.Read_Bounds (S, Box);
@@ -212,7 +201,7 @@ package body Pictlib.Internal.Drawing is
                end if;
             end if;
             --  The polygon is copied for drawing; the copy counts against the aggregate allocation quota.
-            Outcome := Sessions.Admit_Aggregate (S, Sessions.Point_Bytes * Byte_Count (P.Last_Polygon.Length));
+            Outcome := Sessions.Admit_Aggregate (S, Sessions.Point_Cost_Bytes * Byte_Count (P.Last_Polygon.Length));
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
@@ -458,13 +447,13 @@ package body Pictlib.Internal.Drawing is
                end if;
             end;
          when 16#001A# =>
-            Outcome := Read_Color (S, P.Colors.Foreground);
+            Outcome := Sessions.Read_RGB (S, P.Colors.Foreground);
          when 16#001B# =>
-            Outcome := Read_Color (S, P.Colors.Background);
+            Outcome := Sessions.Read_RGB (S, P.Colors.Background);
          when 16#001D# =>
-            Outcome := Read_Color (S, P.Colors.Highlight);
+            Outcome := Sessions.Read_RGB (S, P.Colors.Highlight);
          when 16#001F# =>
-            Outcome := Read_Color (S, P.Colors.Operation);
+            Outcome := Sessions.Read_RGB (S, P.Colors.Operation);
          when 16#001C# =>
             P.Hilite_Next := True;
          when 16#001E# =>
@@ -488,9 +477,7 @@ package body Pictlib.Internal.Drawing is
                Value : Interfaces.Unsigned_32;
             begin
                Outcome := Sessions.Read_Long (S, Value);
-               P.Text_State.Space_Extra :=
-                 Geometry.Fixed (if Value >= 16#8000_0000# then Long_Long_Integer (Value) - 16#1_0000_0000#
-                                 else Long_Long_Integer (Value));
+               P.Text_State.Space_Extra := Geometry.Fixed (Bytes.To_Signed_32 (Value));
             end;
          when 16#000D# =>
             declare

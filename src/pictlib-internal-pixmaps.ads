@@ -57,30 +57,6 @@ package Pictlib.Internal.Pixmaps is
       Unpacked_Length : Natural := 0;
    end record;
 
-   --  Read pixmap tail.
-   --  @param S Session positioned after a PixMap's rowBytes and bounds.
-   --  @param Fields Pack type, pixel size and component count.
-   --  @return Success, or Pixmap_Invalid for an unknown pixel size or pack type.
-   function Read_Pixmap_Tail (S : in out Sessions.Session; Fields : out Pixmap_Fields) return Results.Result;
-   --  Read color table.
-   --  @param S Session positioned at a color table.
-   --  @param Table The colors it defines, reduced to 8 bits.
-   --  @return Success, or Color_Table_Invalid for more than 256 entries or (strictly) an index above 255.
-   function Read_Color_Table (S : in out Sessions.Session; Table : out Color_Table) return Results.Result;
-   --  Skip color table.
-   --  @param S Session positioned at a color table.
-   --  @return Success, or Color_Table_Invalid for more than 256 entries.
-   function Skip_Color_Table (S : in out Sessions.Session) return Results.Result;
-
-   --  Decide layout.
-   --  @param S Session, for diagnostics.
-   --  @param Header A header whose Op, Is_Pixmap, Row_Bytes, Width and Fields are set; its row layout and pixel
-   --  encoding are filled in.
-   --  @param For_Decoding True to also check that rows cover the width, as decoding needs.
-   --  @return Success, or Pixmap_Invalid when depth, pack type, components and row length disagree.
-   function Decide_Layout (S : Sessions.Session; Header : in out Bits_Header; For_Decoding : Boolean)
-     return Results.Result;
-
    --  Read bits header.
    --  @param S Session positioned after a bits opcode.
    --  @param Op The opcode.
@@ -115,8 +91,6 @@ package Pictlib.Internal.Pixmaps is
       Header : out Bits_Header;
       For_Decoding : Boolean) return Results.Result;
 
-   type Color_Row is array (Natural range <>) of Images.RGB_Color;
-
    --  Row decoder: holds the heap buffers one opcode's rows are decoded through.
    type Row_Decoder is limited private;
 
@@ -148,6 +122,8 @@ package Pictlib.Internal.Pixmaps is
    procedure Finish (Decoder : in out Row_Decoder);
 
 private
+   type Color_Row is array (Natural range <>) of Images.RGB_Color;
+
    type Color_Row_Access is access Color_Row;
 
    type Row_Decoder is limited record

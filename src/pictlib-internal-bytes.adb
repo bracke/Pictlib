@@ -1,8 +1,6 @@
 with Pictlib.Errors;
 
 package body Pictlib.Internal.Bytes is
-   use type Interfaces.Unsigned_16;
-   use type Interfaces.Unsigned_32;
 
    function With_Context (Item : Results.Result; Context : Opcode_Context) return Results.Result is
       Revised : Errors.Error;
@@ -105,11 +103,7 @@ package body Pictlib.Internal.Bytes is
       Raw : Interfaces.Unsigned_32;
       Outcome : constant Results.Result := Read_U32_BE (Object, Raw, Context);
    begin
-      if Raw >= 16#8000_0000# then
-         Value := Geometry.Fixed (Long_Long_Integer (Raw) - 16#1_0000_0000#);
-      else
-         Value := Geometry.Fixed (Raw);
-      end if;
+      Value := Geometry.Fixed (To_Signed_32 (Raw));
       return Outcome;
    end Read_Fixed;
 
@@ -136,48 +130,4 @@ package body Pictlib.Internal.Bytes is
       end if;
       return Outcome;
    end Read_Rect;
-
-   function Write_Byte
-     (Object : in out Streams.Destination'Class;
-      Value : Byte;
-      Context : Opcode_Context := No_Opcode) return Results.Result
-   is
-      Buffer : constant Streams.Byte_Array := [1 => Value];
-   begin
-      return With_Context (Streams.Write_All (Object, Buffer), Context);
-   end Write_Byte;
-
-   function Write_U16_BE
-     (Object : in out Streams.Destination'Class;
-      Value : Interfaces.Unsigned_16;
-      Context : Opcode_Context := No_Opcode) return Results.Result
-   is
-      Buffer : constant Streams.Byte_Array :=
-        [Byte (Interfaces.Shift_Right (Value, 8)), Byte (Value and 16#FF#)];
-   begin
-      return With_Context (Streams.Write_All (Object, Buffer), Context);
-   end Write_U16_BE;
-
-   function Write_U32_BE
-     (Object : in out Streams.Destination'Class;
-      Value : Interfaces.Unsigned_32;
-      Context : Opcode_Context := No_Opcode) return Results.Result
-   is
-      Buffer : constant Streams.Byte_Array :=
-        [Byte (Interfaces.Shift_Right (Value, 24)),
-         Byte (Interfaces.Shift_Right (Value, 16) and 16#FF#),
-         Byte (Interfaces.Shift_Right (Value, 8) and 16#FF#),
-         Byte (Value and 16#FF#)];
-   begin
-      return With_Context (Streams.Write_All (Object, Buffer), Context);
-   end Write_U32_BE;
-
-   function Write_Coordinate
-     (Object : in out Streams.Destination'Class;
-      Value : Coordinate;
-      Context : Opcode_Context := No_Opcode) return Results.Result
-   is
-   begin
-      return Write_U16_BE (Object, From_Coordinate (Value), Context);
-   end Write_Coordinate;
 end Pictlib.Internal.Bytes;

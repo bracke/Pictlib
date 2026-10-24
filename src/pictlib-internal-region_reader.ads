@@ -5,8 +5,6 @@ with Pictlib.Results;
 --  Regions read from or skipped in a picture, under the region and allocation budgets; Regions itself knows no
 --  session.
 package Pictlib.Internal.Region_Reader is
-   --  The bytes of a region's size word and bounding box.
-   Smallest_Region : constant := 10;
 
    --  Skip.
    --  @param S Session positioned at a region.

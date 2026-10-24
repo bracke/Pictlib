@@ -1,9 +1,7 @@
 with Pictlib.Internal.Checked_Arithmetic;
-with Interfaces;
 with Pictlib.Internal.Bytes;
 
 package body Pictlib.Internal.Regions is
-   use type Interfaces.Unsigned_16;
 
    End_Mark : constant := 16#7FFF#;
 
@@ -34,9 +32,7 @@ package body Pictlib.Internal.Regions is
       Index : Natural := 0;
 
       function Word (At_Index : Natural) return Integer is
-        (Integer (Bytes.To_Coordinate
-           (Interfaces.Shift_Left (Interfaces.Unsigned_16 (Data (Data'First + 2 * At_Index)), 8)
-            or Interfaces.Unsigned_16 (Data (Data'First + 2 * At_Index + 1)))));
+        (Integer (Bytes.To_Coordinate (Bytes.Word_At (Data, Data'First + 2 * At_Index))));
 
       Previous_Y : Integer := Integer'First;
    begin

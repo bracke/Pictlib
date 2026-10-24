@@ -76,6 +76,21 @@ package Pictlib.Internal.Coverage is
    --  Subtract: remove Other's pixels from Item; both have the same window.
    procedure Subtract (Item : in out Shape; Other : Shape);
 
+   --  Floor divide.
+   --  @param Left Dividend, of either sign.
+   --  @param Right Divisor.
+   --  @return Left / Right rounded toward minus infinity.
+   function Floor_Divide (Left, Right : Long_Long_Integer) return Long_Long_Integer is
+     (if Left >= 0 then Left / Right else -((-Left + Right - 1) / Right))
+     with Pre => Right > 0;
+   --  Ceiling divide.
+   --  @param Left Dividend, of either sign.
+   --  @param Right Divisor.
+   --  @return Left / Right rounded toward plus infinity.
+   function Ceiling_Divide (Left, Right : Long_Long_Integer) return Long_Long_Integer is
+     (-Floor_Divide (-Left, Right))
+     with Pre => Right > 0;
+
 private
    package Row_Vectors is new Ada.Containers.Vectors (Natural, Span_List, Regions.Span_Vectors."=");
 

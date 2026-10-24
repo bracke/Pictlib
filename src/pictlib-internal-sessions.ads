@@ -2,6 +2,7 @@ with Ada.Unchecked_Deallocation;
 with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Geometry;
+with Pictlib.Images;
 with Pictlib.Internal.Diagnostics;
 with Pictlib.Internal.Metadata_Store;
 with Pictlib.Internal.Picture_Stream;
@@ -41,6 +42,16 @@ package Pictlib.Internal.Sessions is
    --  Clear.
    --  @param S Session whose stream binding, retained metadata, warnings and counters are discarded.
    procedure Clear (S : in out Session);
+   --  Start: a session cleared and bound to a new picture.
+   --  @param S Session; its budget is kept.
+   --  @param Input The picture's source.
+   --  @param Strictness How deviations are treated.
+   --  @param Retention What metadata is kept.
+   procedure Start
+     (S : in out Session;
+      Input : not null access Streams.Source'Class;
+      Strictness : Strictness_Mode;
+      Retention : Metadata.Retention_Policy);
 
    --  Warn.
    --  @param S Session whose log records the warning.
@@ -160,11 +171,6 @@ package Pictlib.Internal.Sessions is
    --  @param Length Bytes it is estimated at, by the cost model below.
    --  @return Success, the bytes then counted, or Limit_Exceeded when the session's total would cross its limit.
    function Admit_Aggregate (S : in out Session; Length : Byte_Count) return Results.Result;
-   --  Allocation units left.
-   --  @param S Session.
-   --  @param Bytes_Per_Unit Bytes one unit holds.
-   --  @return How many such units the session's total still admits.
-   function Allocation_Units_Left (S : Session; Bytes_Per_Unit : Positive) return Pixel_Count;
    --  Shape work left.
    --  @param S Session.
    --  @return What building one shape may spend: the drawing work left, and no more than the spans the session's
@@ -175,7 +181,7 @@ package Pictlib.Internal.Sessions is
    --  A retained metadata item or font name, besides its bytes.
    Item_Overhead_Bytes : constant := 128;
    --  A polygon point.
-   Point_Bytes : constant := 8;
+   Point_Cost_Bytes : constant := 8;
    --  A unit of a region's size, for a copy of it.
    Region_Unit_Bytes : constant := 8;
    --  Each byte of a region read: its scanlines and inversion points, with capacity growth.
@@ -223,14 +229,17 @@ package Pictlib.Internal.Sessions is
    --  @param Value Big-endian long.
    --  @return Operation result.
    function Read_Long (S : in out Session; Value : out Interfaces.Unsigned_32) return Results.Result;
+   --  Read RGB: an RGBColor, three 16-bit components.
+   --  @param S Session reading an opcode's data.
+   --  @param Color The high byte of each component.
+   --  @return Operation result.
+   function Read_RGB (S : in out Session; Color : out Images.RGB_Color) return Results.Result;
    --  Read polygon size.
    --  @param S Session positioned at a polygon's size word.
    --  @param Points The number of points the polygon holds, after its bounding box.
    --  @return Success, Polygon_Invalid for a size that is not 10 bytes plus whole points, or Limit_Exceeded past
    --  Max_Polygon_Points.
    function Read_Polygon_Size (S : in out Session; Points : out Natural) return Results.Result;
-   --  The bytes of a polygon's size word and bounding box.
-   Smallest_Polygon : constant := 10;
 
    --  Read bounds.
    --  @param S Session reading an opcode's data.
@@ -256,25 +265,4 @@ package Pictlib.Internal.Sessions is
    --  @return Success (also when a lenient session drops the item with a Data_Loss warning), or the failure.
    function Retain (S : in out Session; Info : Metadata.Item_Info; Length : Byte_Count) return Results.Result;
 
-   --  Skip rows.
-   --  @param S Session reading pixel data.
-   --  @param Row_Bytes The pixmap's row length; packed row counts are words above 250.
-   --  @param Height Rows.
-   --  @param Packed True when every row is prefixed by its packed byte count.
-   --  @param Raw_Row_Length Bytes per unpacked row.
-   --  @return Operation result, with the failing row in its context.
-   function Skip_Rows
-     (S : in out Session;
-      Row_Bytes : Natural;
-      Height : Natural;
-      Packed : Boolean;
-      Raw_Row_Length : Byte_Count) return Results.Result;
-
-   --  Extent.
-   --  @param S Session.
-   --  @param Bounds A pixmap's bounds.
-   --  @param Width Bounds width.
-   --  @param Height Bounds height.
-   --  @return Success, or Pixmap_Invalid for inverted bounds.
-   function Extent (S : Session; Bounds : Geometry.Rect; Width, Height : out Natural) return Results.Result;
 end Pictlib.Internal.Sessions;

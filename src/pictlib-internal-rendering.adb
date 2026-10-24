@@ -127,6 +127,21 @@ package body Pictlib.Internal.Rendering is
       return Outcome;
    end Mask_Row;
 
+   function Begin_Masked_Row
+     (P : in out Painter;
+      S : in out Sessions.Session;
+      Y, Left, Right : Integer;
+      Mask : in out Regions.Region;
+      Masked : Boolean) return Results.Result
+   is
+      Outcome : constant Results.Result := Begin_Row (P, S, Y, Left, Right);
+   begin
+      if Results.Succeeded (Outcome) and then Masked and then not Row_Is_Empty (P) then
+         return Mask_Row (P, S, Mask, Y);
+      end if;
+      return Outcome;
+   end Begin_Masked_Row;
+
    function Paint_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result is
       Outcome : Results.Result := Results.Success;
    begin
@@ -177,47 +192,34 @@ package body Pictlib.Internal.Rendering is
            (S, Checked_Arithmetic.Saturating_Multiply
                  (Byte_Count (Coverage.Work (Shape)), Sessions.Shape_Bytes_Per_Work_Unit));
       end if;
-      --  A uniform pattern whose result does not depend on the pixels under it paints one color, or nothing.
-      if How.Kind = Pattern_Paint then
-         declare
-            Sample : Images.RGB_Color;
-            Color : Images.RGB_Color;
-            Effect : Transfer_Modes.Effect_Kind := Transfer_Modes.Depends_On_Destination;
-         begin
-            if Patterns.Uniform (Source, Sample) then
-               Effect := Transfer_Modes.Effect (Kind, Sample, P.Colors, Colorize, Color);
-            end if;
-            if Effect = Transfer_Modes.Unchanged then
-               return Outcome;
-            elsif Effect = Transfer_Modes.Constant_Color then
-               for Y in Coverage.First_Row (Shape) .. Coverage.Last_Row (Shape) loop
-                  exit when not Results.Succeeded (Outcome);
-                  P.Machine.Row_Spans := Coverage.Row (Shape, Y);
-                  if not P.Machine.Row_Spans.Is_Empty then
-                     Outcome := Clip_Row (P, S, Y);
-                     if Results.Succeeded (Outcome) then
-                        Outcome := Paint_Row_Color (P, S, Y, Color);
-                     end if;
-                  end if;
-               end loop;
-               return Outcome;
-            end if;
-         end;
-      end if;
-      --  Only the rows the shape holds.
       declare
+         Sample, Color : Images.RGB_Color := Images.Black;
+         Effect : Transfer_Modes.Effect_Kind := Transfer_Modes.Depends_On_Destination;
+
          function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
            (if How.Kind = Invert_Paint then Transfer_Modes.Invert (Under)
             else Transfer_Modes.Compose
                    (Kind, Patterns.Sample (Source, X, Y), Under, P.Colors, Colorize, Bit_Source => Colorize));
          function Paint is new Paint_Row (Color_At);
       begin
+         --  A uniform pattern whose result does not depend on the pixels under it paints one color, or nothing.
+         if How.Kind = Pattern_Paint and then Patterns.Uniform (Source, Sample) then
+            Effect := Transfer_Modes.Effect (Kind, Sample, P.Colors, Colorize, Color);
+         end if;
+         if Effect = Transfer_Modes.Unchanged then
+            return Outcome;
+         end if;
+         --  Only the rows the shape holds.
          for Y in Coverage.First_Row (Shape) .. Coverage.Last_Row (Shape) loop
             exit when not Results.Succeeded (Outcome);
             P.Machine.Row_Spans := Coverage.Row (Shape, Y);
             if not P.Machine.Row_Spans.Is_Empty then
                Outcome := Clip_Row (P, S, Y);
-               if Results.Succeeded (Outcome) then
+               if not Results.Succeeded (Outcome) then
+                  null;
+               elsif Effect = Transfer_Modes.Constant_Color then
+                  Outcome := Paint_Row_Color (P, S, Y, Color);
+               else
                   Outcome := Paint (P, S, Y);
                end if;
             end if;
@@ -225,8 +227,6 @@ package body Pictlib.Internal.Rendering is
       end;
       return Outcome;
    end Fill;
-
-   function Ceiling_Divide (Left, Right : Long_Long_Integer) return Long_Long_Integer is ((Left + Right - 1) / Right);
 
    --  Paint the destination rows that sample source row Source_Y of Decoder.
    function Put_Row
@@ -246,8 +246,10 @@ package body Pictlib.Internal.Rendering is
       Destination_Height : constant Long_Long_Integer := Long_Long_Integer (Destination.Bottom - Destination.Top);
       Relative : constant Long_Long_Integer := Long_Long_Integer (Source_Y) - Long_Long_Integer (Source.Top);
       --  Destination rows k sample source row floor (k * Source_Height / Destination_Height).
-      First_Row : constant Long_Long_Integer := Ceiling_Divide (Relative * Destination_Height, Source_Height);
-      Last_Row : constant Long_Long_Integer := Ceiling_Divide ((Relative + 1) * Destination_Height, Source_Height) - 1;
+      First_Row : constant Long_Long_Integer :=
+        Coverage.Ceiling_Divide (Relative * Destination_Height, Source_Height);
+      Last_Row : constant Long_Long_Integer :=
+        Coverage.Ceiling_Divide ((Relative + 1) * Destination_Height, Source_Height) - 1;
       Outcome : Results.Result;
 
       function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
@@ -273,10 +275,7 @@ package body Pictlib.Internal.Rendering is
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
-            Outcome := Begin_Row (P, S, Y, Destination.Left, Destination.Right);
-            if Results.Succeeded (Outcome) and then Header.Masked and then not P.Machine.Row_Spans.Is_Empty then
-               Outcome := Mask_Row (P, S, Mask, Y);
-            end if;
+            Outcome := Begin_Masked_Row (P, S, Y, Destination.Left, Destination.Right, Mask, Header.Masked);
             if Results.Succeeded (Outcome) then
                Outcome := Paint (P, S, Y);
             end if;

@@ -3,9 +3,11 @@ with Pictlib.Geometry;
 with Pictlib.Results;
 with Pictlib.Streams;
 
---  Checked big-endian readers and writers. PICT stores every multi-byte value most significant byte first.
+--  Checked big-endian readers. PICT stores every multi-byte value most significant byte first.
 package Pictlib.Internal.Bytes is
    pragma Preelaborate;
+   use type Interfaces.Unsigned_16;
+   use type Interfaces.Unsigned_32;
 
    --  The opcode whose data is being transferred, recorded in the diagnostic context on failure.
    type Opcode_Context is record
@@ -89,43 +91,26 @@ package Pictlib.Internal.Bytes is
    --  @return Two's-complement 16-bit word of Value.
    function From_Coordinate (Value : Coordinate) return Interfaces.Unsigned_16;
 
-   --  Write byte.
-   --  @param Object Destination to write to.
-   --  @param Value Byte to write.
-   --  @param Context Opcode recorded on failure.
-   --  @return Operation result.
-   function Write_Byte
-     (Object : in out Streams.Destination'Class;
-      Value : Byte;
-      Context : Opcode_Context := No_Opcode) return Results.Result;
+   --  To signed 32.
+   --  @param Value Raw 32-bit long.
+   --  @return Value interpreted as two's complement.
+   function To_Signed_32 (Value : Interfaces.Unsigned_32) return Long_Long_Integer is
+     (if Value >= 16#8000_0000# then Long_Long_Integer (Value) - 16#1_0000_0000# else Long_Long_Integer (Value));
 
-   --  Write U16 BE.
-   --  @param Object Destination to write to.
-   --  @param Value Value written most significant byte first.
-   --  @param Context Opcode recorded on failure.
-   --  @return Operation result.
-   function Write_U16_BE
-     (Object : in out Streams.Destination'Class;
-      Value : Interfaces.Unsigned_16;
-      Context : Opcode_Context := No_Opcode) return Results.Result;
-
-   --  Write U32 BE.
-   --  @param Object Destination to write to.
-   --  @param Value Value written most significant byte first.
-   --  @param Context Opcode recorded on failure.
-   --  @return Operation result.
-   function Write_U32_BE
-     (Object : in out Streams.Destination'Class;
-      Value : Interfaces.Unsigned_32;
-      Context : Opcode_Context := No_Opcode) return Results.Result;
-
-   --  Write coordinate.
-   --  @param Object Destination to write to.
-   --  @param Value Coordinate written as a two's-complement big-endian word.
-   --  @param Context Opcode recorded on failure.
-   --  @return Operation result.
-   function Write_Coordinate
-     (Object : in out Streams.Destination'Class;
-      Value : Coordinate;
-      Context : Opcode_Context := No_Opcode) return Results.Result;
+   --  Word at.
+   --  @param Data Bytes already read.
+   --  @param Position Index of the word's first byte.
+   --  @return The big-endian word there.
+   function Word_At (Data : Streams.Byte_Array; Position : Natural) return Interfaces.Unsigned_16 is
+     (Interfaces.Shift_Left (Interfaces.Unsigned_16 (Data (Position)), 8)
+      or Interfaces.Unsigned_16 (Data (Position + 1)))
+     with Pre => Position >= Data'First and then Position < Data'Last;
+   --  Long at.
+   --  @param Data Bytes already read.
+   --  @param Position Index of the long's first byte.
+   --  @return The big-endian long there.
+   function Long_At (Data : Streams.Byte_Array; Position : Natural) return Interfaces.Unsigned_32 is
+     (Interfaces.Shift_Left (Interfaces.Unsigned_32 (Word_At (Data, Position)), 16)
+      or Interfaces.Unsigned_32 (Word_At (Data, Position + 2)))
+     with Pre => Position >= Data'First and then Position <= Data'Last - 3;
 end Pictlib.Internal.Bytes;

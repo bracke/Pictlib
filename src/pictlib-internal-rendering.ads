@@ -143,27 +143,10 @@ package Pictlib.Internal.Rendering is
       Value : Interfaces.Unsigned_16;
       Kind : out Transfer_Modes.Mode_Kind) return Results.Result;
 
-   --  Clip row.
-   --  @param P Painter whose Row_Spans are narrowed to the clip region's row Y, moved by the origin.
-   --  @param S Session whose drawing budget applies.
-   --  @param Y Picture row.
-   --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
-   function Clip_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result;
-   --  Get.
-   --  @param P Painter.
-   --  @param X Picture column inside the canvas.
-   --  @param Y Picture row inside the canvas.
-   --  @return The pixel there.
-   function Get (P : Painter; X, Y : Integer) return Images.RGB_Color;
-   --  Put.
-   --  @param P Painter.
-   --  @param X Picture column inside the canvas.
-   --  @param Y Picture row inside the canvas.
-   --  @param Color New pixel.
-   procedure Put (P : in out Painter; X, Y : Integer; Color : Images.RGB_Color);
 
-   --  Every drawing paints a row at a time through these: Begin_Row (or Coverage rows and Clip_Row), Mask_Row
-   --  when a mask applies, then Paint_Row, so clipping, masking and charging happen once, in one order.
+   --  Every drawing paints a row at a time through these: Begin_Row (Begin_Masked_Row when a mask applies),
+   --  then Paint_Row, so clipping, masking and charging happen once, in one order. Fill does the same for a shape's
+   --  rows. Nothing else writes a pixel.
 
    --  Begin row.
    --  @param P Painter whose Row_Spans become columns Left .. Right - 1 of row Y inside the window, cut by the
@@ -175,31 +158,27 @@ package Pictlib.Internal.Rendering is
    --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
    function Begin_Row (P : in out Painter; S : in out Sessions.Session; Y, Left, Right : Integer)
      return Results.Result;
-   --  Row is empty.
-   --  @param P Painter.
-   --  @return True when the row begun holds no span, so nothing of it is drawn.
-   function Row_Is_Empty (P : Painter) return Boolean;
-   --  Mask row.
-   --  @param P Painter whose Row_Spans are cut by Mask's row Y.
-   --  @param S Session whose drawing budget the mask walk is charged to, before the spans are cut.
-   --  @param Mask Mask region, in picture coordinates.
+   --  Begin masked row: Begin_Row, then, when Masked and the row holds a span, its cut by Mask's row Y, the
+   --  mask walk charged before the spans are cut.
+   --  @param P Painter whose Row_Spans become the row's.
+   --  @param S Session whose drawing budget applies.
    --  @param Y Picture row.
+   --  @param Left First picture column.
+   --  @param Right Column after the last.
+   --  @param Mask Mask region, in picture coordinates.
+   --  @param Masked True when Mask applies.
    --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
-   function Mask_Row (P : in out Painter; S : in out Sessions.Session; Mask : in out Regions.Region; Y : Integer)
-     return Results.Result;
+   function Begin_Masked_Row
+     (P : in out Painter;
+      S : in out Sessions.Session;
+      Y, Left, Right : Integer;
+      Mask : in out Regions.Region;
+      Masked : Boolean) return Results.Result;
    --  Paint row: each span of Row_Spans is charged, then each of its pixels becomes Color_At of what is under it;
    --  nothing is painted past the budget.
    generic
       with function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color;
    function Paint_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result;
-   --  Paint row color: as Paint_Row, every pixel Color.
-   --  @param P Painter.
-   --  @param S Session.
-   --  @param Y Picture row.
-   --  @param Color The color.
-   --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
-   function Paint_Row_Color (P : in out Painter; S : in out Sessions.Session; Y : Integer; Color : Images.RGB_Color)
-     return Results.Result;
 
    --  Fill.
    --  @param P Painter.

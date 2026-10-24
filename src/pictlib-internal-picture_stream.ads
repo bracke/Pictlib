@@ -5,7 +5,7 @@ with Pictlib.Streams;
 --  detect the 512-byte file header without seeking, and a byte budget for the whole picture.
 package Pictlib.Internal.Picture_Stream is
    --  The file header, picSize, picFrame and both version opcode forms.
-   Lookahead_Capacity : constant := 512 + 16;
+   Lookahead_Capacity : constant := File_Header_Bytes + 16;
 
    type Reader is limited new Streams.Source with private;
 

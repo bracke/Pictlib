@@ -40,7 +40,7 @@ package body Pictlib.Internal.Patterns is
    end Uniform;
 
    function Read_Bit_Pattern (S : in out Sessions.Session; Item : out Pattern) return Results.Result is
-      Data : Streams.Byte_Array (1 .. 8);
+      Data : Streams.Byte_Array (1 .. Bit_Pattern_Bytes);
       Outcome : constant Results.Result := Sessions.Read_Into (S, Data);
    begin
       Item := (others => <>);
@@ -128,21 +128,16 @@ package body Pictlib.Internal.Patterns is
       end if;
       if Results.Succeeded (Outcome) then
          case Pattern_Type is
-            when 1 =>
+            when Color_Pattern_Type =>
                Outcome := Read_Color_Tile (S, Event, Item, Allowance, Work);
-            when 2 =>
+            when Dither_Pattern_Type =>
                --  A dither pattern: in true color, its RGB color.
-               declare
-                  Color : Streams.Byte_Array (1 .. 6);
-               begin
-                  Outcome := Sessions.Read_Into (S, Color);
-                  if Results.Succeeded (Outcome) then
-                     Item.Kind := Solid_Color;
-                     Item.Color := (Color (1), Color (3), Color (5));
-                  end if;
-               end;
+               Outcome := Sessions.Read_RGB (S, Item.Color);
+               if Results.Succeeded (Outcome) then
+                  Item.Kind := Solid_Color;
+               end if;
             when others =>
-               Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 2, Byte_Count (Pattern_Type));
+               Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, Dither_Pattern_Type, Byte_Count (Pattern_Type));
          end case;
       end if;
       --  Never a part-read tile, whoever calls; the caller puts the pattern's own default in its place.

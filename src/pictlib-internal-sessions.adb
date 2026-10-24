@@ -18,6 +18,18 @@ package body Pictlib.Internal.Sessions is
       S.Pending_Offset := 0;
    end Clear;
 
+   procedure Start
+     (S : in out Session;
+      Input : not null access Streams.Source'Class;
+      Strictness : Strictness_Mode;
+      Retention : Metadata.Retention_Policy) is
+   begin
+      Clear (S);
+      Picture_Stream.Bind (S.Stream, Input, S.Budget.Max_Picture_Bytes);
+      S.Strictness := Strictness;
+      S.Retention := Retention;
+   end Start;
+
    procedure Warn
      (S : in out Session;
       Code : Errors.Warning_Code;
@@ -243,13 +255,17 @@ package body Pictlib.Internal.Sessions is
       Points := 0;
       if not Results.Succeeded (Outcome) then
          return Outcome;
-      elsif Size < Smallest_Polygon or else (Size - Smallest_Polygon) mod 4 /= 0 then
+      elsif Size < Smallest_Polygon or else (Size - Smallest_Polygon) mod Polygon_Point_Bytes /= 0 then
          return Fail (S, Errors.Polygon_Invalid, Smallest_Polygon, Byte_Count (Size));
-      elsif Natural (Size - Smallest_Polygon) / 4 > S.Budget.Max_Polygon_Points then
-         return Over_Limit
-           (S, Polygon_Point_Limit, Byte_Count (S.Budget.Max_Polygon_Points), Byte_Count (Size - Smallest_Polygon) / 4);
       end if;
-      Points := Natural (Size - Smallest_Polygon) / 4;
+      declare
+         Stored : constant Natural := Natural (Size - Smallest_Polygon) / Polygon_Point_Bytes;
+      begin
+         if Stored > S.Budget.Max_Polygon_Points then
+            return Over_Limit (S, Polygon_Point_Limit, Byte_Count (S.Budget.Max_Polygon_Points), Byte_Count (Stored));
+         end if;
+         Points := Stored;
+      end;
       return Results.Success;
    end Read_Polygon_Size;
 
@@ -273,6 +289,14 @@ package body Pictlib.Internal.Sessions is
       return Bytes.Read_Byte (S.Stream, Value);
    end Read_Count_Byte;
 
+   function Read_RGB (S : in out Session; Color : out Images.RGB_Color) return Results.Result is
+      Data : Streams.Byte_Array (1 .. RGB_Color_Bytes);
+      Outcome : constant Results.Result := Read_Into (S, Data);
+   begin
+      Color := (Data (1), Data (3), Data (5));
+      return Outcome;
+   end Read_RGB;
+
    function Read_Long (S : in out Session; Value : out Interfaces.Unsigned_32) return Results.Result is
       Outcome : constant Results.Result := Admit_Data (S, 4);
    begin
@@ -293,8 +317,6 @@ package body Pictlib.Internal.Sessions is
       return Bytes.Read_Rect (S.Stream, Value);
    end Read_Bounds;
 
-   --  Pixel data: unpacked rows of Raw_Row_Length bytes, or rows each prefixed by its packed byte count,
-   --  a byte when Row_Bytes <= 250 and a word otherwise.
    function Read_Into (S : in out Session; Buffer : out Streams.Byte_Array) return Results.Result is
       Outcome : constant Results.Result := Admit_Data (S, Buffer'Length);
    begin
@@ -304,62 +326,4 @@ package body Pictlib.Internal.Sessions is
       end if;
       return Streams.Read_Exact (S.Stream, Buffer);
    end Read_Into;
-
-   function Skip_Rows
-     (S : in out Session;
-      Row_Bytes : Natural;
-      Height : Natural;
-      Packed : Boolean;
-      Raw_Row_Length : Byte_Count) return Results.Result
-   is
-      Outcome : Results.Result;
-   begin
-      if not Packed then
-         --  A saturated product is refused by the per-opcode budget.
-         return Skip_Data (S, Checked_Arithmetic.Saturating_Multiply (Raw_Row_Length, Byte_Count (Height)));
-      end if;
-      for Row in 0 .. Height - 1 loop
-         declare
-            Count : Byte_Count;
-         begin
-            if Row_Bytes > Byte_Count_Row_Bytes then
-               declare
-                  Word : Interfaces.Unsigned_16;
-               begin
-                  Outcome := Read_Word (S, Word);
-                  Count := Byte_Count (Word);
-               end;
-            else
-               declare
-                  Small : Byte;
-               begin
-                  Outcome := Read_Count_Byte (S, Small);
-                  Count := Byte_Count (Small);
-               end;
-            end if;
-            if Results.Succeeded (Outcome) then
-               Outcome := Skip_Data (S, Count);
-            end if;
-            if not Results.Succeeded (Outcome) then
-               return Results.Failure
-                 ((Outcome.First_Error with delta
-                     Context => (Outcome.First_Error.Context with delta Row => Row_Index (Row))));
-            end if;
-         end;
-      end loop;
-      return Results.Success;
-   end Skip_Rows;
-
-   function Extent (S : Session; Bounds : Geometry.Rect; Width, Height : out Natural) return Results.Result is
-   begin
-      Width := 0;
-      Height := 0;
-      if Geometry.Width (Bounds) < 0 or else Geometry.Height (Bounds) < 0 then
-         return Fail (S, Errors.Pixmap_Invalid);
-      end if;
-      Width := Geometry.Width (Bounds);
-      Height := Geometry.Height (Bounds);
-      return Results.Success;
-   end Extent;
-
 end Pictlib.Internal.Sessions;

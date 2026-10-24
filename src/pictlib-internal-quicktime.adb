@@ -10,6 +10,7 @@ with Jpeglib.Streams;
 with Pictlib.Errors;
 with Pictlib.Geometry;
 with Pictlib.Images;
+with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Internal.Region_Reader;
 with Pictlib.Internal.Regions;
@@ -30,7 +31,7 @@ package body Pictlib.Internal.QuickTime is
    Height_Field : constant := 34 - 8 + 1;
    Data_Size_Field : constant := 44 - 8 + 1;
    JPEG_Codec : constant := 16#6A70_6567#;  --  'jpeg'
-   Fixed_One : constant := 16#1_0000#;
+   Fixed_One : constant Long_Long_Integer := Long_Long_Integer (Geometry.Fixed_One);
    Fract_One : constant := 16#4000_0000#;
    --  Decoded pixels are RGB.
    Bytes_Per_Pixel : constant := 3;
@@ -44,9 +45,6 @@ package body Pictlib.Internal.QuickTime is
    type Pixel_Buffer_Access is access Jpeglib.Streams.Byte_Array;
    procedure Free is new Ada.Unchecked_Deallocation (Jpeglib.Streams.Byte_Array, Pixel_Buffer_Access);
 
-
-   function Signed (Value : Interfaces.Unsigned_32) return Long_Long_Integer is
-     (if Value >= 16#8000_0000# then Long_Long_Integer (Value) - 16#1_0000_0000# else Long_Long_Integer (Value));
 
    --  A 16.16 coordinate, rounded to the nearest pixel.
    function Round_Fixed (Value : Long_Long_Integer) return Integer is
@@ -82,7 +80,7 @@ package body Pictlib.Internal.QuickTime is
             Value : Interfaces.Unsigned_32;
          begin
             Outcome := Sessions.Read_Long (S, Value);
-            Header.Transform (Index) := Signed (Value);
+            Header.Transform (Index) := Bytes.To_Signed_32 (Value);
          end;
       end loop;
       if Results.Succeeded (Outcome) then
@@ -111,8 +109,6 @@ package body Pictlib.Internal.QuickTime is
       Fields : Streams.Byte_Array (1 .. Description_Bytes - 8);
       Outcome : Results.Result := Sessions.Read_Long (S, Item.Size);
 
-      function Word_At (Index : Positive) return Natural is
-        (Natural (Fields (Index)) * 256 + Natural (Fields (Index + 1)));
    begin
       Item := (Size => Item.Size, others => <>);
       if Results.Succeeded (Outcome) then
@@ -122,11 +118,9 @@ package body Pictlib.Internal.QuickTime is
          Outcome := Sessions.Read_Into (S, Fields);
       end if;
       if Results.Succeeded (Outcome) then
-         Item.Width := Word_At (Width_Field);
-         Item.Height := Word_At (Height_Field);
-         for Index in Data_Size_Field .. Data_Size_Field + 3 loop
-            Item.Data_Size := Interfaces.Shift_Left (Item.Data_Size, 8) or Interfaces.Unsigned_32 (Fields (Index));
-         end loop;
+         Item.Width := Natural (Bytes.Word_At (Fields, Width_Field));
+         Item.Height := Natural (Bytes.Word_At (Fields, Height_Field));
+         Item.Data_Size := Bytes.Long_At (Fields, Data_Size_Field);
       end if;
       return Outcome;
    end Read_Description;
@@ -341,10 +335,7 @@ package body Pictlib.Internal.QuickTime is
       for Y in Integer'Max (Destination.Top, P.Window.Top) .. Integer'Min (Destination.Bottom, P.Window.Bottom) - 1
       loop
          exit when not Results.Succeeded (Outcome);
-         Outcome := Rendering.Begin_Row (P, S, Y, Destination.Left, Destination.Right);
-         if Results.Succeeded (Outcome) and then Has_Mask and then not Rendering.Row_Is_Empty (P) then
-            Outcome := Rendering.Mask_Row (P, S, Mask, Y);
-         end if;
+         Outcome := Rendering.Begin_Masked_Row (P, S, Y, Destination.Left, Destination.Right, Mask, Has_Mask);
          if Results.Succeeded (Outcome) then
             Outcome := Paint (P, S, Y);
          end if;
