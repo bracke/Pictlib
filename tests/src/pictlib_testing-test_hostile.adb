@@ -131,13 +131,13 @@ package body Pictlib_Testing.Test_Hostile is
                    & Op_Rect (16#34#, 0, 0, 2, 8));
       --  A PixPat cut off right after its type.
       Cut_Tile : aliased constant Bytes := V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & Zeros (8);
-      --  An 18000 x 18000 PixPat: its tile is under the allocation budget, but not while it grows, so it is
-      --  rejected before any row is read.
+      --  A 20000 x 20000 PixPat, its tile over the allocation budget: rejected before any row is read.
       Huge_Tile : aliased constant Bytes :=
-        V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 2_250) & Rect (0, 0, 18_000, 18_000)
+        V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 2_500) & Rect (0, 0, 20_000, 20_000)
         & Pixmap_Tail (0, 1, 1, 1) & Table_Header (16#8000#, 2) & Table_Entry (0, 0, 0, 0)
         & Table_Entry (1, 0, 0, 0) & B (0);
-      --  A 200 x 200 tile (3 * 40,000 bytes) under a 200,000-byte budget that its growth would pass.
+      --  A 200 x 200 tile: 120,000 bytes, and 881 for its row buffers (255 stored, 26 unpacked, 600 colors), all
+      --  one opcode's allocation.
       Grown_Tile : aliased constant Bytes :=
         V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 26) & Rect (0, 0, 200, 200)
         & Pixmap_Tail (0, 1, 1, 1) & Table_Header (16#8000#, 2) & Table_Entry (0, 0, 0, 0)
@@ -176,8 +176,12 @@ package body Pictlib_Testing.Test_Hostile is
       Both (Empty_Tile, Errors.Pattern_Invalid, "empty PixPat");
       Both (Cut_Tile, Errors.Source_Unexpected_End, "PixPat cut after its type");
       Over (Huge_Tile, Pictlib.Limits.Default_Limits, Pictlib.Allocation_Byte_Limit, "18000 x 18000 PixPat");
-      Tight.Max_Allocation_Bytes := 200_000;
-      Over (Grown_Tile, Tight, Pictlib.Allocation_Byte_Limit, "a tile whose growth passes the budget");
+      Tight.Max_Allocation_Bytes := 120_880;
+      Over (Grown_Tile, Tight, Pictlib.Allocation_Byte_Limit, "a tile and its row buffers over the budget");
+      Tight.Max_Allocation_Bytes := 120_881;
+      Canvases.Render (Grown_Tile, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Budget => Tight);
+      Assert (Outcome.First_Error.Code /= Errors.Limit_Exceeded, "a tile and its row buffers within the budget "
+              & "were rejected");
       Tight := Pictlib.Limits.Default_Limits;
       Tight.Max_Drawing_Work := 100;
       Over (Costly_Tile, Tight, Pictlib.Drawing_Work_Limit, "a tile that costs more than the budget");

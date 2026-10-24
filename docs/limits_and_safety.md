@@ -18,9 +18,9 @@ bounds a read, a skip, an allocation or a loop.
 
 | `Max_Canvas_Pixels` | the frame, when `Render` starts | `Limit_Exceeded` |
 | `Max_Output_Bytes` | the view's accessible bytes, when `Render` starts | `Limit_Exceeded` |
-| `Max_Drawing_Work` | every pixel painted, every pixel converted from a copied row or a PixPat, every row a copy skips (not a QuickTime placeholder), every unit of region, polygon, line and shape-building work, checked while a shape is built | `Limit_Exceeded` |
+| `Max_Drawing_Work` | every pixel painted, every pixel converted from a copied row or a PixPat, every row a copy skips, every pattern, every unit of region, polygon, line and shape-building work, checked while a shape is built | `Limit_Exceeded` |
 | `Max_Polygon_Points` | each polygon, also while rendering | `Limit_Exceeded` |
-| `Max_Allocation_Bytes` | each opcode's row buffers, each font's glyph atlas, a PixPat's tile at twice its size (it grows with the rows read) | `Limit_Exceeded` |
+| `Max_Allocation_Bytes` | each opcode's row buffers, each font's glyph atlas; a PixPat's tile and row buffers together, set aside before its rows are read | `Limit_Exceeded` |
 
 | `Max_Embedded_Image_Bytes` | a QuickTime image's dataSize, before decoding | `Limit_Exceeded` |
 | `Max_Embedded_Image_Pixels` | a QuickTime image's width × height, before decoding, and jpeglib's pixel limit | `Limit_Exceeded` |

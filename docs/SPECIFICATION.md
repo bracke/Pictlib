@@ -424,8 +424,8 @@ counting every shape and scaled copy), retained metadata, allocation, output byt
 bytes and pixels, warnings. Every input-derived size is checked with `Checked_Arithmetic` before
 allocation, indexing or a loop bound. Drawing work is the guard against tiny pictures with huge
 repeated fills. It counts every pixel row a copy converts, drawn or not, a unit for every row a copy skips
-(a QuickTime image's placeholder excepted: the image was charged), every pixel row of a PixPat
-decoded, and the work of building each shape, which stops as soon as it would exceed what is left of the
+(a QuickTime image's placeholder included), a unit for every pattern and every pixel and row of a
+PixPat decoded, and the work of building each shape, which stops as soon as it would exceed what is left of the
 budget; a shape that stops covers nothing. Only the path rows a line's pen can bring into the
 frame are held.
 

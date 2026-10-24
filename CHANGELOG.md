@@ -2,6 +2,14 @@
 
 ## 0.1.0-dev
 
+- Fixes from the fourth review. A PixPat's tile and row buffers are checked
+  together against `Max_Allocation_Bytes`, a tile too large to index is
+  `Limit_Exceeded`, and the tile is set aside once at its size and moved,
+  not copied, into the port. Pattern decoding stops past its allowance and
+  is reported, with every other overrun, through one saturating report in
+  `Rendering`. A QuickTime placeholder's rows are charged again, like every
+  skipped row, since a cheap image does not pay for them; every pattern
+  costs a unit.
 - Fixes from the third review. A PixPat's tile grows with the rows that
   arrive, never past its final size, and is checked against
   `Max_Allocation_Bytes` at twice that size, which covers its growth; decoding

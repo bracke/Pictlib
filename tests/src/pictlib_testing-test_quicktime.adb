@@ -211,7 +211,7 @@ package body Pictlib_Testing.Test_QuickTime is
                               (Strictness => Pictlib.Compatible, others => <>));
       Canvases.Expect_Raster (Not_Next, 8, 6, "BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB",
                               "only the opcode right after the image is skipped");
-      --  The placeholder costs nothing: at the least budget the image alone needs, both still render.
+      --  The placeholder's six rows are skipped at a unit each, whatever the image cost.
       declare
          Alone : aliased constant Bytes := Image (Plain, 8, 6);
          Storage : aliased Bytes := [1 .. 3 * 48 => 0];
@@ -231,9 +231,12 @@ package body Pictlib_Testing.Test_QuickTime is
                Low := Budget.Max_Drawing_Work + 1;
             end if;
          end loop;
-         Budget.Max_Drawing_Work := High;
+         Budget.Max_Drawing_Work := High + 5;
          Canvases.Render (After_Image, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome, Budget => Budget);
-         Assert (Pictlib.Results.Succeeded (Outcome), "the placeholder was charged: "
+         Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded, "the placeholder cost less than its rows");
+         Budget.Max_Drawing_Work := High + 6;
+         Canvases.Render (After_Image, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome, Budget => Budget);
+         Assert (Pictlib.Results.Succeeded (Outcome), "the placeholder cost more than its rows: "
                  & Outcome.First_Error.Code'Image);
       end;
       Canvases.Expect_Raster (Drawn_Then_Not, 8, 6, "BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB",

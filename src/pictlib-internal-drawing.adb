@@ -372,12 +372,22 @@ package body Pictlib.Internal.Drawing is
          when 16#0001# =>  --  Clip, kept in local coordinates
             Outcome := Regions.Read (S, P.Clip);
             P.Has_Clip := Results.Succeeded (Outcome);
+         --  Every pattern costs at least a unit of drawing work.
          when 16#0002# =>
-            Outcome := Patterns.Read_Bit_Pattern (S, P.Back_Pattern);
+            Outcome := Rendering.Charge (P, S, Natural'(1));
+            if Results.Succeeded (Outcome) then
+               Outcome := Patterns.Read_Bit_Pattern (S, P.Back_Pattern);
+            end if;
          when 16#0009# =>
-            Outcome := Patterns.Read_Bit_Pattern (S, P.Pen_Pattern);
+            Outcome := Rendering.Charge (P, S, Natural'(1));
+            if Results.Succeeded (Outcome) then
+               Outcome := Patterns.Read_Bit_Pattern (S, P.Pen_Pattern);
+            end if;
          when 16#000A# =>
-            Outcome := Patterns.Read_Bit_Pattern (S, P.Fill_Pattern);
+            Outcome := Rendering.Charge (P, S, Natural'(1));
+            if Results.Succeeded (Outcome) then
+               Outcome := Patterns.Read_Bit_Pattern (S, P.Fill_Pattern);
+            end if;
          when 16#0012# .. 16#0014# =>
             declare
                Item : Patterns.Pattern;
@@ -388,10 +398,11 @@ package body Pictlib.Internal.Drawing is
                   Outcome := Rendering.Charge (P, S, Work);
                end if;
                if Results.Succeeded (Outcome) then
+                  --  Moved, not copied: a tile is held once.
                   case Event.Op is
-                     when 16#0012# => P.Back_Pattern := Item;
-                     when 16#0013# => P.Pen_Pattern := Item;
-                     when others => P.Fill_Pattern := Item;
+                     when 16#0012# => Patterns.Move (P.Back_Pattern, Item);
+                     when 16#0013# => Patterns.Move (P.Pen_Pattern, Item);
+                     when others => Patterns.Move (P.Fill_Pattern, Item);
                   end case;
                end if;
             end;

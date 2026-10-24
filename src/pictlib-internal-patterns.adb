@@ -88,17 +88,21 @@ package body Pictlib.Internal.Patterns is
       if Results.Succeeded (Outcome) and then (Header.Width = 0 or else Header.Height = 0) then
          Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 1, 0);
       end if;
-      --  The tile grows with the rows that arrive, so a short picture holds little; while it grows it can hold
-      --  its old and new storage at once, twice its final size.
-      if Results.Succeeded (Outcome)
-        and then 6 * Byte_Count (Header.Width) * Byte_Count (Header.Height) > S.Budget.Max_Allocation_Bytes
-      then
-         Outcome := Sessions.Over_Limit
-           (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes,
-            6 * Byte_Count (Header.Width) * Byte_Count (Header.Height));
-      end if;
       if Results.Succeeded (Outcome) then
          Outcome := Pixmaps.Decide_Layout (S, Header, For_Decoding => True);
+      end if;
+      --  The tile and the row buffers are one opcode's allocation; the tile is set aside whole, once.
+      if Results.Succeeded (Outcome) then
+         declare
+            Pixels : constant Byte_Count := Byte_Count (Header.Width) * Byte_Count (Header.Height);
+            Total : constant Byte_Count := 3 * Pixels + Pixmaps.Buffer_Bytes (Header);
+         begin
+            if Total > S.Budget.Max_Allocation_Bytes
+              or else Pixels > Byte_Count (Ada.Containers.Count_Type'Last)
+            then
+               Outcome := Sessions.Over_Limit (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Total);
+            end if;
+         end;
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Pixmaps.Start (S, Decoder, Header);
@@ -110,30 +114,15 @@ package body Pictlib.Internal.Patterns is
       Item.Width := Header.Width;
       Item.Height := Header.Height;
       Item.Tile.Clear;
+      Item.Tile.Reserve_Capacity
+        (Ada.Containers.Count_Type (Byte_Count (Header.Width) * Byte_Count (Header.Height)));
       for Row in 0 .. Header.Height - 1 loop
-         --  Decoding a row is drawing work, like converting a copied row.
-         if Pixel_Count (Header.Width + 1) > Allowance - Pixel_Count'Min (Work, Allowance) then
-            Outcome := Sessions.Over_Limit
-              (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
-               Byte_Count (S.Budget.Max_Drawing_Work - Pixel_Count'Min (Allowance, S.Budget.Max_Drawing_Work))
-               + Byte_Count (Work) + Byte_Count (Header.Width + 1));
-            exit;
-         end if;
+         --  Decoding a row is drawing work, like converting a copied row; past Allowance decoding stops and
+         --  the caller's charge of Work reports it.
          Work := Work + Pixel_Count (Header.Width + 1);
+         exit when Work > Allowance;
          Outcome := Pixmaps.Read_Row (S, Decoder, Row);
          exit when not Results.Succeeded (Outcome);
-         declare
-            use type Ada.Containers.Count_Type;
-            Length : constant Ada.Containers.Count_Type := Item.Tile.Length;
-            Width : constant Ada.Containers.Count_Type := Ada.Containers.Count_Type (Header.Width);
-         begin
-            if Item.Tile.Capacity < Length + Width then
-               Item.Tile.Reserve_Capacity
-                 (Ada.Containers.Count_Type'Min
-                    (Ada.Containers.Count_Type (Header.Width) * Ada.Containers.Count_Type (Header.Height),
-                     Ada.Containers.Count_Type'Max (2 * Length, Length + Width)));
-            end if;
-         end;
          for Column in 0 .. Header.Width - 1 loop
             Item.Tile.Append (Pixmaps.Pixel (Decoder, Column));
          end loop;
@@ -151,7 +140,8 @@ package body Pictlib.Internal.Patterns is
       Pattern_Type : Interfaces.Unsigned_16 := 0;
       Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
    begin
-      Work := 0;
+      --  Every PixPat costs a unit, whatever its type.
+      Work := 1;
       Item := (others => <>);
       if Results.Succeeded (Outcome) then
          --  pat1Data, the 1-bit fallback for black-and-white ports.
@@ -177,4 +167,15 @@ package body Pictlib.Internal.Patterns is
             return Sessions.Fail (S, Errors.Pattern_Invalid, 2, Byte_Count (Pattern_Type));
       end case;
    end Read_Pixel_Pattern;
+
+   procedure Move (Target : in out Pattern; Source : in out Pattern) is
+   begin
+      Target.Kind := Source.Kind;
+      Target.Bits := Source.Bits;
+      Target.Color := Source.Color;
+      Target.Width := Source.Width;
+      Target.Height := Source.Height;
+      Color_Vectors.Move (Target => Target.Tile, Source => Source.Tile);
+      Source := (others => <>);
+   end Move;
 end Pictlib.Internal.Patterns;

@@ -44,12 +44,16 @@ package body Pictlib.Internal.Rendering is
    function Charge (P : in out Painter; S : Sessions.Session; Units : Natural) return Results.Result is
      (Charge (P, S, Pixel_Count (Units)));
 
+   --  The one report of drawing work past the budget: the work done so far plus Units, saturated.
+   function Over_Budget (P : Painter; S : Sessions.Session; Units : Pixel_Count) return Results.Result is
+     (Sessions.Over_Limit
+        (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
+         (if Units > Pixel_Count'Last - P.Work then Byte_Count'Last else Byte_Count (P.Work + Units))));
+
    function Charge (P : in out Painter; S : Sessions.Session; Units : Pixel_Count) return Results.Result is
    begin
       if Units > Allowance (P, S) then
-         return Sessions.Over_Limit
-           (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
-            (if Units > Pixel_Count'Last - P.Work then Byte_Count'Last else Byte_Count (P.Work + Units)));
+         return Over_Budget (P, S, Units);
       end if;
       P.Work := P.Work + Units;
       return Results.Success;
@@ -115,13 +119,9 @@ package body Pictlib.Internal.Rendering is
       Shape : Coverage.Shape;
       How : Paint) return Results.Result
    is
-      --  A shape that spent its allowance is over the limit whatever its allowance was; the charge reports it
-      --  when the allowance was the budget left, as Allowance gives.
+      --  A shape that spent its allowance is over the limit, whatever allowance it was built with.
       Outcome : Results.Result :=
-        (if Coverage.Exhausted (Shape) and then Coverage.Work (Shape) <= Allowance (P, S)
-         then Sessions.Over_Limit
-                (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
-                 Byte_Count (S.Budget.Max_Drawing_Work) + 1)
+        (if Coverage.Exhausted (Shape) then Over_Budget (P, S, Coverage.Work (Shape))
          else Charge (P, S, Coverage.Work (Shape)));
       Colorize : constant Boolean := Patterns.Kind (How.Source) = Patterns.Bit_Pattern;
       Kind : constant Transfer_Modes.Mode_Kind :=
@@ -307,10 +307,11 @@ package body Pictlib.Internal.Rendering is
       Kind : Transfer_Modes.Mode_Kind;
       Outcome : Results.Result;
    begin
-      --  A QuickTime image's placeholder costs nothing: the image it stands for was drawn and charged.
+      --  A QuickTime image's placeholder is skipped like any undrawn copy: its rows are read whatever the image
+      --  cost.
       if P.Skip_Next_Bits then
          P.Skip_Next_Bits := False;
-         return Pixmaps.Skip_Pixels (S, Header);
+         return Skip_Rows (P, S, Header);
       end if;
       Outcome := Mode (S, Event, Header.Mode, Kind);
       if P.Hilite_Next then

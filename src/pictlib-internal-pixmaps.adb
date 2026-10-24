@@ -264,21 +264,26 @@ package body Pictlib.Internal.Pixmaps is
       then Sessions.Skip_Rows (S, Header.Row_Bytes, Header.Height, False, Byte_Count (Header.Raw_Length))
       else Sessions.Skip_Rows (S, Header.Row_Bytes, Header.Height, True, 0));
 
+   function Stored_Length (Header : Bits_Header) return Natural is
+     (if Header.Layout = Unpacked then Header.Raw_Length
+      elsif Header.Row_Bytes > 250 then 16#FFFF# else 16#FF#);
+
+   function Unpacked_Length (Header : Bits_Header) return Natural is
+     (if Header.Layout = Unpacked then 0 else Header.Unpacked_Length);
+
+   function Buffer_Bytes (Header : Bits_Header) return Byte_Count is
+     (Byte_Count (Stored_Length (Header)) + Byte_Count (Unpacked_Length (Header)) + 3 * Byte_Count (Header.Width));
+
    function Start (S : Sessions.Session; Decoder : in out Row_Decoder; Header : Bits_Header) return Results.Result is
-      Stored_Length : constant Natural :=
-        (if Header.Layout = Unpacked then Header.Raw_Length
-         elsif Header.Row_Bytes > 250 then 16#FFFF# else 16#FF#);
-      Unpacked_Length : constant Natural := (if Header.Layout = Unpacked then 0 else Header.Unpacked_Length);
-      Total : constant Byte_Count :=
-        Byte_Count (Stored_Length) + Byte_Count (Unpacked_Length) + 3 * Byte_Count (Header.Width);
+      Total : constant Byte_Count := Buffer_Bytes (Header);
    begin
       Finish (Decoder);
       if Total > S.Budget.Max_Allocation_Bytes then
          return Sessions.Over_Limit (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Total);
       end if;
       Decoder.Header := Header;
-      Decoder.Stored := new Streams.Byte_Array (1 .. Stored_Length);
-      Decoder.Unpacked := new Streams.Byte_Array (1 .. Unpacked_Length);
+      Decoder.Stored := new Streams.Byte_Array (1 .. Stored_Length (Header));
+      Decoder.Unpacked := new Streams.Byte_Array (1 .. Unpacked_Length (Header));
       Decoder.Colors := new Color_Row (0 .. Header.Width - 1);
       Decoder.Bad_Index_Reported := False;
       return Results.Success;
