@@ -46,8 +46,13 @@ package Pictlib.Internal.Rendering is
    function Default_Pattern (Slot : Pattern_Slot) return Patterns.Pattern is
      (Patterns.From_Bits (if Slot = Back_Slot then Patterns.White else Patterns.Black));
 
+   --  The drawing machinery: the caller's view and the span buffers rows are painted through. Only the row
+   --  helpers below use it.
+   type Engine is limited private;
+
+   --  A QuickDraw port being drawn: its state, which the opcodes change, and the engine that paints.
    type Painter is limited record
-      Target : Canvas.Canvas;
+      Machine : Engine;
       --  The canvas in picture coordinates.
       Window : Area;
       Origin_H : Integer := 0;
@@ -77,10 +82,6 @@ package Pictlib.Internal.Rendering is
       Text_State : Text.Text_State;
       Fonts : Pictlib.Fonts.Font_Table;
       Font_Cache : aliased Text.Font_Cache;
-      Clip_Spans : Regions.Span_Vectors.Vector;
-      Mask_Spans : Regions.Span_Vectors.Vector;
-      Row_Spans : Regions.Span_Vectors.Vector;
-      Scratch : Regions.Span_Vectors.Vector;
    end record;
 
    type Paint_Kind is (Pattern_Paint, Invert_Paint);
@@ -169,6 +170,10 @@ package Pictlib.Internal.Rendering is
    --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
    function Begin_Row (P : in out Painter; S : in out Sessions.Session; Y, Left, Right : Integer)
      return Results.Result;
+   --  Row is empty.
+   --  @param P Painter.
+   --  @return True when the row begun holds no span, so nothing of it is drawn.
+   function Row_Is_Empty (P : Painter) return Boolean;
    --  Mask row.
    --  @param P Painter whose Row_Spans are cut by Mask's row Y.
    --  @param S Session whose drawing budget the mask walk is charged to, before the spans are cut.
@@ -216,4 +221,12 @@ package Pictlib.Internal.Rendering is
       Header : Pixmaps.Bits_Header;
       Mask : in out Regions.Region;
       Event : Pictures.Opcode_Event) return Results.Result;
+private
+   type Engine is limited record
+      Target : Canvas.Canvas;
+      Clip_Spans : Regions.Span_Vectors.Vector;
+      Mask_Spans : Regions.Span_Vectors.Vector;
+      Row_Spans : Regions.Span_Vectors.Vector;
+      Scratch : Regions.Span_Vectors.Vector;
+   end record;
 end Pictlib.Internal.Rendering;

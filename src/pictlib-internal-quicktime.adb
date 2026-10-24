@@ -11,6 +11,7 @@ with Pictlib.Errors;
 with Pictlib.Geometry;
 with Pictlib.Images;
 with Pictlib.Internal.Picture_Stream;
+with Pictlib.Internal.Region_Reader;
 with Pictlib.Internal.Regions;
 with Pictlib.Internal.Transfer_Modes;
 with Pictlib.Streams;
@@ -342,7 +343,7 @@ package body Pictlib.Internal.QuickTime is
       loop
          exit when not Results.Succeeded (Outcome);
          Outcome := Rendering.Begin_Row (P, S, Y, Destination.Left, Destination.Right);
-         if Results.Succeeded (Outcome) and then Has_Mask and then not P.Row_Spans.Is_Empty then
+         if Results.Succeeded (Outcome) and then Has_Mask and then not Rendering.Row_Is_Empty (P) then
             Outcome := Rendering.Mask_Row (P, S, Mask, Y);
          end if;
          if Results.Succeeded (Outcome) then
@@ -413,7 +414,7 @@ package body Pictlib.Internal.QuickTime is
             if Byte_Count (Header.Mask_Size) > Length - Used then
                return Too_Long (Byte_Count (Header.Mask_Size));
             end if;
-            Outcome := Regions.Read (S, Mask);
+            Outcome := Region_Reader.Read (S, Mask);
             if not Results.Succeeded (Outcome) then
                return Outcome;
             elsif Used - Before /= Byte_Count (Header.Mask_Size) then

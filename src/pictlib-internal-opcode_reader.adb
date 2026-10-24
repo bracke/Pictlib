@@ -1,12 +1,11 @@
 with Interfaces;
 with Pictlib.Errors;
-with Pictlib.Fonts;
 with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Drawing;
 with Pictlib.Internal.Metadata_Store;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Internal.Pixmaps;
-with Pictlib.Internal.QuickTime;
+with Pictlib.Internal.Region_Reader;
 with Pictlib.Internal.Regions;
 with Pictlib.Metadata;
 with Pictlib.Opcodes;
@@ -58,22 +57,18 @@ package body Pictlib.Internal.Opcode_Reader is
       end case;
    end Skip_Pixel_Pattern;
 
-   function Consume_Bits (S : in out Session; Event : Pictures.Opcode_Event; Paint : access Rendering.Painter)
-     return Results.Result
-   is
+   --  A bits opcode enumerated: its header read, its rows skipped. Rendering copies it in Drawing instead.
+   function Skip_Bits (S : in out Session; Event : Pictures.Opcode_Event) return Results.Result is
       Header : Pixmaps.Bits_Header;
       Mask : Regions.Region;
       Outcome : constant Results.Result :=
-        Pixmaps.Read_Bits_Header (S, Event.Op, Header, Mask, Read_Mask => Paint /= null,
-                                  For_Decoding => Paint /= null);
+        Pixmaps.Read_Bits_Header (S, Event.Op, Header, Mask, Read_Mask => False, For_Decoding => False);
    begin
       if not Results.Succeeded (Outcome) then
          return Outcome;
-      elsif Paint = null then
-         return Pixmaps.Skip_Pixels (S, Header);
       end if;
-      return Rendering.Copy_Bits (Paint.all, S, Header, Mask, Event);
-   end Consume_Bits;
+      return Pixmaps.Skip_Pixels (S, Header);
+   end Skip_Bits;
 
    function Consume_Short_Comment (S : in out Session; Event : Pictures.Opcode_Event) return Results.Result is
       Kind : Interfaces.Unsigned_16;
@@ -143,7 +138,7 @@ package body Pictlib.Internal.Opcode_Reader is
                for Index in Name'Range loop
                   Name (Index) := Character'Val (Data (3 + Index));
                end loop;
-               Paint.Text_State.Names.Include (Fonts.Font_ID (Font), Name);
+               Drawing.Register_Font_Name (Paint.all, Natural (Font), Name);
             end;
          end if;
          if S.Retention.Font_Names then
@@ -170,9 +165,6 @@ package body Pictlib.Internal.Opcode_Reader is
    begin
       if not Results.Succeeded (Outcome) then
          return Outcome;
-      elsif Event.Op = Opcodes.Compressed_QuickTime and then Paint /= null then
-         --  Rendering reads the image; its payload is not retained as well.
-         return QuickTime.Draw (Paint.all, S, Event, Length);
       elsif Event.Op = Opcodes.Font_Name then
          --  Its structure is checked whatever the retention policy, so the policy never changes which pictures
          --  are malformed.
@@ -236,7 +228,7 @@ package body Pictlib.Internal.Opcode_Reader is
                return Outcome;
             end;
          when Opcodes.Region_Data =>
-            return Regions.Skip (S);
+            return Region_Reader.Skip (S);
          when Opcodes.Polygon_Data =>
             return Skip_Polygon (S);
          when Opcodes.Pixel_Pattern_Data =>
@@ -246,7 +238,7 @@ package body Pictlib.Internal.Opcode_Reader is
          when Opcodes.Long_Comment_Data =>
             return Consume_Long_Comment (S, Event);
          when Opcodes.Bits_Data =>
-            return Consume_Bits (S, Event, Paint);
+            return Skip_Bits (S, Event);
          when Opcodes.Version_Data =>
             return Sessions.Skip_Data (S, (if S.Version = Version_1 then 1 else 2));
          when Opcodes.End_Of_Picture =>
@@ -254,8 +246,6 @@ package body Pictlib.Internal.Opcode_Reader is
       end case;
    end Consume_Data;
 
-   function Rule_Of (Event : Pictures.Opcode_Event) return Opcodes.Data_Rule is
-     (Opcodes.Rule_For (Event.Op).Rule);
 
    function Next
      (S : in out Session;
@@ -311,11 +301,8 @@ package body Pictlib.Internal.Opcode_Reader is
          declare
             Handled : Boolean := False;
          begin
+            --  Rendering, every opcode goes to Drawing first; what it leaves is skipped or retained here.
             if Paint /= null then
-               --  Only the opcode right after a QuickTime image is its placeholder.
-               if Rule_Of (Event) /= Opcodes.Bits_Data and then Event.Op /= Opcodes.Compressed_QuickTime then
-                  Paint.Skip_Next_Bits := False;
-               end if;
                Outcome := Drawing.Consume (Paint.all, S, Event, Handled);
             end if;
             if Results.Succeeded (Outcome) and then not Handled then

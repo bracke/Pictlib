@@ -1,7 +1,6 @@
 with Ada.Containers.Vectors;
 with Pictlib.Geometry;
-with Pictlib.Internal.Sessions;
-with Pictlib.Results;
+with Pictlib.Streams;
 
 --  QuickDraw regions. After the size word and bounding box, a non-rectangular region lists scanlines: a y,
 --  then the x of each inversion point on it, then 16#7FFF#; a final 16#7FFF# ends the list. A pixel is inside
@@ -61,15 +60,13 @@ package Pictlib.Internal.Regions is
    --  @param DY Added to every vertical coordinate.
    procedure Translate (Item : in out Region; DX, DY : Integer);
 
-   --  Skip.
-   --  @param S Session positioned at a region.
-   --  @return Success, Region_Invalid for a size below 10, or Limit_Exceeded above the region budget.
-   function Skip (S : in out Sessions.Session) return Results.Result;
-   --  Read.
-   --  @param S Session positioned at a region.
-   --  @param Item The region; rectangular and empty on failure.
-   --  @return Success, Region_Invalid for malformed scanlines, or Limit_Exceeded above the region budget.
-   function Read (S : in out Sessions.Session; Item : out Region) return Results.Result;
+   --  From scanlines.
+   --  @param Box The region's bounding box.
+   --  @param Data Its scanline data: y, inversion columns, 16#7FFF#, then a final 16#7FFF#.
+   --  @param Item The region, when Data is well formed: y strictly increasing within the box, columns strictly
+   --  increasing within it and even in number on every line, the terminators exactly at the end.
+   --  @return True when Data is well formed.
+   function From_Scanlines (Box : Area; Data : Streams.Byte_Array; Item : out Region) return Boolean;
 
    --  Row spans.
    --  @param Item Region; its row cursor moves to Y.

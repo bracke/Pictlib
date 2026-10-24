@@ -1,3 +1,5 @@
+with Pictlib.Internal.Container;
+with Pictlib.Internal.Sessions;
 with Pictlib.Internal.Diagnostics;
 with Pictlib.Internal.Opcode_Reader;
 with Pictlib.Internal.Metadata_Store;
@@ -11,13 +13,13 @@ package body Pictlib.Decoding is
 
    procedure Bind (Object : in out Decoder; Input : not null access Streams.Source'Class) is
    begin
-      Internal.Sessions.Clear (Object.Session);
-      Internal.Picture_Stream.Bind (Object.Session.Stream, Input, Object.Session.Budget.Max_Picture_Bytes);
-      Object.Session.Strictness := Object.Decode_Options.Strictness;
-      Object.Session.Retention := Object.Decode_Options.Retention;
-      Object.Info := (others => <>);
-      Object.Header_Events := [others => (others => <>)];
-      Object.Header_Event_Count := 0;
+      Internal.Sessions.Clear (Object.Inner.Session);
+      Internal.Picture_Stream.Bind (Object.Inner.Session.Stream, Input, Object.Inner.Session.Budget.Max_Picture_Bytes);
+      Object.Inner.Session.Strictness := Object.Decode_Options.Strictness;
+      Object.Inner.Session.Retention := Object.Decode_Options.Retention;
+      Object.Inner.Info := (others => <>);
+      Object.Inner.Header_Events := [others => (others => <>)];
+      Object.Inner.Header_Event_Count := 0;
       Object.First_Error := Errors.Make (Errors.No_Error);
       Object.Current_State := Ready;
    end Bind;
@@ -29,7 +31,7 @@ package body Pictlib.Decoding is
       Decode_Limits : Limits.Limit_Set := Limits.Default_Limits) is
    begin
       Object.Decode_Options := Decode_Options;
-      Object.Session.Budget := Decode_Limits;
+      Object.Inner.Session.Budget := Decode_Limits;
       Bind (Object, Input);
    end Initialize;
 
@@ -61,8 +63,8 @@ package body Pictlib.Decoding is
       declare
          Outcome : constant Results.Result :=
            Internal.Container.Read_Header
-             (Object.Session, Object.Decode_Options.File_Header, Object.Info, Object.Header_Events,
-              Object.Header_Event_Count);
+             (Object.Inner.Session, Object.Decode_Options.File_Header, Object.Inner.Info, Object.Inner.Header_Events,
+              Object.Inner.Header_Event_Count);
       begin
          if Results.Succeeded (Outcome) then
             Object.Current_State := Header_Read;
@@ -71,7 +73,7 @@ package body Pictlib.Decoding is
       end;
    end Read_Header;
 
-   function Header (Object : Decoder) return Pictures.Header_Info is (Object.Info);
+   function Header (Object : Decoder) return Pictures.Header_Info is (Object.Inner.Info);
 
    --  After the end opcode: by default the rest of the input is not read.
    function Check_Trailing_Data (Object : in out Decoder) return Results.Result is
@@ -81,19 +83,47 @@ package body Pictlib.Decoding is
          return Results.Success;
       end if;
       --  A trailing byte is not picture data: a picture that used its whole byte budget still has it found.
-      Step := Internal.Picture_Stream.Probe_Past_End (Object.Session.Stream);
+      Step := Internal.Picture_Stream.Probe_Past_End (Object.Inner.Session.Stream);
       if Errors.Is_Fatal (Step.Error) then
          return Results.Failure (Step.Error);
       elsif Step.Count = 0 and then not Step.End_Of_Input then
          return Results.Failure
-           (Errors.Make (Errors.Source_Zero_Progress, (Source => Object.Session.Stream.Offset, others => <>)));
+           (Errors.Make (Errors.Source_Zero_Progress, (Source => Object.Inner.Session.Stream.Offset, others => <>)));
       elsif Step.Count = 0 then
          return Results.Success;
       end if;
       return Internal.Sessions.Reject_Or_Warn
-        (Object.Session, Errors.Trailing_Data, Errors.Compatibility_Issue, Errors.Compatibility,
-         (Source => Object.Session.Stream.Offset - 1, others => <>));
+        (Object.Inner.Session, Errors.Trailing_Data, Errors.Compatibility_Issue, Errors.Compatibility,
+         (Source => Object.Inner.Session.Stream.Offset - 1, others => <>));
    end Check_Trailing_Data;
+
+   --  How a picture goes on after an opcode.
+   type Step_Kind is (More, Ended_By_End_Opcode, Ended_By_Input);
+
+   --  Read the next opcode, rendering it when Paint is given. Input that ends at an opcode boundary is the
+   --  missing end opcode: strictly a failure, otherwise a warning. Enumerate and Render share this.
+   function Step
+     (Object : in out Decoder;
+      Event : out Pictures.Opcode_Event;
+      Kind : out Step_Kind;
+      Paint : access Internal.Rendering.Painter := null) return Results.Result
+   is
+      At_End : Boolean;
+      Outcome : constant Results.Result := Internal.Opcode_Reader.Next (Object.Inner.Session, Event, At_End, Paint);
+   begin
+      Kind := More;
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      elsif At_End then
+         Kind := Ended_By_Input;
+         return Internal.Sessions.Reject_Or_Warn
+           (Object.Inner.Session, Errors.Missing_End_Opcode, Errors.Compatibility_Issue, Errors.Compatibility,
+            (Ordinal => Object.Inner.Session.Next_Ordinal, others => <>));
+      elsif Event.Op = Opcodes.End_Picture then
+         Kind := Ended_By_End_Opcode;
+      end if;
+      return Results.Success;
+   end Step;
 
    function Enumerate (Object : in out Decoder; Visitor : in out Opcode_Visitor'Class) return Results.Result is
    begin
@@ -101,8 +131,8 @@ package body Pictlib.Decoding is
          return Wrong_State (Object);
       end if;
 
-      for Index in 1 .. Object.Header_Event_Count loop
-         if Visitor.Visit (Object.Header_Events (Index)) = Stop then
+      for Index in 1 .. Object.Inner.Header_Event_Count loop
+         if Visitor.Visit (Object.Inner.Header_Events (Index)) = Stop then
             Object.Current_State := Stopped;
             return Results.Success;
          end if;
@@ -111,33 +141,18 @@ package body Pictlib.Decoding is
       loop
          declare
             Event : Pictures.Opcode_Event;
-            At_End : Boolean;
-            Outcome : constant Results.Result := Internal.Opcode_Reader.Next (Object.Session, Event, At_End);
+            Kind : Step_Kind;
+            Outcome : constant Results.Result := Step (Object, Event, Kind);
          begin
             if not Results.Succeeded (Outcome) then
                return Finish (Object, Outcome);
-            elsif At_End then
-               if not Internal.Sessions.Is_Lenient (Object.Session) then
-                  return Finish
-                    (Object,
-                     Results.Failure
-                       (Errors.Make
-                          (Errors.Missing_End_Opcode,
-                           (Source => Object.Session.Stream.Offset,
-                            Ordinal => Object.Session.Next_Ordinal,
-                            others => <>))));
-               end if;
-               Internal.Sessions.Warn
-                 (Object.Session, Errors.Compatibility_Issue, Errors.Compatibility,
-                  (Ordinal => Object.Session.Next_Ordinal, others => <>));
+            elsif Kind = Ended_By_Input then
                Object.Current_State := Finished;
                return Results.Success;
-            end if;
-
-            if Visitor.Visit (Event) = Stop and then Event.Op /= Opcodes.End_Picture then
+            elsif Visitor.Visit (Event) = Stop and then Kind = More then
                Object.Current_State := Stopped;
                return Results.Success;
-            elsif Event.Op = Opcodes.End_Picture then
+            elsif Kind = Ended_By_End_Opcode then
                declare
                   Trailing : constant Results.Result := Check_Trailing_Data (Object);
                begin
@@ -159,8 +174,8 @@ package body Pictlib.Decoding is
             | Errors.Missing_End_Opcode | Errors.Embedded_Image_Failed);
 
    function Check_View (Object : Decoder; Output : Images.Mutable_Image_View) return Results.Result is
-      Frame : constant Geometry.Rect := Object.Info.Frame;
-      Budget : Limits.Limit_Set renames Object.Session.Budget;
+      Frame : constant Geometry.Rect := Object.Inner.Info.Frame;
+      Budget : Limits.Limit_Set renames Object.Inner.Session.Budget;
       Pixels : constant Pixel_Count :=
         Pixel_Count (Geometry.Width (Frame)) * Pixel_Count (Geometry.Height (Frame));
    begin
@@ -209,30 +224,17 @@ package body Pictlib.Decoding is
          Outcome : Results.Result := Results.Success;
       begin
          --  Each render has the whole drawing budget.
-         Internal.Sessions.Start_Drawing (Object.Session);
+         Internal.Sessions.Start_Drawing (Object.Inner.Session);
          Internal.Rendering.Start
-           (Paint, Output, Object.Info.Frame, Object.Decode_Options.Background, Object.Decode_Options.Fonts);
+           (Paint, Output, Object.Inner.Info.Frame, Object.Decode_Options.Background, Object.Decode_Options.Fonts);
          loop
             declare
                Event : Pictures.Opcode_Event;
-               At_End : Boolean;
+               Kind : Step_Kind;
             begin
-               Outcome := Internal.Opcode_Reader.Next (Object.Session, Event, At_End, Paint'Access);
-               if Results.Succeeded (Outcome) and then At_End then
-                  if not Internal.Sessions.Is_Lenient (Object.Session) then
-                     Outcome := Results.Failure
-                       (Errors.Make
-                          (Errors.Missing_End_Opcode,
-                           (Source => Object.Session.Stream.Offset, Ordinal => Object.Session.Next_Ordinal,
-                            others => <>)));
-                  else
-                     Internal.Sessions.Warn (Object.Session, Errors.Compatibility_Issue, Errors.Compatibility,
-                                             (Ordinal => Object.Session.Next_Ordinal, others => <>));
-                  end if;
-                  exit;
-               end if;
-               exit when not Results.Succeeded (Outcome);
-               if Event.Op = Opcodes.End_Picture then
+               Outcome := Step (Object, Event, Kind, Paint'Access);
+               exit when not Results.Succeeded (Outcome) or else Kind = Ended_By_Input;
+               if Kind = Ended_By_End_Opcode then
                   Outcome := Check_Trailing_Data (Object);
                   exit;
                end if;
@@ -240,11 +242,11 @@ package body Pictlib.Decoding is
          end loop;
 
          if not Results.Succeeded (Outcome)
-           and then Object.Session.Strictness = Recover_When_Safe
+           and then Object.Inner.Session.Strictness = Recover_When_Safe
            and then Is_Recoverable (Outcome.First_Error.Code)
          then
             Internal.Sessions.Warn
-              (Object.Session, Errors.Partial_Picture, Errors.Data_Loss, Outcome.First_Error.Context);
+              (Object.Inner.Session, Errors.Partial_Picture, Errors.Data_Loss, Outcome.First_Error.Context);
             Outcome := Results.Success;
          end if;
          if Results.Succeeded (Outcome) then
@@ -257,26 +259,23 @@ package body Pictlib.Decoding is
    function Last_Error (Object : Decoder) return Errors.Error is (Object.First_Error);
 
    function Warning_Count (Object : Decoder) return Natural is
-     (Internal.Diagnostics.Count (Object.Session.Log));
+     (Internal.Diagnostics.Count (Object.Inner.Session.Log));
 
    function Warning_At (Object : Decoder; Index : Positive) return Errors.Warning is
-     (Internal.Diagnostics.Element (Object.Session.Log, Index));
-
-   function Total_Allocation_Bytes (Object : Decoder) return Byte_Count is
-     (Object.Session.Total_Allocation_Bytes);
+     (Internal.Diagnostics.Element (Object.Inner.Session.Log, Index));
 
    function Metadata_Count (Object : Decoder) return Natural is
-     (Internal.Metadata_Store.Count (Object.Session.Store));
+     (Internal.Metadata_Store.Count (Object.Inner.Session.Store));
 
    function Metadata_Item (Object : Decoder; Index : Positive) return Metadata.Item_Info is
-     (Internal.Metadata_Store.Info (Object.Session.Store, Index));
+     (Internal.Metadata_Store.Info (Object.Inner.Session.Store, Index));
 
    function Copy_Metadata
      (Object : Decoder;
       Index : Positive;
       Buffer : out Streams.Byte_Array;
       Count : out Byte_Count) return Results.Result is
-     (Internal.Metadata_Store.Copy_Data (Object.Session.Store, Index, Buffer, Count));
+     (Internal.Metadata_Store.Copy_Data (Object.Inner.Session.Store, Index, Buffer, Count));
 
    procedure Cancel (Object : in out Decoder) is
    begin
@@ -287,9 +286,9 @@ package body Pictlib.Decoding is
 
    procedure Finalize (Object : in out Decoder) is
    begin
-      Internal.Sessions.Clear (Object.Session);
-      Object.Info := (others => <>);
-      Object.Header_Event_Count := 0;
+      Internal.Sessions.Clear (Object.Inner.Session);
+      Object.Inner.Info := (others => <>);
+      Object.Inner.Header_Event_Count := 0;
       Object.First_Error := Errors.Make (Errors.No_Error);
       Object.Current_State := Created;
    end Finalize;

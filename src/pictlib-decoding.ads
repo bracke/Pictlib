@@ -1,8 +1,7 @@
 with Pictlib.Errors;
 with Pictlib.Fonts;
 with Pictlib.Images;
-with Pictlib.Internal.Container;
-with Pictlib.Internal.Sessions;
+with Pictlib.Internal.Decoder_State;
 with Pictlib.Limits;
 with Pictlib.Metadata;
 with Pictlib.Pictures;
@@ -100,11 +99,6 @@ package Pictlib.Decoding is
    function Warning_At (Object : Decoder; Index : Positive) return Errors.Warning
      with Pre => Index <= Warning_Count (Object);
 
-   --  Total decoder-owned allocation bytes admitted during this session.
-   --  @param Object Decoder.
-   --  @return Monotonic allocation admission for the current session.
-   function Total_Allocation_Bytes (Object : Decoder) return Byte_Count;
-
    --  Metadata count.
    --  @param Object Decoder.
    --  @return Items retained so far.
@@ -138,10 +132,7 @@ private
    type Decoder is limited record
       Current_State : Decoder_State := Created;
       Decode_Options : Options;
-      Session : Internal.Sessions.Session;
-      Info : Pictures.Header_Info;
-      Header_Events : Internal.Container.Header_Events;
-      Header_Event_Count : Natural := 0;
+      Inner : Internal.Decoder_State.State;
       First_Error : Errors.Error := Errors.Make (Errors.No_Error);
    end record;
 end Pictlib.Decoding;

@@ -1,6 +1,7 @@
 with Pictlib.Internal.Checked_Arithmetic;
 with Ada.Unchecked_Deallocation;
 with Pictlib.Errors;
+with Pictlib.Internal.Region_Reader;
 with Pictlib.Internal.PackBits;
 with Pictlib.Opcodes;
 
@@ -266,7 +267,7 @@ package body Pictlib.Internal.Pixmaps is
          Outcome := Sessions.Read_Word (S, Header.Mode);
       end if;
       if Results.Succeeded (Outcome) and then Header.Masked then
-         Outcome := (if Read_Mask then Regions.Read (S, Mask) else Regions.Skip (S));
+         Outcome := (if Read_Mask then Region_Reader.Read (S, Mask) else Region_Reader.Skip (S));
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Sessions.Extent (S, Header.Bounds, Header.Width, Header.Height);

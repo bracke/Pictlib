@@ -5,12 +5,17 @@ with Pictlib.Images;
 with Pictlib.Internal.Coverage;
 with Pictlib.Internal.Typesetting;
 with Pictlib.Internal.Patterns;
+with Pictlib.Opcodes;
+with Pictlib.Internal.QuickTime;
+with Pictlib.Internal.Pixmaps;
 with Pictlib.Fonts;
+with Pictlib.Internal.Region_Reader;
 with Pictlib.Internal.Regions;
 with Pictlib.Internal.Transfer_Modes;
 with Pictlib.Streams;
 
 package body Pictlib.Internal.Drawing is
+   use type Opcodes.Data_Rule;
    use type Interfaces.Unsigned_16;
    use type Interfaces.Unsigned_32;
 
@@ -229,7 +234,7 @@ package body Pictlib.Internal.Drawing is
             end;
          when others =>
             if not Same then
-               Outcome := Regions.Read (S, P.Last_Region);
+               Outcome := Region_Reader.Read (S, P.Last_Region);
                if not Results.Succeeded (Outcome) then
                   return Outcome;
                end if;
@@ -378,9 +383,13 @@ package body Pictlib.Internal.Drawing is
       Outcome : Results.Result := Results.Success;
    begin
       Handled := True;
+      --  Only the opcode right after a QuickTime image is its placeholder.
+      if Opcodes.Rule_For (Event.Op).Rule /= Opcodes.Bits_Data and then Event.Op /= Opcodes.Compressed_QuickTime then
+         P.Skip_Next_Bits := False;
+      end if;
       case Event.Op is
          when 16#0001# =>  --  Clip, kept in local coordinates
-            Outcome := Regions.Read (S, P.Clip);
+            Outcome := Region_Reader.Read (S, P.Clip);
             P.Has_Clip := Results.Succeeded (Outcome);
          --  Every pattern opcode is read, then charged (at least a unit of drawing work), like every other
          --  opcode; whatever fails leaves the slot its default pattern.
@@ -527,9 +536,39 @@ package body Pictlib.Internal.Drawing is
             else
                Outcome := Draw_Shape (P, S, Event);
             end if;
+         when Opcodes.Bits_Rect | Opcodes.Bits_Region | Opcodes.Pack_Bits_Rect | Opcodes.Pack_Bits_Region
+            | Opcodes.Direct_Bits_Rect | Opcodes.Direct_Bits_Region
+         =>
+            declare
+               Header : Pixmaps.Bits_Header;
+               Mask : Regions.Region;
+            begin
+               Outcome := Pixmaps.Read_Bits_Header (S, Event.Op, Header, Mask, Read_Mask => True, For_Decoding => True);
+               if Results.Succeeded (Outcome) then
+                  Outcome := Rendering.Copy_Bits (P, S, Header, Mask, Event);
+               end if;
+            end;
+         when Opcodes.Compressed_QuickTime =>
+            --  Its data is a long length, then the image; rendering reads the image instead of retaining it.
+            declare
+               Length : Interfaces.Unsigned_32;
+            begin
+               Outcome := Sessions.Read_Long (S, Length);
+               if Results.Succeeded (Outcome) then
+                  Outcome := Sessions.Admit_Data (S, Byte_Count (Length));
+               end if;
+               if Results.Succeeded (Outcome) then
+                  Outcome := QuickTime.Draw (P, S, Event, Byte_Count (Length));
+               end if;
+            end;
          when others =>
             Handled := False;
       end case;
       return Outcome;
    end Consume;
+
+   procedure Register_Font_Name (P : in out Rendering.Painter; Font : Natural; Name : String) is
+   begin
+      P.Text_State.Names.Include (Fonts.Font_ID (Font), Name);
+   end Register_Font_Name;
 end Pictlib.Internal.Drawing;

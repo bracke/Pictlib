@@ -13,8 +13,8 @@ package body Pictlib.Internal.Rendering is
       Background : Images.RGB_Color;
       Font_Files : Pictlib.Fonts.Font_Table) is
    begin
-      Canvas.Bind (P.Target, View);
-      Canvas.Fill (P.Target, Background);
+      Canvas.Bind (P.Machine.Target, View);
+      Canvas.Fill (P.Machine.Target, Background);
       P.Window := Regions.To_Area (Frame);
       P.Origin_H := 0;
       P.Origin_V := 0;
@@ -72,22 +72,22 @@ package body Pictlib.Internal.Rendering is
          return Results.Success;
       end if;
       --  The clip is local: picture row Y is its row Y + origin, and its columns lie origin to the right.
-      Regions.Row_Spans (P.Clip, Y + P.Origin_V, P.Clip_Spans, Work, Sessions.Work_Left (S));
-      for Item of P.Clip_Spans loop
+      Regions.Row_Spans (P.Clip, Y + P.Origin_V, P.Machine.Clip_Spans, Work, Sessions.Work_Left (S));
+      for Item of P.Machine.Clip_Spans loop
          Item := (Item.Left - P.Origin_H, Item.Right - P.Origin_H);
       end loop;
-      Regions.Intersect (P.Row_Spans, P.Clip_Spans, P.Scratch);
-      P.Row_Spans.Move (P.Scratch);
+      Regions.Intersect (P.Machine.Row_Spans, P.Machine.Clip_Spans, P.Machine.Scratch);
+      P.Machine.Row_Spans.Move (P.Machine.Scratch);
       return Sessions.Charge_Work (S, Work);
    end Clip_Row;
 
    procedure Put (P : in out Painter; X, Y : Integer; Color : Images.RGB_Color) is
    begin
-      Canvas.Put (P.Target, X - P.Window.Left, Y - P.Window.Top, Color);
+      Canvas.Put (P.Machine.Target, X - P.Window.Left, Y - P.Window.Top, Color);
    end Put;
 
    function Get (P : Painter; X, Y : Integer) return Images.RGB_Color is
-     (Canvas.Get (P.Target, X - P.Window.Left, Y - P.Window.Top));
+     (Canvas.Get (P.Machine.Target, X - P.Window.Left, Y - P.Window.Top));
 
    function Begin_Row (P : in out Painter; S : in out Sessions.Session; Y, Left, Right : Integer)
      return Results.Result
@@ -95,13 +95,15 @@ package body Pictlib.Internal.Rendering is
       First : constant Integer := Integer'Max (Left, P.Window.Left);
       Last : constant Integer := Integer'Min (Right, P.Window.Right);
    begin
-      P.Row_Spans.Clear;
+      P.Machine.Row_Spans.Clear;
       if Y not in P.Window.Top .. P.Window.Bottom - 1 or else First >= Last then
          return Results.Success;
       end if;
-      P.Row_Spans.Append (Regions.Span'(First, Last));
+      P.Machine.Row_Spans.Append (Regions.Span'(First, Last));
       return Clip_Row (P, S, Y);
    end Begin_Row;
+
+   function Row_Is_Empty (P : Painter) return Boolean is (P.Machine.Row_Spans.Is_Empty);
 
    function Mask_Row (P : in out Painter; S : in out Sessions.Session; Mask : in out Regions.Region; Y : Integer)
      return Results.Result
@@ -109,11 +111,11 @@ package body Pictlib.Internal.Rendering is
       Work : Pixel_Count;
       Outcome : Results.Result;
    begin
-      Regions.Row_Spans (Mask, Y, P.Mask_Spans, Work, Sessions.Work_Left (S));
+      Regions.Row_Spans (Mask, Y, P.Machine.Mask_Spans, Work, Sessions.Work_Left (S));
       Outcome := Sessions.Charge_Work (S, Work);
       if Results.Succeeded (Outcome) then
-         Regions.Intersect (P.Row_Spans, P.Mask_Spans, P.Scratch);
-         P.Row_Spans.Move (P.Scratch);
+         Regions.Intersect (P.Machine.Row_Spans, P.Machine.Mask_Spans, P.Machine.Scratch);
+         P.Machine.Row_Spans.Move (P.Machine.Scratch);
       end if;
       return Outcome;
    end Mask_Row;
@@ -121,7 +123,7 @@ package body Pictlib.Internal.Rendering is
    function Paint_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result is
       Outcome : Results.Result := Results.Success;
    begin
-      for Span of P.Row_Spans loop
+      for Span of P.Machine.Row_Spans loop
          Outcome := Sessions.Charge_Work (S, Span.Right - Span.Left);
          exit when not Results.Succeeded (Outcome);
          for X in Span.Left .. Span.Right - 1 loop
@@ -136,10 +138,11 @@ package body Pictlib.Internal.Rendering is
    is
       Outcome : Results.Result := Results.Success;
    begin
-      for Span of P.Row_Spans loop
+      for Span of P.Machine.Row_Spans loop
          Outcome := Sessions.Charge_Work (S, Span.Right - Span.Left);
          exit when not Results.Succeeded (Outcome);
-         Canvas.Put_Span (P.Target, Span.Left - P.Window.Left, Span.Right - P.Window.Left, Y - P.Window.Top, Color);
+         Canvas.Put_Span
+           (P.Machine.Target, Span.Left - P.Window.Left, Span.Right - P.Window.Left, Y - P.Window.Top, Color);
       end loop;
       return Outcome;
    end Paint_Row_Color;
@@ -184,8 +187,8 @@ package body Pictlib.Internal.Rendering is
             elsif Effect = Transfer_Modes.Constant_Color then
                for Y in Coverage.First_Row (Shape) .. Coverage.Last_Row (Shape) loop
                   exit when not Results.Succeeded (Outcome);
-                  P.Row_Spans := Coverage.Row (Shape, Y);
-                  if not P.Row_Spans.Is_Empty then
+                  P.Machine.Row_Spans := Coverage.Row (Shape, Y);
+                  if not P.Machine.Row_Spans.Is_Empty then
                      Outcome := Clip_Row (P, S, Y);
                      if Results.Succeeded (Outcome) then
                         Outcome := Paint_Row_Color (P, S, Y, Color);
@@ -206,8 +209,8 @@ package body Pictlib.Internal.Rendering is
       begin
          for Y in Coverage.First_Row (Shape) .. Coverage.Last_Row (Shape) loop
             exit when not Results.Succeeded (Outcome);
-            P.Row_Spans := Coverage.Row (Shape, Y);
-            if not P.Row_Spans.Is_Empty then
+            P.Machine.Row_Spans := Coverage.Row (Shape, Y);
+            if not P.Machine.Row_Spans.Is_Empty then
                Outcome := Clip_Row (P, S, Y);
                if Results.Succeeded (Outcome) then
                   Outcome := Paint (P, S, Y);
@@ -266,7 +269,7 @@ package body Pictlib.Internal.Rendering is
                return Outcome;
             end if;
             Outcome := Begin_Row (P, S, Y, Destination.Left, Destination.Right);
-            if Results.Succeeded (Outcome) and then Header.Masked and then not P.Row_Spans.Is_Empty then
+            if Results.Succeeded (Outcome) and then Header.Masked and then not P.Machine.Row_Spans.Is_Empty then
                Outcome := Mask_Row (P, S, Mask, Y);
             end if;
             if Results.Succeeded (Outcome) then
