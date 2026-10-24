@@ -18,6 +18,14 @@ package Pictlib_Testing.Recorders is
    overriding function Visit
      (Object : in out Recorder; Event : Pictlib.Pictures.Opcode_Event) return Pictlib.Decoding.Visit_Action;
 
+   --  Bind Input to Decoder through the shared memory source and initialize it.
+   procedure Start
+     (Input : aliased Pictlib.Streams.Byte_Array;
+      Decoder : in out Pictlib.Decoding.Decoder;
+      Options : Pictlib.Decoding.Options := (others => <>);
+      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+      Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last);
+
    --  Read the header and enumerate Input with a fresh decoder.
    procedure Decode
      (Input : aliased Pictlib.Streams.Byte_Array;

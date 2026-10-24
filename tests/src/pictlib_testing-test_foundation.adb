@@ -78,7 +78,7 @@ package body Pictlib_Testing.Test_Foundation is
       Assert (Pictlib_API_Consumer.Streams_Available, "memory streams must be advertised");
       Assert (Pictlib.Capabilities.Container_Decoding, "container decoding is implemented");
       Assert (Pictlib.Capabilities.Opcode_Enumeration, "opcode enumeration is implemented");
-      Assert (not Pictlib.Capabilities.Raster_Decoding, "raster decoding is not implemented yet");
+      Assert (Pictlib.Capabilities.Raster_Decoding, "raster decoding is implemented");
       Assert (not Pictlib.Capabilities.Vector_Rendering, "vector rendering is not implemented yet");
       Assert (not Pictlib.Capabilities.Text_Rendering, "text rendering is not implemented yet");
       Assert (not Pictlib.Capabilities.QuickTime_JPEG_Decoding, "QuickTime JPEG is not implemented yet");

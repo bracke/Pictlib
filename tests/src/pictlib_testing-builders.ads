@@ -25,6 +25,12 @@ package Pictlib_Testing.Builders is
    --  picSize, picFrame, the version 2 version opcode and an extended version 2 HeaderOp at 72 dpi
    --  whose source rectangle is the frame.
    function V2_Prefix (Top, Left, Bottom, Right : Integer; Size : Natural := 0) return Bytes;
+   --  V2_Prefix (Top, Left, Bottom, Right), Body, then the end opcode. Body must keep version 2 alignment.
+   function V2_Picture (Top, Left, Bottom, Right : Integer; Body_Bytes : Bytes) return Bytes;
+   --  A color table header: seed 0, Flags, and Entries entries (ctSize = Entries - 1).
+   function Table_Header (Flags, Entries : Natural) return Bytes;
+   --  One color table entry, 16-bit components.
+   function Table_Entry (Value, Red, Green, Blue : Natural) return Bytes;
    --  The 36 PixMap bytes after rowBytes and bounds.
    function Pixmap_Tail (Pack_Type, Pixel_Size, Component_Count, Component_Size : Natural) return Bytes;
 end Pictlib_Testing.Builders;

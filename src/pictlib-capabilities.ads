@@ -6,7 +6,7 @@ package Pictlib.Capabilities is
    Memory_Streams : constant Boolean := True;
    Container_Decoding : constant Boolean := True;
    Opcode_Enumeration : constant Boolean := True;
-   Raster_Decoding : constant Boolean := False;
+   Raster_Decoding : constant Boolean := True;
    Vector_Rendering : constant Boolean := False;
    Text_Rendering : constant Boolean := False;
    QuickTime_JPEG_Decoding : constant Boolean := False;

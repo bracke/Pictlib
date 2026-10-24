@@ -3,6 +3,7 @@ with Pictlib.Capabilities;
 with Pictlib.Decoding;
 with Pictlib.Errors;
 with Pictlib.Geometry;
+with Pictlib.Images;
 with Pictlib.Limits;
 with Pictlib.Metadata;
 with Pictlib.Opcodes;
@@ -29,4 +30,8 @@ package Pictlib_API_Consumer is
    Empty_Header : constant Pictlib.Pictures.Header_Info := (others => <>);
    Origin : constant Pictlib.Geometry.Point := (others => 0);
    End_Opcode : constant Pictlib.Opcode := Pictlib.Opcodes.End_Picture;
+   Default_Background : constant Pictlib.Images.RGB_Color := Default_Decode_Options.Background;
+   subtype Output_View is Pictlib.Images.Mutable_Image_View;
+   function Render (Object : in out Decoder; Output : Output_View) return Pictlib.Results.Result
+     renames Pictlib.Decoding.Render;
 end Pictlib_API_Consumer;

@@ -8,7 +8,10 @@ QuickTime-embedded JPEG images — and encoding of raster PICT version 2.
 The current library (Gate M1) reads PICT version 1, version 2 and extended
 version 2 containers, with or without the 512-byte file header, and enumerates
 every opcode of the picture under explicit resource limits, retaining comments,
-font names and other metadata on request. Rendering is not available yet. `Pictlib.Capabilities` lists what is
+font names and other metadata on request. Since Gate M2 it renders a picture's
+bitmaps and pixmaps — every depth and pack type, with scaling, clip regions and
+masks — into a caller-owned RGB or RGBA view. Vector shapes, text and
+QuickTime images are reported as unsupported until their gates pass. `Pictlib.Capabilities` lists what is
 implemented; everything else is unavailable until its implementation-plan gate
 passes.
 

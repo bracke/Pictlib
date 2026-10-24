@@ -17,6 +17,17 @@ package body Pictlib_Testing.Recorders is
    --  The source must outlive the decoder's use of it, so it lives at library level.
    Source : aliased Pictlib.Streams.Memory_Source;
 
+   procedure Start
+     (Input : aliased Pictlib.Streams.Byte_Array;
+      Decoder : in out Pictlib.Decoding.Decoder;
+      Options : Pictlib.Decoding.Options := (others => <>);
+      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+      Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last) is
+   begin
+      Pictlib.Streams.Open (Source, Input'Unchecked_Access, Max_Transfer);
+      Pictlib.Decoding.Initialize (Decoder, Source'Access, Options, Budget);
+   end Start;
+
    procedure Decode
      (Input : aliased Pictlib.Streams.Byte_Array;
       Decoder : in out Pictlib.Decoding.Decoder;
@@ -26,8 +37,7 @@ package body Pictlib_Testing.Recorders is
       Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
       Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last) is
    begin
-      Pictlib.Streams.Open (Source, Input'Unchecked_Access, Max_Transfer);
-      Pictlib.Decoding.Initialize (Decoder, Source'Access, Options, Budget);
+      Start (Input, Decoder, Options, Budget, Max_Transfer);
       Outcome := Pictlib.Decoding.Read_Header (Decoder);
       if Pictlib.Results.Succeeded (Outcome) then
          Outcome := Pictlib.Decoding.Enumerate (Decoder, Events);

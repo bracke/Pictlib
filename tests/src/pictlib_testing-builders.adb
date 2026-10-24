@@ -35,6 +35,14 @@ package body Pictlib_Testing.Builders is
       & W (16#0C00#) & W (-2) & W (0) & L (72 * 16#1_0000#) & L (72 * 16#1_0000#)
       & Rect (Top, Left, Bottom, Right) & L (0));
 
+   function V2_Picture (Top, Left, Bottom, Right : Integer; Body_Bytes : Bytes) return Bytes is
+     (V2_Prefix (Top, Left, Bottom, Right) & Body_Bytes & W (16#00FF#));
+
+   function Table_Header (Flags, Entries : Natural) return Bytes is (L (0) & W (Flags) & W (Entries - 1));
+
+   function Table_Entry (Value, Red, Green, Blue : Natural) return Bytes is
+     (W (Value) & W (Red) & W (Green) & W (Blue));
+
    function Pixmap_Tail (Pack_Type, Pixel_Size, Component_Count, Component_Size : Natural) return Bytes is
      (W (0) & W (Pack_Type) & L (0) & L (72 * 16#1_0000#) & L (72 * 16#1_0000#)
       & W ((if Pixel_Size >= 16 then 16 else 0)) & W (Pixel_Size) & W (Component_Count) & W (Component_Size)

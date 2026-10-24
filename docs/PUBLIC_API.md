@@ -29,4 +29,12 @@ Available since Gate M1:
   `Header`, `Enumerate` through an `Opcode_Visitor`, metadata and warning
   queries, `Last_Error`, `Cancel`, `Finalize`.
 
-Rendering and encoding arrive with Gates M2–M6.
+Available since Gate M2:
+
+- `Pictlib.Images` — `RGB_Color`, `Image_Descriptor`, `Image_View`,
+  `Mutable_Image_View`, `Bytes_Per_Pixel`, `Minimum_Row_Bytes`,
+  `Descriptor_Is_Valid`, `Is_Valid`.
+- `Pictlib.Decoding.Render` and `Options.Background`.
+
+Vector and text rendering, QuickTime JPEG and encoding arrive with Gates
+M3–M6.

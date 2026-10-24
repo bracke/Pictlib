@@ -55,7 +55,8 @@ are retained, never interpreted.
 - **Version 1:** version opcode `16#11#` followed by `16#01#`. Opcodes are one byte; data is not
   aligned; end opcode `16#FF#`.
 - **Version 2:** `16#0011#` followed by `16#02FF#`, then `HeaderOp` `16#0C00#` with 24 data bytes.
-  Header version `-1` carries fixed-point picture bounds (version 2); `-2` carries `hRes`, `vRes`
+  Header version `-1` (a long) carries fixed-point picture bounds stored left, top, right,
+  bottom — the order Netpbm's `ppmtopict` writes — and four reserved bytes (version 2); `-2` carries `hRes`, `vRes`
   (Fixed, 72 dpi default) and an integer source rectangle (extended version 2). Opcodes are two
   bytes and every opcode starts on an even offset from the start of the opcode stream, so odd
   data lengths are followed by one pad byte. End opcode `16#00FF#`.
@@ -93,7 +94,12 @@ are retained, never interpreted.
   `hilite` and `ditherCopy` (rendered as `srcCopy`, with a warning). Unknown modes fail in
   `Strict`, render as `srcCopy` with a warning otherwise.
 - Regions: 16-bit size, bounding rect, then the inversion-point scanline encoding terminated by
-  `16#7FFF#`. Rectangular regions have size 10. Malformed region data fails with `Region_Invalid`.
+  `16#7FFF#`. Rectangular regions have size 10. A pixel is inside when an odd number of inversion
+  points lie at or above it and at or left of it. Scanline `y` values must increase strictly and
+  lie within the bounding box, inversion points must increase strictly within a scanline, lie within
+  the box and be even in number on every scanline, and the final terminator must end the data
+  exactly; anything else fails with `Region_Invalid`. Rows are walked top to bottom holding only
+  the current inversion set, and that work counts against the drawing budget.
 - Polygons: 16-bit size, bounding rect, then points; the point count is `(size - 10) / 4`.
 
 ### 3.3 Bitmaps and pixmaps
@@ -119,8 +125,25 @@ are retained, never interpreted.
   (count − 1, at most 255; `16#FFFF#` is an empty table) and entries of value plus 16-bit R, G, B. Entries are reduced to
   8 bits by taking the high byte. An index beyond the table fails with `Color_Table_Invalid` in
   `Strict`, maps to black with a warning otherwise.
-- The source rectangle is scaled to the destination rectangle with nearest-neighbor sampling,
-  then clipped by the clip region and the mask region, then composited with the transfer mode.
+- The source rectangle is scaled to the destination rectangle with nearest-neighbor sampling:
+  destination column `k` (from the destination's left edge) takes source column
+  `srcRect.left + floor (k * srcWidth / dstWidth)`, and rows likewise. The result is clipped by
+  the clip region and, for the `Rgn` opcodes, by the mask region (both in destination
+  coordinates), then composited with the transfer mode. Rows are decoded one at a time and never
+  buffered whole.
+- A `srcRect` reaching outside the bounds fails with `Pixmap_Invalid` in `Strict`; otherwise it is
+  clamped to the bounds with a warning. An empty source or destination draws nothing.
+- Indexed pixmaps (`BitsRect`, `PackBitsRect`) have 1, 2, 4 or 8 bits per pixel; direct pixmaps 16
+  or 32. 16-bit pixels allow pack types 0, 1, 3; 32-bit pixels 0, 1, 2, 4 with `cmpCount` 3 or 4.
+  A 5-bit component `v` expands to `v * 8 + v / 4`. Source alpha (`cmpCount = 4`) is ignored, as
+  QuickDraw ignores it; every pixel written is opaque.
+- A BitMap's 1 bits take the foreground color and 0 bits the background color. The renderer draws
+  copies with black and white; a copy made while the foreground is not black or the background not
+  white is colorized by QuickDraw, which the renderer does with M3 (until then it is
+  `Unsupported_Feature` in `Strict`, a plain copy with an `Approximated_Rendering` warning
+  otherwise).
+- The transfer mode's `ditherCopy` flag (`16#40#`) makes no difference to true-color output and is
+  ignored.
 - `hRes`/`vRes`, `pixelType`, `planeBytes` and `pmReserved` are validated for consistency and
   retained.
 
@@ -174,6 +197,7 @@ Pictlib.Internal.Bytes             -- checked big-endian readers and writers
 Pictlib.Internal.Checked_Arithmetic
 Pictlib.Internal.Picture_Stream    -- look-ahead source wrapper, picture byte budget
 Pictlib.Internal.Container         -- file header, picSize, picFrame, version, HeaderOp
+Pictlib.Internal.Sessions          -- decoding session, budget-checked opcode data readers
 Pictlib.Internal.Opcode_Reader     -- bounded opcode stream, alignment, structural skipping
 Pictlib.Internal.Diagnostics       -- bounded warning log
 Pictlib.Internal.Metadata_Store    -- retained metadata under budgets
@@ -182,7 +206,8 @@ Pictlib.Internal.Polygons
 Pictlib.Internal.PackBits          -- unpack/pack byte and word runs
 Pictlib.Internal.Pixmaps           -- BitMap/PixMap headers, color tables, rows
 Pictlib.Internal.Patterns
-Pictlib.Internal.Canvas            -- heap-held working canvas
+Pictlib.Internal.Canvas            -- the caller's view as a drawing surface
+Pictlib.Internal.Rendering         -- painter state, copies, clip and mask
 Pictlib.Internal.Rasterizer        -- shapes, pen, clipping
 Pictlib.Internal.Transfer_Modes
 Pictlib.Internal.Text
@@ -217,7 +242,10 @@ Formats `RGB_24`, `BGR_24`, `RGBA_32`, `BGRA_32`, `ARGB_32`. A view is a descrip
 height, stride, accessible bytes) plus a borrowed access to caller storage. Validators check
 `stride >= width * bytes_per_pixel`, row-span overflow before `stride * (height - 1)`, and that
 storage covers the accessible bytes. The decoder renders `picFrame` (or a caller-chosen rect)
-into the view at 72 dpi or at the extended header's resolution when the caller asks.
+into the view at 72 dpi; the view must be exactly the frame's size and canvas pixel (0, 0) is
+the frame's top-left corner. The decoder draws directly into the view: there is no library-owned
+canvas, and the view is first filled with `Options.Background` (white by default). Rendering at
+an extended header's native resolution is a later task.
 
 ### 5.4 Ownership rules
 
@@ -225,8 +253,7 @@ into the view at 72 dpi or at the extended header's resolution when the caller a
   active lifetime.
 - Output pixels are caller-owned; their content is defined only on success or on a reported
   `Partial_Picture`.
-- The working canvas, region masks, unpacked rows and embedded JPEG pixels are library-owned
-  heap buffers accounted against `Max_Allocation_Bytes` and released on `Reset`/`Finalize`, also
+- Region data, row buffers and embedded JPEG pixels are library-owned heap buffers accounted against `Max_Allocation_Bytes` and released on `Reset`/`Finalize`, also
   after failure and cancellation. `Finalize` is idempotent.
 - Metadata is copied into bounded library-owned storage valid until `Reset`/`Finalize`, or
   delivered through a caller callback during enumeration.
@@ -243,6 +270,16 @@ opcode), `Render (Output_View)` (from M2), `Metadata_Count`/`Metadata_Item`/`Cop
 `Warning_Count`/`Warning_At`, `Last_Error`, `Cancel`, `Finalize`. Calls in the wrong state fail
 with `Invalid_State` (`Operation_Cancelled` after `Cancel`) and change neither the state nor the
 last error. `Render` after `Enumerate` requires `Reset` (the stream is forward-only).
+
+`Render` rejects an invalid view or one whose size is not the frame's with `Invalid_Argument`,
+leaving the decoder in `Header_Read`; a frame above `Max_Canvas_Pixels` or a view above
+`Max_Output_Bytes` fails with `Limit_Exceeded`. Drawing opcodes a release does not render yet
+fail with `Unsupported_Feature` in `Strict` and are skipped with an `Approximated_Rendering`
+warning otherwise; port state they depend on is tracked. In `Recover_When_Safe`, malformed
+picture data (truncation, malformed regions, pixmaps, PackBits, color tables, patterns or opcode
+lengths, a missing end opcode) ends rendering with success and a `Partial_Picture` warning: what
+was drawn stands, the rest is background. Limits, stream failures and unsupported features are
+never recovered.
 
 The decoder reads nothing after the end opcode unless `Require_End_Of_Input` is set; then one more
 byte fails with `Trailing_Data` in `Strict` and is a warning otherwise. Input that ends at an

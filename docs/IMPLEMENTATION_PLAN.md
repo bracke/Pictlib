@@ -1,6 +1,6 @@
 # pictlib — Implementation Plan
 
-**Status:** M0 and M1 implemented; M2 is next  
+**Status:** M0–M2 implemented; M3 is next  
 **Contract:** [SPECIFICATION.md](SPECIFICATION.md) (authoritative)  
 **Reference:** https://github.com/bracke/jpeglib
 
@@ -62,6 +62,14 @@ correct offsets and lengths; malformed containers fail deterministically on forw
 
 ## M2 — Raster decode
 
+**Completed (2026-10-24):** Tasks 13–16 and Gate M2. Caller image views with
+overflow-safe validation, PackBits for bytes and words, region parsing with a
+top-to-bottom row walker, BitMap and PixMap decoding at every depth and pack
+type, nearest-neighbor copies with clip and mask regions, and `Render` are
+covered by hand-built fixtures and by four PICTs from two independent writers
+(Netpbm `ppmtopict`, ImageMagick) that render pixel-exactly (68 tests). Native
+resolution rendering moved to task 19a.
+
 13. `Images` views and validators (descriptor arithmetic SPARK-ready).
 14. `Internal.Canvas` (heap, budgeted), `Internal.Regions` (parse + scanline mask), clip region.
 15. `Internal.PackBits` (byte and word variants) and `Internal.Pixmaps`: BitMap/PixMap headers,
@@ -76,7 +84,8 @@ correct offsets and lengths; malformed containers fail deterministically on forw
 17. Port state: origin, pen, patterns (8×8 and pixel patterns), colors (v1 planar and RGB).
 18. `Internal.Transfer_Modes`: boolean and arithmetic modes, for shapes and copies.
 19. Lines, rects, rounded rects, ovals, arcs, polygons, regions × frame/paint/erase/invert/fill,
-    "same" variants, drawing-work budget.
+    "same" variants, drawing-work budget; colorized copies and the Origin opcode.
+19a. Optional rendering at an extended header's native resolution.
 
 **Gate M3:** vector fixtures render pixel-exactly to reviewed reference rasters.
 

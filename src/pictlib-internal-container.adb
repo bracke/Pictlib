@@ -19,7 +19,7 @@ package body Pictlib.Internal.Container is
    type Detected_Version is (None, Detected_1, Detected_2);
 
    --  The version opcode a picture starting Base bytes ahead would carry.
-   function Version_At (S : Opcode_Reader.Session; Base : Natural) return Detected_Version is
+   function Version_At (S : Sessions.Session; Base : Natural) return Detected_Version is
       Available : constant Natural := Picture_Stream.Lookahead_Length (S.Stream);
       First : constant Positive := Base + Version_Offset + 1;
 
@@ -36,20 +36,20 @@ package body Pictlib.Internal.Container is
       return None;
    end Version_At;
 
-   function Fail (S : Opcode_Reader.Session; Code : Errors.Error_Code; Op : Opcode := 0; Has_Op : Boolean := False)
+   function Fail (S : Sessions.Session; Code : Errors.Error_Code; Op : Opcode := 0; Has_Op : Boolean := False)
      return Results.Result is
      (Results.Failure (Errors.Make (Code, (Source => S.Stream.Offset, Op => Op, Has_Opcode => Has_Op, others => <>))));
 
-   function Read_File_Header (S : in out Opcode_Reader.Session) return Results.Result is
+   function Read_File_Header (S : in out Sessions.Session) return Results.Result is
    begin
       if S.Retention.File_Headers then
-         return Opcode_Reader.Retain
+         return Sessions.Retain
            (S, (Kind => Metadata.File_Header, Offset => S.Stream.Offset, others => <>), File_Header_Bytes);
       end if;
       return Streams.Skip_Exact (S.Stream, File_Header_Bytes);
    end Read_File_Header;
 
-   function Check_Frame (S : Opcode_Reader.Session; Frame : Geometry.Rect) return Results.Result is
+   function Check_Frame (S : Sessions.Session; Frame : Geometry.Rect) return Results.Result is
    begin
       if Geometry.Is_Empty (Frame) then
          return Results.Failure
@@ -83,7 +83,7 @@ package body Pictlib.Internal.Container is
    --  The 24 bytes of HeaderOp data. Version -1 (a long) carries fixed-point bounds; version -2 (a word)
    --  carries the resolution and an integer source rectangle.
    function Read_Header_Op_Data
-     (S : in out Opcode_Reader.Session;
+     (S : in out Sessions.Session;
       Info : in out Pictures.Header_Info) return Results.Result
    is
       Context : constant Bytes.Opcode_Context := Bytes.Within (Opcodes.Header_Op);
@@ -99,15 +99,16 @@ package body Pictlib.Internal.Container is
 
       if First = 16#FFFF# and then Second = 16#FFFF# then
          Info.Version := Version_2;
-         Outcome := Bytes.Read_Fixed (S.Stream, Info.Fixed_Bounds.Top, Context);
+         --  The fixed-point bounds are stored x before y: left, top, right, bottom (as Netpbm writes them).
+         Outcome := Bytes.Read_Fixed (S.Stream, Info.Fixed_Bounds.Left, Context);
          if Results.Succeeded (Outcome) then
-            Outcome := Bytes.Read_Fixed (S.Stream, Info.Fixed_Bounds.Left, Context);
-         end if;
-         if Results.Succeeded (Outcome) then
-            Outcome := Bytes.Read_Fixed (S.Stream, Info.Fixed_Bounds.Bottom, Context);
+            Outcome := Bytes.Read_Fixed (S.Stream, Info.Fixed_Bounds.Top, Context);
          end if;
          if Results.Succeeded (Outcome) then
             Outcome := Bytes.Read_Fixed (S.Stream, Info.Fixed_Bounds.Right, Context);
+         end if;
+         if Results.Succeeded (Outcome) then
+            Outcome := Bytes.Read_Fixed (S.Stream, Info.Fixed_Bounds.Bottom, Context);
          end if;
          if Results.Succeeded (Outcome) then
             Outcome := Streams.Skip_Exact (S.Stream, 4);
@@ -128,10 +129,10 @@ package body Pictlib.Internal.Container is
          if Results.Succeeded (Outcome)
            and then (Info.Horizontal_Resolution <= 0 or else Info.Vertical_Resolution <= 0)
          then
-            if not Opcode_Reader.Is_Lenient (S) then
+            if not Sessions.Is_Lenient (S) then
                return Fail (S, Errors.Header_Invalid, Opcodes.Header_Op, True);
             end if;
-            Opcode_Reader.Warn (S, Errors.Compatibility_Issue, Errors.Compatibility,
+            Sessions.Warn (S, Errors.Compatibility_Issue, Errors.Compatibility,
                                 (Op => Opcodes.Header_Op, Has_Opcode => True, others => <>));
             Info.Horizontal_Resolution := Geometry.Fixed_72;
             Info.Vertical_Resolution := Geometry.Fixed_72;
@@ -139,17 +140,17 @@ package body Pictlib.Internal.Container is
          return Outcome;
       end if;
 
-      if not Opcode_Reader.Is_Lenient (S) then
+      if not Sessions.Is_Lenient (S) then
          return Fail (S, Errors.Header_Invalid, Opcodes.Header_Op, True);
       end if;
-      Opcode_Reader.Warn (S, Errors.Compatibility_Issue, Errors.Compatibility,
+      Sessions.Warn (S, Errors.Compatibility_Issue, Errors.Compatibility,
                           (Op => Opcodes.Header_Op, Has_Opcode => True, others => <>));
       Info.Version := Version_2;
       return Streams.Skip_Exact (S.Stream, Header_Op_Bytes - 4);
    end Read_Header_Op_Data;
 
    function Read_Header
-     (S : in out Opcode_Reader.Session;
+     (S : in out Sessions.Session;
       Policy : Header_Policy;
       Info : out Pictures.Header_Info;
       Events : out Header_Events;
@@ -206,7 +207,7 @@ package body Pictlib.Internal.Container is
       Event_Count := 1;
       Events (1).Offset := S.Stream.Offset;
       Events (1).Op := Opcodes.Version_Op;
-      Outcome := Opcode_Reader.Claim_Ordinal (S, Events (1).Ordinal);
+      Outcome := Sessions.Claim_Ordinal (S, Events (1).Ordinal);
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
@@ -232,10 +233,10 @@ package body Pictlib.Internal.Container is
          if not Results.Succeeded (Outcome) then
             return Outcome;
          elsif Opcode (Word) /= Opcodes.Header_Op then
-            if not Opcode_Reader.Is_Lenient (S) then
+            if not Sessions.Is_Lenient (S) then
                return Fail (S, Errors.Header_Invalid, Opcode (Word), True);
             end if;
-            Opcode_Reader.Warn (S, Errors.Compatibility_Issue, Errors.Compatibility,
+            Sessions.Warn (S, Errors.Compatibility_Issue, Errors.Compatibility,
                                 (Source => Header_Offset, Op => Opcode (Word), Has_Opcode => True, others => <>));
             S.Has_Pending := True;
             S.Pending_Op := Opcode (Word);
@@ -245,7 +246,7 @@ package body Pictlib.Internal.Container is
 
          Event_Count := 2;
          Events (2) := (Offset => Header_Offset, Op => Opcodes.Header_Op, Data_Length => Header_Op_Bytes, others => <>);
-         Outcome := Opcode_Reader.Claim_Ordinal (S, Events (2).Ordinal);
+         Outcome := Sessions.Claim_Ordinal (S, Events (2).Ordinal);
          if Results.Succeeded (Outcome) then
             Outcome := Read_Header_Op_Data (S, Info);
          end if;

@@ -1,6 +1,9 @@
 with Pictlib.Internal.Diagnostics;
+with Pictlib.Internal.Opcode_Reader;
 with Pictlib.Internal.Metadata_Store;
+with Pictlib.Geometry;
 with Pictlib.Internal.Picture_Stream;
+with Pictlib.Internal.Rendering;
 with Pictlib.Opcodes;
 
 package body Pictlib.Decoding is
@@ -8,7 +11,7 @@ package body Pictlib.Decoding is
 
    procedure Bind (Object : in out Decoder; Input : not null access Streams.Source'Class) is
    begin
-      Internal.Opcode_Reader.Clear (Object.Session);
+      Internal.Sessions.Clear (Object.Session);
       Internal.Picture_Stream.Bind (Object.Session.Stream, Input, Object.Session.Budget.Max_Picture_Bytes);
       Object.Session.Strictness := Object.Decode_Options.Strictness;
       Object.Session.Retention := Object.Decode_Options.Retention;
@@ -86,11 +89,11 @@ package body Pictlib.Decoding is
            (Errors.Make (Errors.Source_Zero_Progress, (Source => Object.Session.Stream.Offset, others => <>)));
       elsif Step.Count = 0 then
          return Results.Success;
-      elsif not Internal.Opcode_Reader.Is_Lenient (Object.Session) then
+      elsif not Internal.Sessions.Is_Lenient (Object.Session) then
          return Results.Failure
            (Errors.Make (Errors.Trailing_Data, (Source => Object.Session.Stream.Offset - 1, others => <>)));
       end if;
-      Internal.Opcode_Reader.Warn
+      Internal.Sessions.Warn
         (Object.Session, Errors.Compatibility_Issue, Errors.Compatibility,
          (Source => Object.Session.Stream.Offset - 1, others => <>));
       return Results.Success;
@@ -118,7 +121,7 @@ package body Pictlib.Decoding is
             if not Results.Succeeded (Outcome) then
                return Finish (Object, Outcome);
             elsif At_End then
-               if not Internal.Opcode_Reader.Is_Lenient (Object.Session) then
+               if not Internal.Sessions.Is_Lenient (Object.Session) then
                   return Finish
                     (Object,
                      Results.Failure
@@ -128,7 +131,7 @@ package body Pictlib.Decoding is
                             Ordinal => Object.Session.Next_Ordinal,
                             others => <>))));
                end if;
-               Internal.Opcode_Reader.Warn
+               Internal.Sessions.Warn
                  (Object.Session, Errors.Compatibility_Issue, Errors.Compatibility,
                   (Ordinal => Object.Session.Next_Ordinal, others => <>));
                Object.Current_State := Finished;
@@ -151,6 +154,106 @@ package body Pictlib.Decoding is
          end;
       end loop;
    end Enumerate;
+
+   --  Malformed picture data, after which what was drawn so far may stand as a partial picture.
+   function Is_Recoverable (Code : Errors.Error_Code) return Boolean is
+     (Code in Errors.Source_Unexpected_End | Errors.Opcode_Invalid | Errors.Opcode_Length_Invalid
+            | Errors.Region_Invalid | Errors.Polygon_Invalid | Errors.Pixmap_Invalid | Errors.PackBits_Invalid
+            | Errors.Color_Table_Invalid | Errors.Pattern_Invalid | Errors.Transfer_Mode_Invalid
+            | Errors.Missing_End_Opcode);
+
+   function Check_View (Object : Decoder; Output : Images.Mutable_Image_View) return Results.Result is
+      Frame : constant Geometry.Rect := Object.Info.Frame;
+      Budget : Limits.Limit_Set renames Object.Session.Budget;
+      Pixels : constant Pixel_Count :=
+        Pixel_Count (Geometry.Width (Frame)) * Pixel_Count (Geometry.Height (Frame));
+   begin
+      if not Images.Is_Valid (Output)
+        or else Integer (Output.Descriptor.Width) /= Geometry.Width (Frame)
+        or else Integer (Output.Descriptor.Height) /= Geometry.Height (Frame)
+      then
+         return Results.Failure
+           (Errors.Make
+              (Errors.Invalid_Argument,
+               (Expected => Byte_Count (Pixels),
+                Actual => Byte_Count (Output.Descriptor.Width) * Byte_Count (Output.Descriptor.Height),
+                others => <>)));
+      elsif Pixels > Budget.Max_Canvas_Pixels then
+         return Results.Failure
+           (Errors.Make
+              (Errors.Limit_Exceeded,
+               (Expected => Byte_Count (Budget.Max_Canvas_Pixels), Actual => Byte_Count (Pixels),
+                Limit => Canvas_Pixel_Limit, others => <>)));
+      elsif Output.Descriptor.Accessible_Bytes > Budget.Max_Output_Bytes then
+         return Results.Failure
+           (Errors.Make
+              (Errors.Limit_Exceeded,
+               (Expected => Budget.Max_Output_Bytes, Actual => Output.Descriptor.Accessible_Bytes,
+                Limit => Output_Byte_Limit, others => <>)));
+      end if;
+      return Results.Success;
+   end Check_View;
+
+   function Render (Object : in out Decoder; Output : Images.Mutable_Image_View) return Results.Result is
+   begin
+      if Object.Current_State /= Header_Read then
+         return Wrong_State (Object);
+      end if;
+      declare
+         Checked : constant Results.Result := Check_View (Object, Output);
+      begin
+         if not Results.Succeeded (Checked) then
+            --  A bad view is the caller's mistake: the picture is untouched and can still be rendered.
+            return Checked;
+         end if;
+      end;
+
+      declare
+         Paint : aliased Internal.Rendering.Painter;
+         Outcome : Results.Result := Results.Success;
+      begin
+         Internal.Rendering.Start (Paint, Output, Object.Info.Frame, Object.Decode_Options.Background);
+         loop
+            declare
+               Event : Pictures.Opcode_Event;
+               At_End : Boolean;
+            begin
+               Outcome := Internal.Opcode_Reader.Next (Object.Session, Event, At_End, Paint'Access);
+               if Results.Succeeded (Outcome) and then At_End then
+                  if not Internal.Sessions.Is_Lenient (Object.Session) then
+                     Outcome := Results.Failure
+                       (Errors.Make
+                          (Errors.Missing_End_Opcode,
+                           (Source => Object.Session.Stream.Offset, Ordinal => Object.Session.Next_Ordinal,
+                            others => <>)));
+                  else
+                     Internal.Sessions.Warn (Object.Session, Errors.Compatibility_Issue, Errors.Compatibility,
+                                             (Ordinal => Object.Session.Next_Ordinal, others => <>));
+                  end if;
+                  exit;
+               end if;
+               exit when not Results.Succeeded (Outcome);
+               if Event.Op = Opcodes.End_Picture then
+                  Outcome := Check_Trailing_Data (Object);
+                  exit;
+               end if;
+            end;
+         end loop;
+
+         if not Results.Succeeded (Outcome)
+           and then Object.Session.Strictness = Recover_When_Safe
+           and then Is_Recoverable (Outcome.First_Error.Code)
+         then
+            Internal.Sessions.Warn
+              (Object.Session, Errors.Partial_Picture, Errors.Data_Loss, Outcome.First_Error.Context);
+            Outcome := Results.Success;
+         end if;
+         if Results.Succeeded (Outcome) then
+            Object.Current_State := Finished;
+         end if;
+         return Finish (Object, Outcome);
+      end;
+   end Render;
 
    function Last_Error (Object : Decoder) return Errors.Error is (Object.First_Error);
 
@@ -182,7 +285,7 @@ package body Pictlib.Decoding is
 
    procedure Finalize (Object : in out Decoder) is
    begin
-      Internal.Opcode_Reader.Clear (Object.Session);
+      Internal.Sessions.Clear (Object.Session);
       Object.Info := (others => <>);
       Object.Header_Event_Count := 0;
       Object.First_Error := Errors.Make (Errors.No_Error);

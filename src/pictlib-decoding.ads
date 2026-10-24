@@ -1,6 +1,7 @@
 with Pictlib.Errors;
+with Pictlib.Images;
 with Pictlib.Internal.Container;
-with Pictlib.Internal.Opcode_Reader;
+with Pictlib.Internal.Sessions;
 with Pictlib.Limits;
 with Pictlib.Metadata;
 with Pictlib.Pictures;
@@ -26,6 +27,8 @@ package Pictlib.Decoding is
       Retention : Metadata.Retention_Policy;
       --  Fail (Strict) or warn when bytes follow the end opcode; otherwise they are not read.
       Require_End_Of_Input : Boolean := False;
+      --  The color Render fills the view with before drawing.
+      Background : Images.RGB_Color := Images.White;
    end record;
 
    type Visit_Action is (Continue, Stop);
@@ -70,6 +73,14 @@ package Pictlib.Decoding is
    --  @param Visitor Receives every opcode in order, the version opcode and HeaderOp included.
    --  @return Operation result.
    function Enumerate (Object : in out Decoder; Visitor : in out Opcode_Visitor'Class) return Results.Result;
+   --  Render.
+   --  @param Object Decoder in state Header_Read; Finished on success.
+   --  @param Output A valid caller view exactly the size of the frame; canvas pixel (0, 0) is the frame's
+   --  top-left corner. Its pixels are defined on success, and on a Partial_Picture warning.
+   --  @return Success; Invalid_Argument for an invalid or wrongly sized view; Limit_Exceeded for a frame over
+   --  the canvas or output limits; Unsupported_Feature (strictly) for drawing this release does not render.
+   --  Recover_When_Safe returns success with a Partial_Picture warning when malformed data ends the picture.
+   function Render (Object : in out Decoder; Output : Images.Mutable_Image_View) return Results.Result;
    --  Last error.
    --  @param Object Decoder.
    --  @return The failure that put the decoder in state Failed, or No_Error.
@@ -119,7 +130,7 @@ private
    type Decoder is limited record
       Current_State : Decoder_State := Created;
       Decode_Options : Options;
-      Session : Internal.Opcode_Reader.Session;
+      Session : Internal.Sessions.Session;
       Info : Pictures.Header_Info;
       Header_Events : Internal.Container.Header_Events;
       Header_Event_Count : Natural := 0;

@@ -14,7 +14,7 @@ package Pictlib.Pictures is
       Frame : Geometry.Rect;
       --  True when a version 2 picture carried its HeaderOp (16#0C00#).
       Has_Header_Opcode : Boolean := False;
-      --  Version 2 (header version -1) only: the fixed-point picture bounds.
+      --  Version 2 (header version -1) only: the fixed-point picture bounds, stored left, top, right, bottom.
       Fixed_Bounds : Geometry.Fixed_Rect;
       --  Extended version 2 only; 72 dpi otherwise.
       Horizontal_Resolution : Geometry.Fixed := Geometry.Fixed_72;

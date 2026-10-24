@@ -38,7 +38,7 @@ package body Pictlib_Testing.Test_Container is
    V2_In_File : aliased constant Bytes := Zeros (512) & V2_Prefix (2, 4, 12, 24) & W (16#00FF#);
    V2_Fixed_Bounds : aliased constant Bytes :=
      W (0) & Rect (0, 0, 10, 20) & W (16#0011#) & W (16#02FF#) & W (16#0C00#)
-     & L (16#FFFF_FFFF#) & L (0) & L (0) & L (10 * 16#1_0000#) & L (20 * 16#1_0000#) & L (0) & W (16#00FF#);
+     & L (16#FFFF_FFFF#) & L (0) & L (0) & L (20 * 16#1_0000#) & L (10 * 16#1_0000#) & L (0) & W (16#00FF#);
    High_Resolution : aliased constant Bytes :=
      W (0) & Rect (0, 0, 10, 20) & W (16#0011#) & W (16#02FF#) & W (16#0C00#)
      & W (-2) & W (0) & L (144 * 16#1_0000#) & L (300 * 16#1_0000#) & Rect (0, 0, 20, 40) & L (0) & W (16#00FF#);
@@ -240,7 +240,8 @@ package body Pictlib_Testing.Test_Container is
               and then Events.Events (2).Ordinal = 1,
               "the opcode read in place of HeaderOp is reported wrongly");
       Assert (Events.Events (3).Op = 16#00FF# and then Events.Events (3).Offset = 16, "the end opcode is misplaced");
-      Assert (Recorders.Has_Warning (Decoder, Pictlib.Errors.Compatibility_Issue), "the missing HeaderOp was not reported");
+      Assert (Recorders.Has_Warning (Decoder, Pictlib.Errors.Compatibility_Issue),
+              "the missing HeaderOp was not reported");
    end Missing_Header_Op;
 
    procedure Invalid_Frames (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -257,7 +258,8 @@ package body Pictlib_Testing.Test_Container is
               and then Outcome.First_Error.Context.Limit = Pictlib.Frame_Width_Limit
               and then Outcome.First_Error.Context.Actual = 20_000,
               "a frame wider than the limit was accepted");
-      Read_Only_Header (V1_Bare, Decoder, Outcome, Budget => (Pictlib.Limits.Default_Limits with delta Max_Frame_Height => 9));
+      Read_Only_Header
+        (V1_Bare, Decoder, Outcome, Budget => (Pictlib.Limits.Default_Limits with delta Max_Frame_Height => 9));
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
               and then Outcome.First_Error.Context.Limit = Pictlib.Frame_Height_Limit,
               "a frame taller than the limit was accepted");

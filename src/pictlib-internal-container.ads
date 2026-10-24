@@ -1,4 +1,4 @@
-with Pictlib.Internal.Opcode_Reader;
+with Pictlib.Internal.Sessions;
 with Pictlib.Pictures;
 with Pictlib.Results;
 
@@ -15,7 +15,7 @@ package Pictlib.Internal.Container is
    --  @param Event_Count Entries of Events that are meaningful.
    --  @return Success, or the failure.
    function Read_Header
-     (S : in out Opcode_Reader.Session;
+     (S : in out Sessions.Session;
       Policy : Header_Policy;
       Info : out Pictures.Header_Info;
       Events : out Header_Events;
