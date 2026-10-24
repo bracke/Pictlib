@@ -157,7 +157,8 @@ package body Pictlib.Internal.Pixmaps is
          return Invalid (3, Header.Fields.Component_Count);
       end if;
 
-      if not Packed or else Header.Row_Bytes < 8 or else (Header.Is_Pixmap and then Pack = 1) then
+      if not Packed or else Header.Row_Bytes < Smallest_Packed_Row_Bytes or else (Header.Is_Pixmap and then Pack = 1)
+      then
          Header.Layout := Unpacked;
          Header.Raw_Length := Header.Row_Bytes;
          Header.Unpacked_Length := Header.Row_Bytes;
@@ -233,7 +234,8 @@ package body Pictlib.Internal.Pixmaps is
       end if;
 
       Header.Is_Pixmap := Direct or else (Raw_Row_Bytes and 16#8000#) /= 0;
-      Header.Row_Bytes := Natural (Raw_Row_Bytes and (if Header.Is_Pixmap then 16#3FFF# else 16#7FFF#));
+      Header.Row_Bytes :=
+        Natural (Raw_Row_Bytes and (if Header.Is_Pixmap then Pixmap_Row_Bytes_Mask else Bitmap_Row_Bytes_Mask));
       if Header.Is_Pixmap then
          Outcome := Read_Pixmap_Tail (S, Header.Fields);
          if Results.Succeeded (Outcome) then
@@ -275,13 +277,47 @@ package body Pictlib.Internal.Pixmaps is
 
    function Stored_Length (Header : Bits_Header) return Natural is
      (if Header.Layout = Unpacked then Header.Raw_Length
-      elsif Header.Row_Bytes > 250 then 16#FFFF# else 16#FF#);
+      elsif Header.Row_Bytes > Byte_Count_Row_Bytes then 16#FFFF# else 16#FF#);
 
    function Unpacked_Length (Header : Bits_Header) return Natural is
      (if Header.Layout = Unpacked then 0 else Header.Unpacked_Length);
 
    function Buffer_Bytes (Header : Bits_Header) return Byte_Count is
      (Byte_Count (Stored_Length (Header)) + Byte_Count (Unpacked_Length (Header)) + 3 * Byte_Count (Header.Width));
+
+   function Read_Pattern_Header
+     (S : in out Sessions.Session;
+      Header : out Bits_Header;
+      For_Decoding : Boolean) return Results.Result
+   is
+      Raw_Row_Bytes : Interfaces.Unsigned_16 := 0;
+      Outcome : Results.Result := Sessions.Read_Word (S, Raw_Row_Bytes);
+   begin
+      Header := (Op => Opcodes.Pack_Bits_Rect, Is_Pixmap => True, others => <>);
+      if Results.Succeeded (Outcome) then
+         Header.Row_Bytes := Natural (Raw_Row_Bytes and Pixmap_Row_Bytes_Mask);
+         Outcome := Sessions.Read_Bounds (S, Header.Bounds);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Read_Pixmap_Tail (S, Header.Fields);
+      end if;
+      if Results.Succeeded (Outcome) and then Header.Fields.Pixel_Size > 8 then
+         Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 8, Byte_Count (Header.Fields.Pixel_Size));
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := (if For_Decoding then Read_Color_Table (S, Header.Table) else Skip_Color_Table (S));
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Sessions.Extent (S, Header.Bounds, Header.Width, Header.Height);
+      end if;
+      if Results.Succeeded (Outcome) and then (Header.Width = 0 or else Header.Height = 0) then
+         Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 1, 0);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Decide_Layout (S, Header, For_Decoding);
+      end if;
+      return Outcome;
+   end Read_Pattern_Header;
 
    function Start
      (S : in out Sessions.Session;
@@ -405,7 +441,7 @@ package body Pictlib.Internal.Pixmaps is
             Written : Natural;
             Status : PackBits.Unpack_Status;
          begin
-            if Header.Row_Bytes > 250 then
+            if Header.Row_Bytes > Byte_Count_Row_Bytes then
                declare
                   Word : Interfaces.Unsigned_16;
                begin

@@ -559,27 +559,10 @@ package body Pictlib.Internal.Coverage is
                end if;
                --  The frame is the row less its eroded part.
                declare
-                  Kept : Span_List := Whole (Y - Low);
+                  Kept : Span_List;
                begin
-                  for Cut of Eroded loop
-                     declare
-                        Next : Span_List;
-                     begin
-                        for S of Kept loop
-                           if S.Right <= Cut.Left or else Cut.Right <= S.Left then
-                              Next.Append (S);
-                           else
-                              if S.Left < Cut.Left then
-                                 Next.Append (Regions.Span'(S.Left, Cut.Left));
-                              end if;
-                              if Cut.Right < S.Right then
-                                 Next.Append (Regions.Span'(Cut.Right, S.Right));
-                              end if;
-                           end if;
-                        end loop;
-                        Kept := Next;
-                     end;
-                  end loop;
+                  Regions.Subtract (Whole (Y - Low), Eroded, Kept);
+                  Charge (Item, Natural (Kept.Length) + 1);
                   for S of Kept loop
                      Add (Item, Y, S.Left, S.Right);
                   end loop;
@@ -600,27 +583,9 @@ package body Pictlib.Internal.Coverage is
       for Index in 0 .. Natural (Item.Rows.Length) - 1 loop
          exit when Item.Spent;
          declare
-            Kept : Span_List := Item.Rows (Index);
+            Kept : Span_List;
          begin
-            for Cut of Row (Other, Item.Top + Index) loop
-               declare
-                  Next : Span_List;
-               begin
-                  for S of Kept loop
-                     if S.Right <= Cut.Left or else Cut.Right <= S.Left then
-                        Next.Append (S);
-                     else
-                        if S.Left < Cut.Left then
-                           Next.Append (Regions.Span'(S.Left, Cut.Left));
-                        end if;
-                        if Cut.Right < S.Right then
-                           Next.Append (Regions.Span'(Cut.Right, S.Right));
-                        end if;
-                     end if;
-                  end loop;
-                  Kept := Next;
-               end;
-            end loop;
+            Regions.Subtract (Item.Rows (Index), Row (Other, Item.Top + Index), Kept);
             Item.Rows.Replace_Element (Index, Kept);
             Charge (Item, Natural (Kept.Length) + 1);
          end;

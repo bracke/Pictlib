@@ -1,11 +1,9 @@
 with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Internal.Pixmaps;
-with Pictlib.Opcodes;
 with Pictlib.Streams;
 
 package body Pictlib.Internal.Patterns is
-   use type Interfaces.Unsigned_16;
 
    function From_Bits (Rows : Bit_Rows) return Pattern is ((Kind => Bit_Pattern, Bits => Rows, others => <>));
 
@@ -64,10 +62,9 @@ package body Pictlib.Internal.Patterns is
       Too_Large : out Boolean;
       Tile_Pixels : out Byte_Count) return Results.Result
    is
-      Raw_Row_Bytes : Interfaces.Unsigned_16 := 0;
       Header : Pixmaps.Bits_Header;
       Decoder : Pixmaps.Row_Decoder;
-      Outcome : Results.Result := Sessions.Read_Word (S, Raw_Row_Bytes);
+      Outcome : Results.Result := Pixmaps.Read_Pattern_Header (S, Header, For_Decoding => True);
       Needed : Pixel_Count := 0;
 
       --  The tile's pixels, once its extent is read.
@@ -75,30 +72,6 @@ package body Pictlib.Internal.Patterns is
    begin
       Too_Large := False;
       Tile_Pixels := 0;
-      Header.Op := Opcodes.Pack_Bits_Rect;
-      Header.Is_Pixmap := True;
-      Header.Row_Bytes := Natural (Raw_Row_Bytes and 16#3FFF#);
-      if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Read_Bounds (S, Header.Bounds);
-      end if;
-      if Results.Succeeded (Outcome) then
-         Outcome := Pixmaps.Read_Pixmap_Tail (S, Header.Fields);
-      end if;
-      if Results.Succeeded (Outcome) and then Header.Fields.Pixel_Size > 8 then
-         Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 8, Byte_Count (Header.Fields.Pixel_Size));
-      end if;
-      if Results.Succeeded (Outcome) then
-         Outcome := Pixmaps.Read_Color_Table (S, Header.Table);
-      end if;
-      if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Extent (S, Header.Bounds, Header.Width, Header.Height);
-      end if;
-      if Results.Succeeded (Outcome) and then (Header.Width = 0 or else Header.Height = 0) then
-         Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 1, 0);
-      end if;
-      if Results.Succeeded (Outcome) then
-         Outcome := Pixmaps.Decide_Layout (S, Header, For_Decoding => True);
-      end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;

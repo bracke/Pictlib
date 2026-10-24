@@ -114,6 +114,59 @@ package body Pictlib.Internal.Rendering is
    function Get (P : Painter; X, Y : Integer) return Images.RGB_Color is
      (Canvas.Get (P.Target, X - P.Window.Left, Y - P.Window.Top));
 
+   function Begin_Row (P : in out Painter; S : Sessions.Session; Y, Left, Right : Integer) return Results.Result is
+      First : constant Integer := Integer'Max (Left, P.Window.Left);
+      Last : constant Integer := Integer'Min (Right, P.Window.Right);
+   begin
+      P.Row_Spans.Clear;
+      if Y not in P.Window.Top .. P.Window.Bottom - 1 or else First >= Last then
+         return Results.Success;
+      end if;
+      P.Row_Spans.Append (Regions.Span'(First, Last));
+      return Clip_Row (P, S, Y);
+   end Begin_Row;
+
+   function Mask_Row (P : in out Painter; S : Sessions.Session; Mask : in out Regions.Region; Y : Integer)
+     return Results.Result
+   is
+      Work : Natural;
+      Outcome : Results.Result;
+   begin
+      Regions.Row_Spans (Mask, Y, P.Mask_Spans, Work, Walk_Allowance (P, S));
+      Outcome := Charge (P, S, Work);
+      if Results.Succeeded (Outcome) then
+         Regions.Intersect (P.Row_Spans, P.Mask_Spans, P.Scratch);
+         P.Row_Spans.Move (P.Scratch);
+      end if;
+      return Outcome;
+   end Mask_Row;
+
+   function Paint_Row (P : in out Painter; S : Sessions.Session; Y : Integer) return Results.Result is
+      Outcome : Results.Result := Results.Success;
+   begin
+      for Span of P.Row_Spans loop
+         Outcome := Charge (P, S, Span.Right - Span.Left);
+         exit when not Results.Succeeded (Outcome);
+         for X in Span.Left .. Span.Right - 1 loop
+            Put (P, X, Y, Color_At (X, Y, Get (P, X, Y)));
+         end loop;
+      end loop;
+      return Outcome;
+   end Paint_Row;
+
+   function Paint_Row_Color (P : in out Painter; S : Sessions.Session; Y : Integer; Color : Images.RGB_Color)
+     return Results.Result
+   is
+      Outcome : Results.Result := Results.Success;
+   begin
+      for Span of P.Row_Spans loop
+         Outcome := Charge (P, S, Span.Right - Span.Left);
+         exit when not Results.Succeeded (Outcome);
+         Canvas.Put_Span (P.Target, Span.Left - P.Window.Left, Span.Right - P.Window.Left, Y - P.Window.Top, Color);
+      end loop;
+      return Outcome;
+   end Paint_Row_Color;
+
    function Fill
      (P : in out Painter;
       S : in out Sessions.Session;
@@ -164,15 +217,9 @@ package body Pictlib.Internal.Rendering is
                   P.Row_Spans := Coverage.Row (Shape, Y);
                   if not P.Row_Spans.Is_Empty then
                      Outcome := Clip_Row (P, S, Y);
-                     for Span of P.Row_Spans loop
-                        exit when not Results.Succeeded (Outcome);
-                        Outcome := Charge (P, S, Span.Right - Span.Left);
-                        if Results.Succeeded (Outcome) and then Span.Left < Span.Right then
-                           Canvas.Put_Span
-                             (P.Target, Span.Left - P.Window.Left, Span.Right - P.Window.Left,
-                              Y - P.Window.Top, Color);
-                        end if;
-                     end loop;
+                     if Results.Succeeded (Outcome) then
+                        Outcome := Paint_Row_Color (P, S, Y, Color);
+                     end if;
                   end if;
                end loop;
                return Outcome;
@@ -180,29 +227,24 @@ package body Pictlib.Internal.Rendering is
          end;
       end if;
       --  Only the rows the shape holds.
-      for Y in Coverage.First_Row (Shape) .. Coverage.Last_Row (Shape) loop
-         exit when not Results.Succeeded (Outcome);
-         P.Row_Spans := Coverage.Row (Shape, Y);
-         if not P.Row_Spans.Is_Empty then
-            Outcome := Clip_Row (P, S, Y);
-            for Span of P.Row_Spans loop
-               exit when not Results.Succeeded (Outcome);
-               Outcome := Charge (P, S, Span.Right - Span.Left);
+      declare
+         function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
+           (if How.Kind = Invert_Paint then Transfer_Modes.Invert (Under)
+            else Transfer_Modes.Compose
+                   (Kind, Patterns.Sample (Source, X, Y), Under, P.Colors, Colorize, Bit_Source => Colorize));
+         function Paint is new Paint_Row (Color_At);
+      begin
+         for Y in Coverage.First_Row (Shape) .. Coverage.Last_Row (Shape) loop
+            exit when not Results.Succeeded (Outcome);
+            P.Row_Spans := Coverage.Row (Shape, Y);
+            if not P.Row_Spans.Is_Empty then
+               Outcome := Clip_Row (P, S, Y);
                if Results.Succeeded (Outcome) then
-                  for X in Span.Left .. Span.Right - 1 loop
-                     if How.Kind = Invert_Paint then
-                        Put (P, X, Y, Transfer_Modes.Invert (Get (P, X, Y)));
-                     else
-                        Put (P, X, Y,
-                             Transfer_Modes.Compose
-                               (Kind, Patterns.Sample (Source, X, Y), Get (P, X, Y), P.Colors, Colorize,
-                                Bit_Source => Colorize));
-                     end if;
-                  end loop;
+                  Outcome := Paint (P, S, Y);
                end if;
-            end loop;
-         end if;
-      end loop;
+            end if;
+         end loop;
+      end;
       return Outcome;
    end Fill;
 
@@ -229,7 +271,17 @@ package body Pictlib.Internal.Rendering is
       First_Row : constant Long_Long_Integer := Ceiling_Divide (Relative * Destination_Height, Source_Height);
       Last_Row : constant Long_Long_Integer := Ceiling_Divide ((Relative + 1) * Destination_Height, Source_Height) - 1;
       Outcome : Results.Result;
-      Work : Natural;
+
+      function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
+         pragma Unreferenced (Y);
+         Column : constant Long_Long_Integer :=
+           (Long_Long_Integer (X) - Long_Long_Integer (Destination.Left)) * Source_Width / Destination_Width;
+         Source_X : constant Integer := Integer (Source.Left) + Integer (Column);
+      begin
+         return Transfer_Modes.Compose
+           (Kind, Pixmaps.Pixel (Decoder, Source_X - Integer (Header.Bounds.Left)), Under, P.Colors);
+      end Color_At;
+      function Paint is new Paint_Row (Color_At);
    begin
       if Relative < 0 or else Relative >= Source_Height then
          return Results.Success;
@@ -243,45 +295,15 @@ package body Pictlib.Internal.Rendering is
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
-            if Y in P.Window.Top .. P.Window.Bottom - 1 then
-               P.Row_Spans.Clear;
-               P.Row_Spans.Append
-                 (Regions.Span'(Integer'Max (Destination.Left, P.Window.Left),
-                                Integer'Min (Destination.Right, P.Window.Right)));
-               Outcome := Clip_Row (P, S, Y);
-               if not Results.Succeeded (Outcome) then
-                  return Outcome;
-               end if;
-               if Header.Masked then
-                  Regions.Row_Spans (Mask, Y, P.Mask_Spans, Work, Walk_Allowance (P, S));
-                  Outcome := Charge (P, S, Work);
-                  if not Results.Succeeded (Outcome) then
-                     return Outcome;
-                  end if;
-                  Regions.Intersect (P.Row_Spans, P.Mask_Spans, P.Scratch);
-                  P.Row_Spans.Move (P.Scratch);
-               end if;
-
-               for Item of P.Row_Spans loop
-                  if Item.Left < Item.Right then
-                     Outcome := Charge (P, S, Item.Right - Item.Left);
-                     if not Results.Succeeded (Outcome) then
-                        return Outcome;
-                     end if;
-                     for X in Item.Left .. Item.Right - 1 loop
-                        declare
-                           Column : constant Long_Long_Integer :=
-                             (Long_Long_Integer (X) - Long_Long_Integer (Destination.Left)) * Source_Width
-                             / Destination_Width;
-                           Source_X : constant Integer := Integer (Source.Left) + Integer (Column);
-                           Pixel : constant Images.RGB_Color :=
-                             Pixmaps.Pixel (Decoder, Source_X - Integer (Header.Bounds.Left));
-                        begin
-                           Put (P, X, Y, Transfer_Modes.Compose (Kind, Pixel, Get (P, X, Y), P.Colors));
-                        end;
-                     end loop;
-                  end if;
-               end loop;
+            Outcome := Begin_Row (P, S, Y, Destination.Left, Destination.Right);
+            if Results.Succeeded (Outcome) and then Header.Masked and then not P.Row_Spans.Is_Empty then
+               Outcome := Mask_Row (P, S, Mask, Y);
+            end if;
+            if Results.Succeeded (Outcome) then
+               Outcome := Paint (P, S, Y);
+            end if;
+            if not Results.Succeeded (Outcome) then
+               return Outcome;
             end if;
          end;
       end loop;

@@ -19,30 +19,21 @@ package body Pictlib.Internal.Opcode_Reader is
 
    subtype Session is Sessions.Session;
 
-   Smallest_Polygon : constant := 10;
-
    function Item_For (Kind : Metadata.Item_Kind; Event : Pictures.Opcode_Event) return Metadata.Item_Info is
      ((Kind => Kind, Ordinal => Event.Ordinal, Offset => Event.Offset, Op => Event.Op, others => <>));
 
    function Skip_Polygon (S : in out Session) return Results.Result is
-      Size : Interfaces.Unsigned_16;
-      Outcome : constant Results.Result := Sessions.Read_Word (S, Size);
+      Points : Natural;
+      Outcome : constant Results.Result := Sessions.Read_Polygon_Size (S, Points);
    begin
       if not Results.Succeeded (Outcome) then
          return Outcome;
-      elsif Size < Smallest_Polygon or else (Size - Smallest_Polygon) mod 4 /= 0 then
-         return Sessions.Fail (S, Errors.Polygon_Invalid, Smallest_Polygon, Byte_Count (Size));
-      elsif Natural (Size - Smallest_Polygon) / 4 > S.Budget.Max_Polygon_Points then
-         return Sessions.Over_Limit
-           (S, Polygon_Point_Limit, Byte_Count (S.Budget.Max_Polygon_Points),
-            Byte_Count (Size - Smallest_Polygon) / 4);
       end if;
-      return Sessions.Skip_Data (S, Byte_Count (Size) - 2);
+      return Sessions.Skip_Data (S, Sessions.Smallest_Polygon - 2 + 4 * Byte_Count (Points));
    end Skip_Polygon;
 
    function Skip_Pixel_Pattern (S : in out Session) return Results.Result is
       Pattern_Type : Interfaces.Unsigned_16;
-      Raw_Row_Bytes : Interfaces.Unsigned_16 := 0;
       --  The rows are laid out, and checked, as rendering decodes them, so both agree where the opcode ends.
       Header : Pixmaps.Bits_Header;
       Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
@@ -55,31 +46,7 @@ package body Pictlib.Internal.Opcode_Reader is
       end if;
       case Pattern_Type is
          when 1 =>
-            Header.Op := Opcodes.Pack_Bits_Rect;
-            Header.Is_Pixmap := True;
-            Outcome := Sessions.Read_Word (S, Raw_Row_Bytes);
-            if Results.Succeeded (Outcome) then
-               Header.Row_Bytes := Natural (Raw_Row_Bytes and 16#3FFF#);
-               Outcome := Sessions.Read_Bounds (S, Header.Bounds);
-            end if;
-            if Results.Succeeded (Outcome) then
-               Outcome := Pixmaps.Read_Pixmap_Tail (S, Header.Fields);
-            end if;
-            if Results.Succeeded (Outcome) and then Header.Fields.Pixel_Size > 8 then
-               Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 8, Byte_Count (Header.Fields.Pixel_Size));
-            end if;
-            if Results.Succeeded (Outcome) then
-               Outcome := Pixmaps.Skip_Color_Table (S);
-            end if;
-            if Results.Succeeded (Outcome) then
-               Outcome := Sessions.Extent (S, Header.Bounds, Header.Width, Header.Height);
-            end if;
-            if Results.Succeeded (Outcome) and then (Header.Width = 0 or else Header.Height = 0) then
-               Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 1, 0);
-            end if;
-            if Results.Succeeded (Outcome) then
-               Outcome := Pixmaps.Decide_Layout (S, Header, For_Decoding => False);
-            end if;
+            Outcome := Pixmaps.Read_Pattern_Header (S, Header, For_Decoding => False);
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;

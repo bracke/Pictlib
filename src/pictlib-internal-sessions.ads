@@ -134,6 +134,15 @@ package Pictlib.Internal.Sessions is
    --  @param Value Big-endian long.
    --  @return Operation result.
    function Read_Long (S : in out Session; Value : out Interfaces.Unsigned_32) return Results.Result;
+   --  Read polygon size.
+   --  @param S Session positioned at a polygon's size word.
+   --  @param Points The number of points the polygon holds, after its bounding box.
+   --  @return Success, Polygon_Invalid for a size that is not 10 bytes plus whole points, or Limit_Exceeded past
+   --  Max_Polygon_Points.
+   function Read_Polygon_Size (S : in out Session; Points : out Natural) return Results.Result;
+   --  The bytes of a polygon's size word and bounding box.
+   Smallest_Polygon : constant := 10;
+
    --  Read bounds.
    --  @param S Session reading an opcode's data.
    --  @param Value A Rect.

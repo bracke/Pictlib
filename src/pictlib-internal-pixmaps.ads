@@ -103,6 +103,18 @@ package Pictlib.Internal.Pixmaps is
    --  @return Operation result.
    function Skip_Pixels (S : in out Sessions.Session; Header : Bits_Header) return Results.Result;
 
+   --  Read pattern header: a type 1 PixPat's rowBytes, bounds, PixMap tail and color table, laid out and checked
+   --  alike for enumeration and rendering, so both agree where the opcode ends.
+   --  @param S Session positioned after patType and pat1Data.
+   --  @param Header The tile's header, as a PackBitsRect's: depth at most 8, a nonempty extent, a layout.
+   --  @param For_Decoding True to read the color table into Header and check rows cover the width, as decoding
+   --  needs; False to skip the table.
+   --  @return Success, Pattern_Invalid for a depth above 8 or empty bounds, or the PixMap's failure.
+   function Read_Pattern_Header
+     (S : in out Sessions.Session;
+      Header : out Bits_Header;
+      For_Decoding : Boolean) return Results.Result;
+
    type Color_Row is array (Natural range <>) of Images.RGB_Color;
 
    --  Row decoder: holds the heap buffers one opcode's rows are decoded through.

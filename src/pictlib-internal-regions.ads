@@ -91,6 +91,12 @@ package Pictlib.Internal.Regions is
    --  @param Result Receives their intersection, sorted.
    procedure Intersect (Left, Right : Span_Vectors.Vector; Result : in out Span_Vectors.Vector);
 
+   --  Subtract.
+   --  @param Left Sorted, disjoint spans.
+   --  @param Right Sorted, disjoint spans to take away.
+   --  @param Result Receives Left less Right, sorted, in one pass over both.
+   procedure Subtract (Left, Right : Span_Vectors.Vector; Result : in out Span_Vectors.Vector);
+
 private
    package Integer_Vectors is new Ada.Containers.Vectors (Positive, Integer);
 

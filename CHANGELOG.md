@@ -29,7 +29,8 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   `ChExtra`. pictlib ships no fonts.
 - QuickTime: `CompressedQuickTime` JPEG images through `jpeglib`, placed by
   the matrix (translation, positive scaling), srcRect, mask, clip and
-  transfer mode; the placeholder bitmap after an image is skipped.
+  transfer mode, `HiliteMode` included; the placeholder bitmap after an
+  image is skipped.
 - Encoding (`Pictlib.Encoding`): raster PICT version 2 as `Direct_32`,
   `Indexed_8`, `Mono_1` or `Auto`, with an extended header and an optional
   file header; picSize is measured by a dry run.

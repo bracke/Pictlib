@@ -2,7 +2,6 @@ with Pictlib.Errors;
 with Pictlib.Fonts;
 with Pictlib.Geometry;
 with Pictlib.Images;
-with Pictlib.Internal.Regions;
 with Pictlib.Internal.Text;
 with Pictlib.Internal.Transfer_Modes;
 with Textrender;
@@ -38,7 +37,8 @@ package body Pictlib.Internal.Typesetting is
       Event : Pictures.Opcode_Event;
       Characters : Streams.Byte_Array;
       Slot : Positive;
-      Kind : Transfer_Modes.Mode_Kind) return Results.Result;
+      Kind : Transfer_Modes.Mode_Kind;
+      Size : Positive) return Results.Result;
 
    function Draw
      (P : in out Rendering.Painter;
@@ -97,7 +97,7 @@ package body Pictlib.Internal.Typesetting is
          if Text.Acquire (P.Font_Cache, Path, Size, Slot) /= Textrender.Success then
             return Unavailable (S, Event);
          end if;
-         Outcome := Draw_Characters (P, S, Event, Characters, Slot, Kind);
+         Outcome := Draw_Characters (P, S, Event, Characters, Slot, Kind, Size);
       end;
       return Outcome;
    end Draw;
@@ -108,131 +108,114 @@ package body Pictlib.Internal.Typesetting is
       Event : Pictures.Opcode_Event;
       Characters : Streams.Byte_Array;
       Slot : Positive;
-      Kind : Transfer_Modes.Mode_Kind) return Results.Result
+      Kind : Transfer_Modes.Mode_Kind;
+      Size : Positive) return Results.Result
    is
       State : Text.Text_State renames P.Text_State;
-      Size : constant Natural := (if State.Size = 0 then Default_Size else State.Size);
+      Font : constant not null access Textrender.Renderer := Text.Renderer (P.Font_Cache, Slot);
+      Style : constant Textrender.Font_Style :=
+        (if Has (State.Face, Text.Italic) then Textrender.Italic else Textrender.Regular);
+      Bold : constant Natural := (if Has (State.Face, Text.Bold) then 1 else 0);
+      Width_Change : constant Integer :=
+        Bold + (if Has (State.Face, Text.Extend) then 1 else 0) - (if Has (State.Face, Text.Condense) then 1 else 0);
+      Baseline : constant Integer := State.Origin_V;
+      Ascent : constant Integer := Integer (Float'Ceiling (Font.Ascent));
+      Descent : constant Integer := Integer (Float'Ceiling (abs Font.Descent));
+      Start_X : constant Integer := State.Origin_H;
+      Pen : Float := Float (State.Origin_H);
+      Missing_Reported : Boolean := False;
       Outcome : Results.Result := Results.Success;
-   begin
-      declare
-         Font : constant not null access Textrender.Renderer := Text.Renderer (P.Font_Cache, Slot);
-         Style : constant Textrender.Font_Style :=
-           (if Has (State.Face, Text.Italic) then Textrender.Italic else Textrender.Regular);
-         Bold : constant Natural := (if Has (State.Face, Text.Bold) then 1 else 0);
-         Width_Change : constant Integer :=
-           Bold + (if Has (State.Face, Text.Extend) then 1 else 0) - (if Has (State.Face, Text.Condense) then 1 else 0);
-         Baseline : constant Integer := State.Origin_V;
-         Ascent : constant Integer := Integer (Float'Ceiling (Font.Ascent));
-         Descent : constant Integer := Integer (Float'Ceiling (abs Font.Descent));
-         Pen : Float := Float (State.Origin_H);
-         Start_X : constant Integer := State.Origin_H;
-         Missing_Reported : Boolean := False;
+
+      --  Text is a bit source: ink black, the rest white, through the text mode.
+      function Through_Mode (Ink : Boolean; Under : Images.RGB_Color) return Images.RGB_Color is
+        (Transfer_Modes.Compose
+           (Kind, (if Ink then Images.Black else Images.White), Under, P.Colors, Bit_Source => True));
+
+      --  Paint the cell of a glyph drawn from the pen: the larger of its advance box and its ink.
+      function Paint_Cell (Metric : Textrender.Glyph_Metric; Drawable : Boolean; Advance : Float)
+        return Results.Result
+      is
+         Cell_Left : constant Integer := Integer (Float'Rounding (Pen));
+         Cell_Right : constant Integer := Integer (Float'Rounding (Pen + Advance));
+         Glyph_Left : constant Integer := Integer (Float'Rounding (Pen + Metric.Bearing_X));
+         Glyph_Top : constant Integer := Baseline - Integer (Metric.Bearing_Y);
+         Atlas_Width : constant Natural := Font.Atlas_Width;
+         Atlas : constant access constant Textrender.Alpha_Buffer := Font.Atlas_Pixels;
+         Left : constant Integer := (if Drawable then Integer'Min (Cell_Left, Glyph_Left) else Cell_Left);
+         Right : constant Integer :=
+           (if Drawable then Integer'Max (Cell_Right, Glyph_Left + Metric.W + Bold) else Cell_Right);
+         Top : constant Integer :=
+           (if Drawable then Integer'Min (Baseline - Ascent, Glyph_Top) else Baseline - Ascent);
+         Bottom : constant Integer :=
+           (if Drawable then Integer'Max (Baseline + Descent, Glyph_Top + Metric.H) else Baseline + Descent);
+         Result : Results.Result := Results.Success;
+
+         function Covered (X, Y : Integer) return Boolean is
+           (Drawable
+            and then X - Glyph_Left in 0 .. Metric.W - 1 and then Y - Glyph_Top in 0 .. Metric.H - 1
+            and then Atlas ((Metric.Y + Y - Glyph_Top) * Atlas_Width + Metric.X + X - Glyph_Left) >= Ink_Threshold);
+
+         --  Bold smears ink one pixel right.
+         function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
+           (Through_Mode (Covered (X, Y) or else (Bold = 1 and then Covered (X - 1, Y)), Under));
+         function Paint is new Rendering.Paint_Row (Color_At);
       begin
-         for Item of Characters loop
-            exit when not Results.Succeeded (Outcome);
-            --  Every glyph request is drawing work, wherever the character lands.
-            if Item >= Space then
-               Outcome := Rendering.Charge (P, S, Text.Glyph_Work (Size));
+         for Y in Integer'Max (Top, P.Window.Top) .. Integer'Min (Bottom, P.Window.Bottom) - 1 loop
+            Result := Rendering.Begin_Row (P, S, Y, Left, Right);
+            if Results.Succeeded (Result) then
+               Result := Paint (P, S, Y);
             end if;
-            exit when not Results.Succeeded (Outcome);
-            if Item >= Space then
-               declare
-                  --  Defined even when the font lacks the glyph and leaves it alone.
-                  Metric : Textrender.Glyph_Metric :=
-                    (X | Y | W | H => 0, U0 | V0 | U1 | V1 | Advance_X | Bearing_X | Bearing_Y => 0.0);
-                  Status : constant Textrender.Status_Code :=
-                    Font.Get_Glyph (Text.To_Unicode (Item), Metric, Style);
-                  Drawable : constant Boolean :=
-                    Status = Textrender.Success and then Metric.W > 0 and then Metric.H > 0;
-                  Advance : Float :=
-                    (if Status = Textrender.Success then Metric.Advance_X else Float (Size) / 2.0)
-                    + Float (State.Char_Extra + Width_Change);
-               begin
-                  if Status /= Textrender.Success and then not Missing_Reported then
-                     Sessions.Warn (S, Errors.Data_Loss, Errors.Data_Loss,
-                                    (Context_Of (Event) with delta Actual => Byte_Count (Item)));
-                     Missing_Reported := True;
-                  end if;
-                  if Item = Space then
-                     Advance := Advance + Float (State.Space_Extra) / Float (Geometry.Fixed_One);
-                  end if;
-                  declare
-                     Cell_Left : constant Integer := Integer (Float'Rounding (Pen));
-                     Cell_Right : constant Integer := Integer (Float'Rounding (Pen + Advance));
-                     Glyph_Left : constant Integer := Integer (Float'Rounding (Pen + Metric.Bearing_X));
-                     Glyph_Top : constant Integer := Baseline - Integer (Metric.Bearing_Y);
-                     Atlas_Width : constant Natural := Font.Atlas_Width;
-                     Atlas : constant access constant Textrender.Alpha_Buffer := Font.Atlas_Pixels;
-                     Left : constant Integer :=
-                       (if Drawable then Integer'Min (Cell_Left, Glyph_Left) else Cell_Left);
-                     Right : constant Integer :=
-                       (if Drawable then Integer'Max (Cell_Right, Glyph_Left + Metric.W + Bold) else Cell_Right);
-                     Top : constant Integer :=
-                       (if Drawable then Integer'Min (Baseline - Ascent, Glyph_Top) else Baseline - Ascent);
-                     Bottom : constant Integer :=
-                       (if Drawable then Integer'Max (Baseline + Descent, Glyph_Top + Metric.H)
-                        else Baseline + Descent);
-
-                     function Covered (X, Y : Integer) return Boolean is
-                       (Drawable
-                        and then X - Glyph_Left in 0 .. Metric.W - 1 and then Y - Glyph_Top in 0 .. Metric.H - 1
-                        and then Atlas ((Metric.Y + Y - Glyph_Top) * Atlas_Width + Metric.X + X - Glyph_Left)
-                                 >= Ink_Threshold);
-                  begin
-                     --  The character's cell: ink is a black source, the rest a white one, through the text mode.
-                     for Y in Integer'Max (Top, P.Window.Top) .. Integer'Min (Bottom, P.Window.Bottom) - 1 loop
-                        exit when not Results.Succeeded (Outcome);
-                        P.Row_Spans.Clear;
-                        P.Row_Spans.Append
-                          (Regions.Span'(Integer'Max (Left, P.Window.Left), Integer'Min (Right, P.Window.Right)));
-                        Outcome := Rendering.Clip_Row (P, S, Y);
-                        for Span of P.Row_Spans loop
-                           exit when not Results.Succeeded (Outcome);
-                           Outcome := Rendering.Charge (P, S, Natural'Max (0, Span.Right - Span.Left));
-                           exit when not Results.Succeeded (Outcome);
-                           for X in Span.Left .. Span.Right - 1 loop
-                              declare
-                                 Ink : constant Boolean :=
-                                   Covered (X, Y) or else (Bold = 1 and then Covered (X - 1, Y));
-                              begin
-                                 Rendering.Put
-                                   (P, X, Y,
-                                    Transfer_Modes.Compose
-                                      (Kind, (if Ink then Images.Black else Images.White), Rendering.Get (P, X, Y),
-                                       P.Colors, Bit_Source => True));
-                              end;
-                           end loop;
-                        end loop;
-                     end loop;
-                  end;
-                  Pen := Pen + Advance;
-               end;
-            end if;
+            exit when not Results.Succeeded (Result);
          end loop;
+         return Result;
+      end Paint_Cell;
 
-         --  Underline: the row below the baseline, under the whole string.
-         if Results.Succeeded (Outcome) and then Has (State.Face, Text.Underline)
-           and then Baseline + 1 in P.Window.Top .. P.Window.Bottom - 1
-         then
-            P.Row_Spans.Clear;
-            P.Row_Spans.Append
-              (Regions.Span'(Integer'Max (Start_X, P.Window.Left),
-                Integer'Min (Integer (Float'Rounding (Pen)), P.Window.Right)));
-            Outcome := Rendering.Clip_Row (P, S, Baseline + 1);
-            --  The underline is painted pixels like any other: charged, and not drawn past the budget.
-            for Span of P.Row_Spans loop
-               exit when not Results.Succeeded (Outcome);
-               Outcome := Rendering.Charge (P, S, Natural'Max (0, Span.Right - Span.Left));
-               exit when not Results.Succeeded (Outcome);
-               for X in Span.Left .. Span.Right - 1 loop
-                  Rendering.Put
-                    (P, X, Baseline + 1,
-                     Transfer_Modes.Compose
-                       (Kind, Images.Black, Rendering.Get (P, X, Baseline + 1), P.Colors, Bit_Source => True));
-               end loop;
-            end loop;
+      --  The row below the baseline, under the whole string.
+      function Paint_Underline return Results.Result is
+         function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
+            pragma Unreferenced (X, Y);
+         begin
+            return Through_Mode (True, Under);
+         end Color_At;
+         function Paint is new Rendering.Paint_Row (Color_At);
+         Result : constant Results.Result :=
+           Rendering.Begin_Row (P, S, Baseline + 1, Start_X, Integer (Float'Rounding (Pen)));
+      begin
+         return (if Results.Succeeded (Result) then Paint (P, S, Baseline + 1) else Result);
+      end Paint_Underline;
+   begin
+      for Item of Characters loop
+         exit when not Results.Succeeded (Outcome);
+         --  Every glyph request is drawing work, wherever the character lands; control characters draw nothing.
+         if Item >= Space then
+            Outcome := Rendering.Charge (P, S, Text.Glyph_Work (Size));
+            exit when not Results.Succeeded (Outcome);
+            declare
+               --  Defined even when the font lacks the glyph and leaves it alone.
+               Metric : Textrender.Glyph_Metric :=
+                 (X | Y | W | H => 0, U0 | V0 | U1 | V1 | Advance_X | Bearing_X | Bearing_Y => 0.0);
+               Status : constant Textrender.Status_Code := Font.Get_Glyph (Text.To_Unicode (Item), Metric, Style);
+               Advance : Float :=
+                 (if Status = Textrender.Success then Metric.Advance_X else Float (Size) / 2.0)
+                 + Float (State.Char_Extra + Width_Change);
+            begin
+               if Status /= Textrender.Success and then not Missing_Reported then
+                  Sessions.Warn (S, Errors.Data_Loss, Errors.Data_Loss,
+                                 (Context_Of (Event) with delta Actual => Byte_Count (Item)));
+                  Missing_Reported := True;
+               end if;
+               if Item = Space then
+                  Advance := Advance + Float (State.Space_Extra) / Float (Geometry.Fixed_One);
+               end if;
+               Outcome :=
+                 Paint_Cell (Metric, Status = Textrender.Success and then Metric.W > 0 and then Metric.H > 0, Advance);
+               Pen := Pen + Advance;
+            end;
          end if;
-      end;
+      end loop;
+      if Results.Succeeded (Outcome) and then Has (State.Face, Text.Underline) then
+         Outcome := Paint_Underline;
+      end if;
       return Outcome;
    end Draw_Characters;
 end Pictlib.Internal.Typesetting;

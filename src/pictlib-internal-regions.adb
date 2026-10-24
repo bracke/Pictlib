@@ -255,4 +255,36 @@ package body Pictlib.Internal.Regions is
          end;
       end loop;
    end Intersect;
+
+   procedure Subtract (Left, Right : Span_Vectors.Vector; Result : in out Span_Vectors.Vector) is
+      R : Positive := 1;
+   begin
+      Result.Clear;
+      for A of Left loop
+         declare
+            From : Integer := A.Left;
+         begin
+            --  Cuts wholly before this span are behind every later span too.
+            while R <= Natural (Right.Length) and then Right (R).Right <= From loop
+               R := R + 1;
+            end loop;
+            --  Cuts within the span; one that reaches past it is kept for the next span.
+            declare
+               Cut : Positive := R;
+            begin
+               while Cut <= Natural (Right.Length) and then Right (Cut).Left < A.Right loop
+                  if Right (Cut).Left > From then
+                     Result.Append (Span'(From, Right (Cut).Left));
+                  end if;
+                  From := Integer'Max (From, Right (Cut).Right);
+                  exit when Right (Cut).Right >= A.Right;
+                  Cut := Cut + 1;
+               end loop;
+            end;
+            if From < A.Right then
+               Result.Append (Span'(From, A.Right));
+            end if;
+         end;
+      end loop;
+   end Subtract;
 end Pictlib.Internal.Regions;

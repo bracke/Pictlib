@@ -180,6 +180,40 @@ package Pictlib.Internal.Rendering is
    --  @param Color New pixel.
    procedure Put (P : in out Painter; X, Y : Integer; Color : Images.RGB_Color);
 
+   --  Every drawing paints a row at a time through these: Begin_Row (or Coverage rows and Clip_Row), Mask_Row
+   --  when a mask applies, then Paint_Row, so clipping, masking and charging happen once, in one order.
+
+   --  Begin row.
+   --  @param P Painter whose Row_Spans become columns Left .. Right - 1 of row Y inside the window, cut by the
+   --  clip region; none when that is empty.
+   --  @param S Session whose drawing budget the clip walk is charged to.
+   --  @param Y Picture row.
+   --  @param Left First picture column.
+   --  @param Right Column after the last.
+   --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
+   function Begin_Row (P : in out Painter; S : Sessions.Session; Y, Left, Right : Integer) return Results.Result;
+   --  Mask row.
+   --  @param P Painter whose Row_Spans are cut by Mask's row Y.
+   --  @param S Session whose drawing budget the mask walk is charged to, before the spans are cut.
+   --  @param Mask Mask region, in picture coordinates.
+   --  @param Y Picture row.
+   --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
+   function Mask_Row (P : in out Painter; S : Sessions.Session; Mask : in out Regions.Region; Y : Integer)
+     return Results.Result;
+   --  Paint row: each span of Row_Spans is charged, then each of its pixels becomes Color_At of what is under it;
+   --  nothing is painted past the budget.
+   generic
+      with function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color;
+   function Paint_Row (P : in out Painter; S : Sessions.Session; Y : Integer) return Results.Result;
+   --  Paint row color: as Paint_Row, every pixel Color.
+   --  @param P Painter.
+   --  @param S Session.
+   --  @param Y Picture row.
+   --  @param Color The color.
+   --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
+   function Paint_Row_Color (P : in out Painter; S : Sessions.Session; Y : Integer; Color : Images.RGB_Color)
+     return Results.Result;
+
    --  Fill.
    --  @param P Painter.
    --  @param S Session whose drawing budget applies.

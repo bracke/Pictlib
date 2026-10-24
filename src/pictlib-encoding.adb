@@ -105,7 +105,8 @@ package body Pictlib.Encoding is
       Stored : constant Natural := Row_Bytes (Layout, Width);
       --  Packed direct rows are component planes; anything stored unpacked is the stored row.
       Unpacked_Length : constant Natural :=
-        (if Layout = Direct_32 and then Stored >= 8 then Components * Width else Stored);
+        (if Layout = Direct_32 and then Stored >= Internal.Smallest_Packed_Row_Bytes then Components * Width
+         else Stored);
       Outcome : Results.Result := Results.Success;
 
       procedure Step (Item : Results.Result) is
@@ -141,7 +142,7 @@ package body Pictlib.Encoding is
             begin
                case Layout is
                   when Direct_32 =>
-                     if Stored < 8 then
+                     if Stored < Internal.Smallest_Packed_Row_Bytes then
                         --  Unpacked chunky pixels: pad (or alpha), red, green, blue.
                         Row (Row'First + 4 * X .. Row'First + 4 * X + 3) :=
                           [(if Components = 4 then Item.Alpha else 0), Item.Color.Red, Item.Color.Green,
@@ -233,11 +234,11 @@ package body Pictlib.Encoding is
          for Y in 0 .. Height - 1 loop
             exit when not Results.Succeeded (Outcome);
             Fill_Row (Y, Row.all);
-            if Stored < 8 then
+            if Stored < Internal.Smallest_Packed_Row_Bytes then
                Step (Writers.Put (Out_Bytes, Row.all));
             else
                Internal.PackBits.Pack (Row.all, 1, Packed.all, Packed_Length);
-               if Stored > 250 then
+               if Stored > Internal.Byte_Count_Row_Bytes then
                   Step (Writers.Put_Word (Out_Bytes, Packed_Length));
                else
                   Step (Writers.Put_Byte (Out_Bytes, Packed_Length));

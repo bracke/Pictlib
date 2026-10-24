@@ -1,6 +1,7 @@
 with AUnit.Test_Cases;
 with Pictlib_Testing.Test_Bytes;
 with Pictlib_Testing.Test_Container;
+with Pictlib_Testing.Test_Coverage;
 with Pictlib_Testing.Test_Decoder;
 with Pictlib_Testing.Test_Encoding;
 with Pictlib_Testing.Test_Enumeration;
@@ -54,6 +55,8 @@ package body Pictlib_Testing.Suite is
         new Pictlib_Testing.Test_Stress.Test;
       Hostile : constant AUnit.Test_Cases.Test_Case_Access :=
         new Pictlib_Testing.Test_Hostile.Test;
+      Coverage : constant AUnit.Test_Cases.Test_Case_Access :=
+        new Pictlib_Testing.Test_Coverage.Test;
    begin
       Suite.Add_Test (Foundation);
       Suite.Add_Test (Streams);
@@ -72,6 +75,7 @@ package body Pictlib_Testing.Suite is
       Suite.Add_Test (Encoding);
       Suite.Add_Test (Stress);
       Suite.Add_Test (Hostile);
+      Suite.Add_Test (Coverage);
       return Suite;
    end All_Tests;
 end Pictlib_Testing.Suite;

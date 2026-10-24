@@ -17,8 +17,6 @@ package body Pictlib.Internal.Drawing is
    subtype Area is Regions.Area;
    subtype Point is Coverage.Point;
 
-   Smallest_Polygon : constant := 10;
-
    function Signed (Value : Interfaces.Unsigned_16) return Integer is
      (if Value >= 16#8000# then Integer (Value) - 16#1_0000# else Integer (Value));
 
@@ -78,34 +76,22 @@ package body Pictlib.Internal.Drawing is
       return True;
    end Planar_Color;
 
-   function Read_Polygon
-     (P : Rendering.Painter;
-      S : in out Sessions.Session;
-      Points : out Coverage.Point_Vectors.Vector) return Results.Result
+   function Read_Polygon (S : in out Sessions.Session; Points : out Coverage.Point_Vectors.Vector)
+     return Results.Result
    is
-      pragma Unreferenced (P);
-      Size : Interfaces.Unsigned_16 := 0;
+      Count : Natural;
       Box : Geometry.Rect;
-      Outcome : Results.Result := Sessions.Read_Word (S, Size);
+      Outcome : Results.Result := Sessions.Read_Polygon_Size (S, Count);
    begin
       Points.Clear;
-      if not Results.Succeeded (Outcome) then
-         return Outcome;
-      elsif Size < Smallest_Polygon or else (Size - Smallest_Polygon) mod 4 /= 0 then
-         return Sessions.Fail (S, Errors.Polygon_Invalid, Smallest_Polygon, Byte_Count (Size));
-      elsif Natural (Size - Smallest_Polygon) / 4 > S.Budget.Max_Polygon_Points then
-         return Sessions.Over_Limit
-           (S, Polygon_Point_Limit, Byte_Count (S.Budget.Max_Polygon_Points),
-            Byte_Count (Size - Smallest_Polygon) / 4);
+      --  The points are kept: 8 bytes each against the aggregate allocation quota.
+      if Results.Succeeded (Outcome) then
+         Outcome := Sessions.Admit_Aggregate (S, 8 * Byte_Count (Count));
       end if;
-      Outcome :=
-        Sessions.Admit_Aggregate
-          (S, Byte_Count (Size - Smallest_Polygon) * 8);
-      if not Results.Succeeded (Outcome) then
-         return Outcome;
+      if Results.Succeeded (Outcome) then
+         Outcome := Sessions.Read_Bounds (S, Box);
       end if;
-      Outcome := Sessions.Read_Bounds (S, Box);
-      for Index in 1 .. Natural (Size - Smallest_Polygon) / 4 loop
+      for Index in 1 .. Count loop
          exit when not Results.Succeeded (Outcome);
          declare
             V, H : Interfaces.Unsigned_16 := 0;
@@ -215,7 +201,7 @@ package body Pictlib.Internal.Drawing is
             end;
          when 7 =>
             if not Same then
-               Outcome := Read_Polygon (P, S, P.Last_Polygon);
+               Outcome := Read_Polygon (S, P.Last_Polygon);
                if not Results.Succeeded (Outcome) then
                   return Outcome;
                end if;

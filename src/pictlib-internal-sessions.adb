@@ -187,6 +187,24 @@ package body Pictlib.Internal.Sessions is
       return Outcome;
    end Retain;
 
+   function Read_Polygon_Size (S : in out Session; Points : out Natural) return Results.Result is
+      use type Interfaces.Unsigned_16;
+      Size : Interfaces.Unsigned_16 := 0;
+      Outcome : constant Results.Result := Read_Word (S, Size);
+   begin
+      Points := 0;
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      elsif Size < Smallest_Polygon or else (Size - Smallest_Polygon) mod 4 /= 0 then
+         return Fail (S, Errors.Polygon_Invalid, Smallest_Polygon, Byte_Count (Size));
+      elsif Natural (Size - Smallest_Polygon) / 4 > S.Budget.Max_Polygon_Points then
+         return Over_Limit
+           (S, Polygon_Point_Limit, Byte_Count (S.Budget.Max_Polygon_Points), Byte_Count (Size - Smallest_Polygon) / 4);
+      end if;
+      Points := Natural (Size - Smallest_Polygon) / 4;
+      return Results.Success;
+   end Read_Polygon_Size;
+
    function Read_Word (S : in out Session; Value : out Interfaces.Unsigned_16) return Results.Result is
       Outcome : constant Results.Result := Admit_Data (S, 2);
    begin
@@ -263,7 +281,7 @@ package body Pictlib.Internal.Sessions is
          declare
             Count : Byte_Count;
          begin
-            if Row_Bytes > 250 then
+            if Row_Bytes > Byte_Count_Row_Bytes then
                declare
                   Word : Interfaces.Unsigned_16;
                begin
