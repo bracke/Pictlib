@@ -63,7 +63,7 @@ worked without bound; they assert what work costs through the budgets, never
 the clock. Any exception, or any input taking more than a minute, is saved for
 replay and fails the run; an input taking more than two seconds is saved and
 reported, since a loaded machine can be that slow. Seeds are taken in
-file-name order, so a run's arguments reproduce it on any machine. `pictlib_real_world` holds
+file-name order, so a run's arguments reproduce it on any machine. `pictlib_real_world` fails on a recorded picture that has gone missing, and holds
 LibreOffice's PICT filter test files, CVE reproductions among them, to their
 recorded outcomes.
 

@@ -173,6 +173,14 @@ package body Pictlib_Testing.Test_Encoding is
       Assert (Encode (Samples.Black_And_White, 9, 4, (Keep_Alpha => True, others => <>), Pictlib.RGBA_32).Layout
               = Encoding.Direct_32, "kept alpha is Direct_32");
       Round_Trip (Samples.Gradient, 37, 23, Encoding.Auto, "Auto");
+      --  Auto takes Mono_1 only for pure black and white, and keeps it exact whatever the threshold.
+      Round_Trip (Samples.Black_And_White, 9, 4, Encoding.Auto, "Auto, black and white, threshold 0",
+                  (Mono_Threshold => 0, others => <>));
+      Round_Trip (Samples.Black_And_White, 9, 4, Encoding.Auto, "Auto, black and white, threshold 255",
+                  (Mono_Threshold => 255, others => <>));
+      --  Alpha is kept only from a view that has it: from RGB, Auto chooses as if it were not asked for.
+      Assert (Encode (Samples.Black_And_White, 9, 4, (Keep_Alpha => True, others => <>)).Layout = Encoding.Mono_1,
+              "Keep_Alpha on an RGB view chose Direct_32");
    end Automatic_Layout;
 
    procedure Picture_Structure (T : in out AUnit.Test_Cases.Test_Case'Class) is

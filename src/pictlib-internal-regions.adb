@@ -170,7 +170,13 @@ package body Pictlib.Internal.Regions is
       Item.Active.Move (Merged);
    end Invert;
 
-   procedure Row_Spans (Item : in out Region; Y : Integer; Spans : in out Span_Vectors.Vector; Work : out Natural) is
+   procedure Row_Spans
+     (Item : in out Region;
+      Y : Integer;
+      Spans : in out Span_Vectors.Vector;
+      Work : out Natural;
+      Allowance : Natural := Natural'Last)
+   is
       Box : constant Area := Item.Box;
    begin
       Spans.Clear;
@@ -189,8 +195,13 @@ package body Pictlib.Internal.Regions is
       Item.Cursor_Y := Y;
       while Item.Next_Line <= Natural (Item.Lines.Length) and then Item.Lines (Item.Next_Line).Y <= Y loop
          Invert (Item, Item.Lines (Item.Next_Line));
-         Work := Work + Natural (Item.Active.Length) + 1;
+         Work := Natural'Min (Natural'Last - 1, Work + Natural (Item.Active.Length) + 1);
          Item.Next_Line := Item.Next_Line + 1;
+         --  The walk resumes from here at the next call; this one is over budget.
+         if Work > Allowance then
+            Spans.Clear;
+            return;
+         end if;
       end loop;
 
       declare
@@ -208,7 +219,7 @@ package body Pictlib.Internal.Regions is
             Index := Index + 2;
          end loop;
       end;
-      Work := Work + Natural (Item.Active.Length);
+      Work := Natural'Min (Natural'Last, Work + Natural (Item.Active.Length));
    end Row_Spans;
 
    procedure Intersect (Left, Right : Span_Vectors.Vector; Result : in out Span_Vectors.Vector) is

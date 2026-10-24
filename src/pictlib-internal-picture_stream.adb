@@ -27,6 +27,8 @@ package body Pictlib.Internal.Picture_Stream is
 
    function Lookahead_Length (Object : Reader) return Natural is (Buffered (Object));
 
+   function Input_Ended (Object : Reader) return Boolean is (Object.Input_Ended);
+
    function Lookahead_At (Object : Reader; Index : Positive) return Byte is
      (Object.Buffer (Object.First + Index - 1));
 
@@ -129,6 +131,29 @@ package body Pictlib.Internal.Picture_Stream is
          return Step;
       end;
    end Read;
+
+   function Probe_Past_End (Object : in out Reader) return Streams.Source_Result is
+      Probe : Streams.Byte_Array (1 .. 1);
+   begin
+      if Object.Input = null then
+         return (Error => Errors.Make (Errors.Source_Read_Failed), Count => 0, End_Of_Input => False);
+      elsif Buffered (Object) > 0 then
+         Object.First := Object.First + 1;
+         Object.Consumed := Object.Consumed + 1;
+         return (Error => Errors.Make (Errors.No_Error), Count => 1, End_Of_Input => False);
+      elsif Object.Input_Ended then
+         return (Error => Errors.Make (Errors.No_Error), Count => 0, End_Of_Input => True);
+      end if;
+      declare
+         Step : constant Streams.Source_Result := Object.Input.Read (Probe);
+      begin
+         if not Errors.Is_Fatal (Step.Error) and then Step.Count <= 1 then
+            Object.Consumed := Object.Consumed + Step.Count;
+            Object.Input_Ended := Step.End_Of_Input;
+         end if;
+         return Step;
+      end;
+   end Probe_Past_End;
 
    overriding function Offset (Object : Reader) return Source_Offset is
      (Object.Base + Source_Offset (Object.Consumed));

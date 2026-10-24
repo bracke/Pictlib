@@ -208,8 +208,9 @@ package body Pictlib.Internal.Opcode_Reader is
       elsif Event.Op = Opcodes.Font_Name and then (S.Retention.Font_Names or else Paint /= null) then
          return Consume_Font_Name (S, Event, Length, Paint);
       elsif Event.Op in Opcodes.Compressed_QuickTime | Opcodes.Uncompressed_QuickTime
-        and then S.Retention.QuickTime_Payloads
+        and then S.Retention.QuickTime_Payloads and then Paint = null
       then
+         --  Only enumeration retains QuickTime payloads; rendering skips an uncompressed one.
          return Sessions.Retain (S, Item_For (Metadata.QuickTime_Payload, Event), Length);
       elsif Event.Reserved and then S.Retention.Reserved_Payloads then
          return Sessions.Retain (S, Item_For (Metadata.Reserved_Payload, Event), Length);

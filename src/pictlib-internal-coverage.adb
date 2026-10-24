@@ -84,6 +84,10 @@ package body Pictlib.Internal.Coverage is
    function Remaining (Item : Shape) return Pixel_Count is
      (if Item.Units >= Item.Allowance then 0 else Item.Allowance - Item.Units);
 
+   --  What is left of the allowance, as a region walk's.
+   function Walk_Allowance (Item : Shape) return Natural is
+     (Natural (Pixel_Count'Min (Remaining (Item), Pixel_Count (Natural'Last))));
+
    procedure Add_Work (Item : in out Shape; Units : Pixel_Count) is
    begin
       Item.Units := (if Pixel_Count'Last - Item.Units < Units then Pixel_Count'Last else Item.Units + Units);
@@ -486,7 +490,7 @@ package body Pictlib.Internal.Coverage is
       if Row_Range (Item, Box, First, Last) then
          for Y in First .. Last loop
             exit when Item.Spent;
-            Regions.Row_Spans (Source, Y, Spans, Units);
+            Regions.Row_Spans (Source, Y, Spans, Units, Walk_Allowance (Item));
             Charge (Item, Units);
             for S of Spans loop
                Add (Item, Y, S.Left, S.Right);
@@ -512,7 +516,7 @@ package body Pictlib.Internal.Coverage is
       begin
          for Y in Low .. High loop
             exit when Item.Spent;
-            Regions.Row_Spans (Source, Y, Spans, Units);
+            Regions.Row_Spans (Source, Y, Spans, Units, Walk_Allowance (Item));
             Charge (Item, Units);
             Whole.Append (Spans);
             declare

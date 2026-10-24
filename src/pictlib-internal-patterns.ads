@@ -54,10 +54,11 @@ package Pictlib.Internal.Patterns is
    --  @param Work The drawing work it took, for the caller to charge: a unit for any pattern, plus a decoded
    --  tile's pixels and rows. The unit alone may exceed Allowance; the charge then fails.
    --  @param Too_Large True when the tile has more than Max_Tile_Pixels pixels. Such a tile is never decoded,
-   --  whatever the budgets: its rows are skipped, Item holds pat1Data, and the caller reports it unsupported.
+   --  whatever the budgets: strictly the read fails with Unsupported_Feature before its rows; leniently its rows
+   --  are skipped, Item holds pat1Data, and the caller warns.
    --  @param Tile_Pixels The pixels a color tile declares, for the caller's diagnostic; 0 for other patterns.
    --  @return Success, Pattern_Invalid for an unknown type, Limit_Exceeded past Allowance or the allocation
-   --  budget, or the pixmap's failure.
+   --  budget, Unsupported_Feature for a tile too large to index when strict, or the pixmap's failure.
    function Read_Pixel_Pattern
      (S : in out Sessions.Session;
       Item : out Pattern;

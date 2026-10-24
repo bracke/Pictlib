@@ -5,7 +5,9 @@
 --  textrender. --policy-only checks the sources alone. Run from anywhere below the pictlib tree, after
 --  `alr --chdir tests build`.
 with Ada.Command_Line;
+with Ada.Characters.Handling;
 with Ada.Directories;
+with Ada.Exceptions;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Project_Tools.Ada_Source;
@@ -48,6 +50,99 @@ procedure Pictlib_Check is
       Ada.Text_IO.Close (File);
    end Check_Lines;
 
+   --  Production units depend only on Ada, Interfaces (not Interfaces.C), GNAT, System, pictlib, jpeglib and
+   --  textrender, and bind no foreign code: no Import, Export or Convention C. Context clauses are read a line
+   --  at a time, as the sources write them.
+   procedure Check_Dependencies (Path : String) is
+      use Ada.Characters.Handling;
+      File : Ada.Text_IO.File_Type;
+      Number : Natural := 0;
+      --  Context clauses end where the unit begins; a later "with" is an aspect specification.
+      In_Context : Boolean := True;
+
+      function Starts (Line, Word : String) return Boolean is
+        (Line'Length >= Word'Length and then Line (Line'First .. Line'First + Word'Length - 1) = Word);
+
+      function Allowed (Unit : String) return Boolean is
+         Root_End : Natural := Unit'Last;
+      begin
+         for Index in Unit'Range loop
+            if Unit (Index) = '.' then
+               Root_End := Index - 1;
+               exit;
+            end if;
+         end loop;
+         return Unit (Unit'First .. Root_End) in "ada" | "interfaces" | "gnat" | "system" | "pictlib" | "jpeglib"
+                                                 | "textrender"
+           and then Unit /= "interfaces.c" and then not (Unit'Length > 13 and then Unit (Unit'First .. Unit'First + 12)
+                                                        = "interfaces.c.");
+      end Allowed;
+
+      function Contains (Text, Part : String) return Boolean is
+        (Index (To_Unbounded_String (Text), Part) > 0);
+   begin
+      Ada.Text_IO.Open (File, Ada.Text_IO.In_File, Path);
+      while not Ada.Text_IO.End_Of_File (File) loop
+         declare
+            Raw : constant String := To_Lower (Ada.Text_IO.Get_Line (File));
+            First : Positive := Raw'First;
+         begin
+            Number := Number + 1;
+            while First <= Raw'Last and then Raw (First) = ' ' loop
+               First := First + 1;
+            end loop;
+            declare
+               Line : constant String := Raw (First .. Raw'Last);
+               Units_First : constant Natural :=
+                 (if not In_Context then 0
+                  elsif Line'Length > 5 and then Line (Line'First .. Line'First + 4) = "with " then Line'First + 5
+                  elsif Line'Length > 13 and then Line (Line'First .. Line'First + 12) = "limited with "
+                  then Line'First + 13
+                  elsif Line'Length > 13 and then Line (Line'First .. Line'First + 12) = "private with "
+                  then Line'First + 13
+                  else 0);
+            begin
+               if Starts (Line, "package ") or else Starts (Line, "procedure ") or else Starts (Line, "function ")
+                 or else Starts (Line, "generic") or else Starts (Line, "separate")
+                 or else Starts (Line, "private package ")
+               then
+                  In_Context := False;
+               end if;
+               if Units_First > 0 then
+                  declare
+                     Start : Positive := Units_First;
+                  begin
+                     for Index in Units_First .. Line'Last loop
+                        if Line (Index) in ',' | ';' then
+                           declare
+                              Unit : constant String :=
+                                Ada.Strings.Unbounded.To_String
+                                  (Ada.Strings.Unbounded.Trim
+                                     (To_Unbounded_String (Line (Start .. Index - 1)), Ada.Strings.Both));
+                           begin
+                              if Unit'Length > 0 and then not Allowed (Unit) then
+                                 Fail (Path & ":" & Number'Image & ": production code depends on " & Unit);
+                              end if;
+                           end;
+                           Start := Index + 1;
+                           exit when Line (Index) = ';';
+                        end if;
+                     end loop;
+                  end;
+               end if;
+               if Contains (Line, "pragma import") or else Contains (Line, "pragma export")
+                 or else Contains (Line, "pragma interface") or else Contains (Line, "import => true")
+                 or else Contains (Line, "export => true") or else Contains (Line, "convention => c")
+                 or else Contains (Line, "pragma convention")
+               then
+                  Fail (Path & ":" & Number'Image & ": production code binds foreign code");
+               end if;
+            end;
+         end;
+      end loop;
+      Ada.Text_IO.Close (File);
+   end Check_Dependencies;
+
    procedure Check_Tree (Directory : String; Production : Boolean) is
       use Ada.Directories;
       Search : Search_Type;
@@ -67,6 +162,9 @@ procedure Pictlib_Check is
             elsif Is_Ada (Name) then
                Check_Lines (Path);
                if Production then
+                  Check_Dependencies (Path);
+                  --  The project_tools checks raise on what they find: a finding, not the end of the gate.
+                  begin
                   --  Production code reaches jpeglib only through its public packages, and never tests or tools.
                   Project_Tools.Ada_Source.Require_Only_Allowed_With_Clauses
                     (Path, "Jpeglib.",
@@ -84,6 +182,10 @@ procedure Pictlib_Check is
                   if Extension (Name) = "ads" and then Index (To_Unbounded_String (Name), "-internal") = 0 then
                      Project_Tools.Ada_Source.Require_Public_GNATdoc_Tags (Path);
                   end if;
+                  exception
+                     when Error : others =>
+                        Fail (Path & ": " & Ada.Exceptions.Exception_Message (Error));
+                  end;
                end if;
             end if;
          end;

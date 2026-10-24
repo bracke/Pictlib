@@ -179,11 +179,12 @@ package body Pictlib_Testing.Test_Hostile is
       Tight.Max_Allocation_Bytes := 1_000;
       Over (Unaffordable_Tile, Tight, Pictlib.Drawing_Work_Limit, "18000 x 18000 PixPat on small budgets");
       Tight := Pictlib.Limits.Default_Limits;
-      --  A tile of more than the 2^31 - 1 pixels a tile can index is never decoded, so no budget applies; its
-      --  rows are skipped in every mode, so this one, which has none, is cut short either way.
-      Canvases.Expect_Failure (Unindexable_Tile, 8, 2, Errors.Source_Unexpected_End, "65535 x 65535 PixPat");
+      --  A tile of more than the 2^31 - 1 pixels a tile can index is never decoded, so no budget applies:
+      --  strictly it is unsupported before its rows are read, so this one, which has none, says so; leniently its
+      --  rows are skipped, so it is cut short.
+      Canvases.Expect_Failure (Unindexable_Tile, 8, 2, Errors.Unsupported_Feature, "65535 x 65535 PixPat", 16#14#);
       Canvases.Expect_Failure (Unindexable_Tile, 8, 2, Errors.Source_Unexpected_End, "65535 x 65535 PixPat",
-                               Options => Compatible);
+                               16#14#, Options => Compatible);
       --  The same skip with every row present: drawing goes on, with the black pat1Data in the tile's place.
       declare
          Rows : constant := 32_769;
@@ -229,9 +230,11 @@ package body Pictlib_Testing.Test_Hostile is
          Assert (Pictlib.Results.Succeeded (Outcome),
                  "the skipped tile was charged more than its unit: " & Outcome.First_Error.Code'Image);
          Tight := Pictlib.Limits.Default_Limits;
-         --  Strictly it is unsupported whatever the budgets, even with none left for the pattern's unit.
+         --  Strictly it is unsupported whatever the budgets: none left for the pattern's unit, and too few bytes
+         --  per opcode for its rows.
          Tight.Max_Drawing_Work := 0;
          Tight.Max_Allocation_Bytes := 1_000;
+         Tight.Max_Opcode_Bytes := 1_000;
          Canvases.Render (Whole.all, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome,
                           (Strictness => Pictlib.Strict, others => <>), Budget => Tight);
          Assert (Outcome.First_Error.Code = Errors.Unsupported_Feature
@@ -258,6 +261,20 @@ package body Pictlib_Testing.Test_Hostile is
       Canvases.Render (Costly_Tile, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Budget => Tight);
       Assert (Pictlib.Results.Succeeded (Outcome), "a tile within the budget failed with "
               & Outcome.First_Error.Code'Image);
+      --  Pack types and component counts are checked whether or not the rows are packed.
+      declare
+         function Direct (Row_Bytes, Pack, Size, Count : Natural; Data : Bytes) return Bytes is
+           (Pic (1, 1, W (16#9A#) & L (16#FF#) & W (16#8000# + Row_Bytes) & Rect (0, 0, 1, 1)
+                       & Pixmap_Tail (Pack, Size, Count, (if Size = 16 then 5 else 8)) & Rect (0, 0, 1, 1)
+                       & Rect (0, 0, 1, 1) & W (0) & Data));
+         Pack_4_At_16 : aliased constant Bytes := Direct (2, 4, 16, 3, Zeros (2));
+         Pack_3_At_32 : aliased constant Bytes := Direct (4, 3, 32, 3, Zeros (4));
+         Seven_Components : aliased constant Bytes := Direct (4, 1, 32, 7, Zeros (4));
+      begin
+         Canvases.Expect_Failure (Pack_4_At_16, 1, 1, Errors.Pixmap_Invalid, "pack type 4 at 16 bits", 16#9A#);
+         Canvases.Expect_Failure (Pack_3_At_32, 1, 1, Errors.Pixmap_Invalid, "pack type 3 at 32 bits", 16#9A#);
+         Canvases.Expect_Failure (Seven_Components, 1, 1, Errors.Pixmap_Invalid, "cmpCount 7, unpacked", 16#9A#);
+      end;
       Recorders.Decode (Planar_Count, Decoder, Events, Outcome);
       Assert (Outcome.First_Error.Code = Errors.Pixmap_Invalid,
               "cmpCount 16#FFFF# enumerated with " & Outcome.First_Error.Code'Image);

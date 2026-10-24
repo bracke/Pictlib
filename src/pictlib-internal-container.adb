@@ -10,6 +10,7 @@ with Pictlib.Streams;
 package body Pictlib.Internal.Container is
    use type Interfaces.Unsigned_16;
    use type Geometry.Fixed;
+   use type Errors.Error_Code;
 
    File_Header_Bytes : constant := 512;
    --  picSize and picFrame precede the version opcode.
@@ -149,6 +150,25 @@ package body Pictlib.Internal.Container is
       return Streams.Skip_Exact (S.Stream, Header_Op_Bytes - 4);
    end Read_Header_Op_Data;
 
+   --  A failure inside the version opcode or HeaderOp names that opcode and its ordinal, as the opcode reader
+   --  does for every later one.
+   function Attributed (Outcome : Results.Result; Event : Pictures.Opcode_Event) return Results.Result is
+   begin
+      if Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
+      declare
+         Item : Errors.Error := Outcome.First_Error;
+      begin
+         if not Item.Context.Has_Opcode or else Item.Context.Op = Event.Op then
+            Item.Context.Op := Event.Op;
+            Item.Context.Has_Opcode := True;
+            Item.Context.Ordinal := Event.Ordinal;
+         end if;
+         return Results.Failure (Item);
+      end;
+   end Attributed;
+
    function Read_Header
      (S : in out Sessions.Session;
       Policy : Header_Policy;
@@ -178,7 +198,15 @@ package body Pictlib.Internal.Container is
             File_Header_Present := False;
       end case;
       Detected := Version_At (S, (if File_Header_Present then File_Header_Bytes else 0));
-      if Detected = None then
+      if Detected = None
+        and then Byte_Count (Picture_Stream.Lookahead_Length (S.Stream)) >= S.Budget.Max_Picture_Bytes
+        and then Picture_Stream.Lookahead_Length (S.Stream) < Picture_Stream.Lookahead_Capacity
+        and then not Picture_Stream.Input_Ended (S.Stream)
+      then
+         --  The picture byte budget cut the look-ahead short of the version: the limit, not a bad version.
+         return Sessions.Over_Limit
+           (S, Picture_Byte_Limit, S.Budget.Max_Picture_Bytes, S.Budget.Max_Picture_Bytes + 1);
+      elsif Detected = None then
          return Fail (S, Errors.Version_Invalid);
       end if;
 
@@ -215,12 +243,12 @@ package body Pictlib.Internal.Container is
          S.Version := Version_1;
          Info.Version := Version_1;
          Events (1).Data_Length := 1;
-         return Streams.Skip_Exact (S.Stream, 2);
+         return Attributed (Streams.Skip_Exact (S.Stream, 2), Events (1));
       end if;
       S.Version := Version_2;
       Info.Version := Version_2;
       Events (1).Data_Length := 2;
-      Outcome := Streams.Skip_Exact (S.Stream, 4);
+      Outcome := Attributed (Streams.Skip_Exact (S.Stream, 4), Events (1));
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
@@ -230,7 +258,22 @@ package body Pictlib.Internal.Container is
          Header_Offset : constant Source_Offset := S.Stream.Offset;
       begin
          Outcome := Bytes.Read_U16_BE (S.Stream, Word);
-         if not Results.Succeeded (Outcome) then
+         if not Results.Succeeded (Outcome)
+           and then Outcome.First_Error.Code = Errors.Source_Unexpected_End
+           and then S.Stream.Offset = Header_Offset
+         then
+            --  The input ends right after the version opcode, at an opcode boundary: the picture has no
+            --  HeaderOp, and leniently it then ends without its end opcode, as the opcode reader reports.
+            if not Sessions.Is_Lenient (S) then
+               --  Named as the HeaderOp that should follow the version opcode.
+               return Attributed
+                 (Fail (S, Errors.Header_Invalid, Opcodes.Header_Op, True),
+                  (Op => Opcodes.Header_Op, Ordinal => Events (1).Ordinal + 1, others => <>));
+            end if;
+            Sessions.Warn (S, Errors.Compatibility_Issue, Errors.Compatibility,
+                           (Source => Header_Offset, Op => Opcodes.Header_Op, Has_Opcode => True, others => <>));
+            return Results.Success;
+         elsif not Results.Succeeded (Outcome) then
             return Outcome;
          elsif Opcode (Word) /= Opcodes.Header_Op then
             if not Sessions.Is_Lenient (S) then
@@ -248,7 +291,7 @@ package body Pictlib.Internal.Container is
          Events (2) := (Offset => Header_Offset, Op => Opcodes.Header_Op, Data_Length => Header_Op_Bytes, others => <>);
          Outcome := Sessions.Claim_Ordinal (S, Events (2).Ordinal);
          if Results.Succeeded (Outcome) then
-            Outcome := Read_Header_Op_Data (S, Info);
+            Outcome := Attributed (Read_Header_Op_Data (S, Info), Events (2));
          end if;
          if Results.Succeeded (Outcome) then
             Info.Has_Header_Opcode := True;

@@ -103,11 +103,18 @@ package body Pictlib.Internal.Patterns is
          return Outcome;
       end if;
       --  A tile of more than Max_Tile_Pixels is not malformed, and no budget raises the bound, so it is never
-      --  decoded and its budgets do not apply. Its rows are skipped, so success always means the opcode was
-      --  read; Item keeps pat1Data, already read, and the caller reports the tile unsupported.
+      --  decoded and its budgets do not apply. Strictly that ends the picture at once, before any row is read,
+      --  so no limit on reading them hides it; leniently its rows are skipped, success meaning the opcode was
+      --  read, Item keeps pat1Data, and the caller warns.
       Tile_Pixels := Pixels;
       if Pixels > Max_Tile_Pixels then
          Too_Large := True;
+         if not Sessions.Is_Lenient (S) then
+            return Results.Failure
+              (Errors.Make
+                 (Errors.Unsupported_Feature,
+                  (Source => S.Stream.Offset, Expected => Max_Tile_Pixels, Actual => Pixels, others => <>)));
+         end if;
          return Pixmaps.Skip_Pixels (S, Header);
       end if;
       --  Decoding is drawing work, a unit per pixel and per row, like converting a copied row: checked before

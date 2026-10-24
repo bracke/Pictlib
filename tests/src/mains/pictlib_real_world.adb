@@ -203,6 +203,13 @@ begin
          end if;
       end;
    end loop;
+   --  A recorded picture that is no longer on disk is a mismatch too: a corpus that lost files must not pass.
+   for Position in Expected.Iterate loop
+      if not Results_Now.Contains (Outcome_Maps.Key (Position)) then
+         Mismatches := Mismatches + 1;
+         Ada.Text_IO.Put_Line ("FAIL " & Outcome_Maps.Key (Position) & " is recorded but missing");
+      end if;
+   end loop;
    if Project_Tools.Processes.Has_Argument ("--update") and then Defects = 0 then
       declare
          File : Ada.Text_IO.File_Type;

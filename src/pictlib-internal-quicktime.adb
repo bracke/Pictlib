@@ -375,7 +375,7 @@ package body Pictlib.Internal.QuickTime is
                                       Integer'Min (Destination.Right, P.Window.Right)));
                      Outcome := Rendering.Clip_Row (P, S, Y);
                      if Results.Succeeded (Outcome) and then Has_Mask then
-                        Regions.Row_Spans (Mask, Y, P.Mask_Spans, Work);
+                        Regions.Row_Spans (Mask, Y, P.Mask_Spans, Work, Rendering.Walk_Allowance (P, S));
                         Regions.Intersect (P.Row_Spans, P.Mask_Spans, P.Scratch);
                         P.Row_Spans.Move (P.Scratch);
                         Outcome := Rendering.Charge (P, S, Work);

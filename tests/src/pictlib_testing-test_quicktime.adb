@@ -262,6 +262,19 @@ package body Pictlib_Testing.Test_QuickTime is
       Outcome : Pictlib.Results.Result;
    begin
       Canvases.Expect_Failure (Other_Codec, 8, 6, Errors.Unsupported_Feature, "codec rle", 16#8200#);
+      --  UncompressedQuickTime is skipped while rendering, and never retained then, whatever the policy says.
+      declare
+         Uncompressed : aliased constant Bytes :=
+           Image (W (16#8201#) & L (4) & Zeros (4) & Plain, Image_Width, Image_Height);
+         Keep : Pictlib.Decoding.Options;
+         View_Storage : aliased Bytes := [1 .. 3 * 48 => 0];
+      begin
+         Keep.Retention.QuickTime_Payloads := True;
+         Canvases.Render (Uncompressed, Decoder, Canvases.View (View_Storage'Access, 8, 6), Outcome, Keep);
+         Assert (Pictlib.Results.Succeeded (Outcome) and then Pictlib.Decoding.Metadata_Count (Decoder) = 0,
+                 "an UncompressedQuickTime payload was retained while rendering: "
+                 & Outcome.First_Error.Code'Image & Pictlib.Decoding.Metadata_Count (Decoder)'Image);
+      end;
       Canvases.Expect_Failure (Rotated, 8, 6, Errors.Unsupported_Feature, "a skewing matrix", 16#8200#);
       Canvases.Expect_Failure (With_Matte, 8, 6, Errors.Unsupported_Feature, "a matte", 16#8200#);
       Expect (Other_Codec, 8, 6, Nothing'Access, "codec rle, skipped",

@@ -126,6 +126,9 @@ package Pictlib.Internal.Rendering is
    --  Drawing work still allowed: what a shape may spend being built.
    function Allowance (P : Painter; S : Sessions.Session) return Pixel_Count is
      (S.Budget.Max_Drawing_Work - Pixel_Count'Min (P.Work, S.Budget.Max_Drawing_Work));
+   --  The drawing work still allowed, as a region walk's allowance.
+   function Walk_Allowance (P : Painter; S : Sessions.Session) return Natural is
+     (Natural (Pixel_Count'Min (Allowance (P, S), Pixel_Count (Natural'Last))));
 
    --  Unsupported.
    --  @param S Session whose strictness decides.

@@ -97,7 +97,7 @@ package body Pictlib.Internal.Rendering is
          return Results.Success;
       end if;
       --  The clip is local: picture row Y is its row Y + origin, and its columns lie origin to the right.
-      Regions.Row_Spans (P.Clip, Y + P.Origin_V, P.Clip_Spans, Work);
+      Regions.Row_Spans (P.Clip, Y + P.Origin_V, P.Clip_Spans, Work, Walk_Allowance (P, S));
       for Item of P.Clip_Spans loop
          Item := (Item.Left - P.Origin_H, Item.Right - P.Origin_H);
       end loop;
@@ -235,7 +235,7 @@ package body Pictlib.Internal.Rendering is
                   return Outcome;
                end if;
                if Header.Masked then
-                  Regions.Row_Spans (Mask, Y, P.Mask_Spans, Work);
+                  Regions.Row_Spans (Mask, Y, P.Mask_Spans, Work, Walk_Allowance (P, S));
                   Outcome := Charge (P, S, Work);
                   if not Results.Succeeded (Outcome) then
                      return Outcome;

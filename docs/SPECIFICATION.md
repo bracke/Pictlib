@@ -33,7 +33,7 @@ are retained, never interpreted.
 - Expected invalid input never raises: every public operation reports an `Errors.Error` inside a
   `Results.Result`. An exception escaping the public API is a defect.
 - Default strictness is `Strict`. `Compatible` accepts documented deviations seen in real files
-  (wrong `picSize`, missing end opcode at EOF, odd padding). `Recover_When_Safe` additionally
+  (missing end opcode at EOF, odd padding). `Recover_When_Safe` additionally
   renders what was decoded before a recoverable failure and reports `Partial_Picture`. Each
   accepted deviation records a `Warning`.
 - Behavior is deterministic: the same bytes, options and limits produce the same pixels,
@@ -51,8 +51,9 @@ are retained, never interpreted.
   528 bytes are held in a look-ahead buffer, which never reads beyond the picture byte limit.
   When the policy names a header the version opcode must be where it says, otherwise the result is
   `Version_Invalid`.
-- `picSize` (16 bits) is the low word of the picture length; for version 2 it is unreliable and
-  shall be retained but never used to bound parsing. `picFrame` is a `Rect`.
+- `picSize` (16 bits) is the low word of the picture length. Real files get it wrong in both
+  versions, so it is retained but never checked and never used to bound parsing; a picture whose
+  length the byte budget cuts short of its version reports that limit, not a bad version. `picFrame` is a `Rect`.
 - **Version 1:** version opcode `16#11#` followed by `16#01#`. Opcodes are one byte; data is not
   aligned; end opcode `16#FF#`.
 - **Version 2:** `16#0011#` followed by `16#02FF#`, then `HeaderOp` `16#0C00#` with 24 data bytes.
@@ -124,10 +125,10 @@ are retained, never interpreted.
   colorized; a dither `PixPat` (type 2) is drawn as its RGB color. Pattern opcodes are read, then
   charged, like every other opcode: a unit of drawing work for every pattern, and for a color
   `PixPat` a unit per pixel and per row of the tile it decodes. A tile of more than 2^31 − 1
-  pixels, more than a tile can index, is never decoded, so no budget applies to it: its rows are
-  read past, like any opcode's data, and it is then `Unsupported_Feature` in `Strict`, before
-  the pattern's unit is charged, and otherwise an `Approximated_Rendering` warning once that unit
-  is charged, its 1-bit pattern standing in; either diagnostic gives the bound as Expected and
+  pixels, more than a tile can index, is never decoded, so no budget applies to it: in `Strict`
+  it is `Unsupported_Feature` before its rows are read, so no limit on reading them hides it;
+  otherwise its rows are read past and, once the pattern's unit is charged, it is an
+  `Approximated_Rendering` warning, its 1-bit pattern standing in; either diagnostic gives the bound as Expected and
   the tile's pixels as Actual. Any other
   color `PixPat` is decoded only once the drawing budget admits that work and then the allocation
   budget its tile and row buffers. A pattern
@@ -144,6 +145,8 @@ are retained, never interpreted.
   Color QuickDraw's colorizing, for copies of every depth. Arithmetic modes use `OpColor`: blend
   weights by it, `addPin`/`subPin` pin to it, `addOver`/`subOver` wrap, `addMax`/`adMin` take the
   larger or smaller component, `transparent` leaves pixels equal to the background color alone.
+  For a bit pattern these modes, like the boolean ones, see its 1 bits as the foreground color and
+  its 0 bits as the background color.
   `hilite` (and the drawing operation after `HiliteMode`) swaps the background and highlight
   colors under dark source pixels; `DefHilite` resets the highlight to black. `grayishTextOr`
   acts as `srcOr`. Unknown modes fail with `Transfer_Mode_Invalid` in `Strict` and act as copy
@@ -204,8 +207,9 @@ are retained, never interpreted.
   while the foreground is not black or the background not white is colorized (section 3.2).
 - The transfer mode's `ditherCopy` flag (`16#40#`) makes no difference to true-color output and is
   ignored.
-- `hRes`/`vRes`, `pixelType`, `planeBytes` and `pmReserved` are validated for consistency and
-  retained.
+- `hRes`/`vRes`, `pixelType`, `planeBytes` and `pmReserved` are read and ignored: nothing pictlib
+  draws depends on them. Pack type and `cmpCount` are checked for every direct pixmap, whether or
+  not its rows are packed.
 
 ### 3.4 Text
 
@@ -413,8 +417,9 @@ Layouts:
   indexes, components widened by × 257). More than 256 colors is `Too_Many_Colors`.
 - `Mono_1`: `PackBitsRect`, a BitMap with `rowBytes` the bit width in bytes rounded up to even;
   a pixel is black when its luminance `(299 R + 587 G + 114 B) / 1000` is below `Mono_Threshold`.
-- `Auto`: `Mono_1` when every pixel is black or white, `Indexed_8` for at most 256 colors,
-  `Direct_32` otherwise or when alpha is kept.
+- `Auto`: `Mono_1` when every pixel is black or white, written exactly whatever `Mono_Threshold`
+  is, `Indexed_8` for at most 256 colors, `Direct_32` otherwise or when alpha is kept, which it
+  is only from a view that has alpha.
 
 Rows are stored as QuickDraw stores them: unpacked when `rowBytes < 8`, otherwise PackBits behind a
 byte count (a word count when `rowBytes > 250`). `rowBytes` above `16#3FFE#` cannot be written
@@ -483,7 +488,7 @@ ImageMagick 7 reads only pictures with the file header, misreads rows stored unp
 
 | Area | Required cases |
 |---|---|
-| Container | with/without 512-byte header, v1, v2, extended v2, wrong `picSize`, missing end, trailing data, odd alignment |
+| Container | with/without 512-byte header, v1, v2, extended v2, a wrong `picSize` accepted, missing end, trailing data (also past a used-up byte budget), odd alignment, a version 2 picture ending after its version, a byte budget cutting the look-ahead |
 | Opcodes | every defined opcode's length rule, each reserved range, truncated data, lengths crossing limits |
 | Regions/polygons | rectangular, complex, empty, malformed scanlines, unterminated, size mismatch |
 | PackBits | literal/run boundaries, 128 runs, byte vs word counts at `rowBytes` 250/251, `rowBytes < 8`, over/under-run |

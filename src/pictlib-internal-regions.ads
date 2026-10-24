@@ -76,7 +76,14 @@ package Pictlib.Internal.Regions is
    --  @param Y Row.
    --  @param Spans Receives the row's spans, left to right.
    --  @param Work Units of work done, for the drawing budget.
-   procedure Row_Spans (Item : in out Region; Y : Integer; Spans : in out Span_Vectors.Vector; Work : out Natural);
+   --  @param Allowance Work it may do: once Work passes it, walking stops, Spans are incomplete and the caller's
+   --  charge of Work fails.
+   procedure Row_Spans
+     (Item : in out Region;
+      Y : Integer;
+      Spans : in out Span_Vectors.Vector;
+      Work : out Natural;
+      Allowance : Natural := Natural'Last);
 
    --  Intersect.
    --  @param Left Sorted, disjoint spans.

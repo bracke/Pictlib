@@ -79,6 +79,7 @@ package body Pictlib_Testing.Test_Container is
    procedure Invalid_Frames (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Missing_Version (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure File_Header_Retention (T : in out AUnit.Test_Cases.Test_Case'Class);
+   procedure Header_Edges (T : in out AUnit.Test_Cases.Test_Case'Class);
 
    overriding function Name (T : Test) return AUnit.Message_String is
       pragma Unreferenced (T);
@@ -99,6 +100,7 @@ package body Pictlib_Testing.Test_Container is
       Register_Routine (T, Invalid_Frames'Access, "container.frame.invalid");
       Register_Routine (T, Missing_Version'Access, "container.version.missing");
       Register_Routine (T, File_Header_Retention'Access, "container.file_header.retention");
+      Register_Routine (T, Header_Edges'Access, "container.header_edges");
    end Register_Tests;
 
    procedure Version_1_Without_File_Header (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -305,4 +307,51 @@ package body Pictlib_Testing.Test_Container is
               and then Outcome.First_Error.Context.Limit = Pictlib.Retained_Metadata_Byte_Limit,
               "a file header over the metadata budget was retained");
    end File_Header_Retention;
+
+   procedure Header_Edges (T : in out AUnit.Test_Cases.Test_Case'Class) is
+      pragma Unreferenced (T);
+      --  A version 2 picture that ends right after its version opcode, at an opcode boundary.
+      Version_Only : aliased constant Bytes := W (0) & Rect (0, 0, 10, 20) & W (16#0011#) & W (16#02FF#);
+      --  A wrong picSize, 7 for a 13-byte picture: retained, never checked, in every mode.
+      Wrong_Size : aliased constant Bytes := V1_Prefix (0, 0, 10, 20, Size => 7) & B (16#FF#);
+      --  A picture exactly as long as the byte budget, then one trailing byte.
+      Trailing : aliased constant Bytes := V1_Bare & B (0);
+      Decoder : Decoding.Decoder;
+      Events : Recorders.Recorder;
+      Outcome : Pictlib.Results.Result;
+      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+   begin
+      Recorders.Decode (Version_Only, Decoder, Events, Outcome);
+      Assert (Outcome.First_Error.Code = Pictlib.Errors.Header_Invalid
+              and then Outcome.First_Error.Context.Op = 16#0C00#
+              and then Outcome.First_Error.Context.Ordinal = 1,
+              "a version 2 picture ending after its version, strictly: " & Outcome.First_Error.Code'Image);
+      Recorders.Decode (Version_Only, Decoder, Events, Outcome, (Strictness => Pictlib.Compatible, others => <>));
+      Assert (Pictlib.Results.Succeeded (Outcome)
+              and then Recorders.Has_Warning (Decoder, Pictlib.Errors.Compatibility_Issue),
+              "a version 2 picture ending after its version, leniently: " & Outcome.First_Error.Code'Image);
+
+      Recorders.Decode (Wrong_Size, Decoder, Events, Outcome);
+      Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.Header (Decoder).Picture_Size = 7,
+              "a wrong picSize was checked or not retained");
+
+      Budget.Max_Picture_Bytes := V1_Bare'Length;
+      Recorders.Decode (Trailing, Decoder, Events, Outcome, (Require_End_Of_Input => True, others => <>), Budget);
+      Assert (Outcome.First_Error.Code = Pictlib.Errors.Trailing_Data,
+              "a trailing byte after a picture that used its whole byte budget: " & Outcome.First_Error.Code'Image);
+
+      --  A byte budget too small to see the version past a file header is the limit, not a bad version.
+      Budget.Max_Picture_Bytes := 520;
+      Read_Only_Header (V2_In_File, Decoder, Outcome, Budget => Budget);
+      Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
+              and then Outcome.First_Error.Context.Limit = Pictlib.Picture_Byte_Limit,
+              "a byte budget that cuts the look-ahead short: " & Outcome.First_Error.Code'Image);
+
+      --  A HeaderOp cut short names HeaderOp and its ordinal.
+      Recorders.Decode (Truncated_Header_Op, Decoder, Events, Outcome);
+      Assert (Outcome.First_Error.Code = Pictlib.Errors.Source_Unexpected_End
+              and then Outcome.First_Error.Context.Has_Opcode and then Outcome.First_Error.Context.Op = 16#0C00#
+              and then Outcome.First_Error.Context.Ordinal = 1,
+              "a HeaderOp cut short is not attributed to it");
+   end Header_Edges;
 end Pictlib_Testing.Test_Container;

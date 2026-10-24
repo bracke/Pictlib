@@ -28,6 +28,10 @@ package Pictlib.Internal.Picture_Stream is
    --  @param Object Reader to inspect.
    --  @return Bytes buffered ahead of the current position.
    function Lookahead_Length (Object : Reader) return Natural;
+   --  Input ended.
+   --  @param Object Reader.
+   --  @return True once the source reported its end.
+   function Input_Ended (Object : Reader) return Boolean;
    --  Lookahead at.
    --  @param Object Reader to inspect.
    --  @param Index 1-based position ahead of the current position.
@@ -44,6 +48,11 @@ package Pictlib.Internal.Picture_Stream is
    function Picture_Offset (Object : Reader) return Byte_Count;
 
    overriding function Read (Object : in out Reader; Buffer : out Streams.Byte_Array) return Streams.Source_Result;
+
+   --  Probe past end.
+   --  @param Object Reader positioned after the picture.
+   --  @return Whether one more byte follows: it is not picture data, so the picture byte budget does not apply.
+   function Probe_Past_End (Object : in out Reader) return Streams.Source_Result;
    overriding function Offset (Object : Reader) return Source_Offset;
    overriding function Skip (Object : in out Reader; Count : Byte_Count) return Streams.Source_Result;
 

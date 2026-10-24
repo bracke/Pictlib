@@ -400,14 +400,11 @@ package body Pictlib.Internal.Drawing is
                else
                   Outcome := Patterns.Read_Bit_Pattern (S, P.Pattern_Set (Slot));
                end if;
-               --  Strictly the tile fails before the charge, so no budget hides it; leniently the fallback is
-               --  reported after the charge, only when it stands.
-               if Results.Succeeded (Outcome) and then Too_Large and then not Sessions.Is_Lenient (S) then
-                  Outcome := Unsupported_Tile;
-               end if;
                if Results.Succeeded (Outcome) then
                   Outcome := Rendering.Charge (P, S, Work);
                end if;
+               --  A tile too large to index read leniently: its 1-bit pattern stands in, reported once the
+               --  charge has succeeded. Strictly the read itself failed.
                if Results.Succeeded (Outcome) and then Too_Large then
                   Outcome := Unsupported_Tile;
                end if;

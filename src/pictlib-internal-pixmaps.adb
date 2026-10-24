@@ -148,6 +148,15 @@ package body Pictlib.Internal.Pixmaps is
          Header.Encoding := XRGB_Chunky;
       end if;
 
+      --  The pack types and component counts a direct pixmap allows, whether or not its rows are packed.
+      if Header.Is_Pixmap and then Depth = 16 and then Pack not in 0 | 1 | 3 then
+         return Invalid (3, Pack);
+      elsif Header.Is_Pixmap and then Depth = 32 and then Pack not in 0 | 1 | 2 | 4 then
+         return Invalid (4, Pack);
+      elsif Header.Is_Pixmap and then Depth = 32 and then Header.Fields.Component_Count not in 3 | 4 then
+         return Invalid (3, Header.Fields.Component_Count);
+      end if;
+
       if not Packed or else Header.Row_Bytes < 8 or else (Header.Is_Pixmap and then Pack = 1) then
          Header.Layout := Unpacked;
          Header.Raw_Length := Header.Row_Bytes;

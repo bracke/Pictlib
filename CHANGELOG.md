@@ -2,6 +2,23 @@
 
 ## 0.1.0-dev
 
+- Fixes from the full-project review, part 3. Transparent and the
+  arithmetic transfer modes see a bit pattern's 1 bits as the foreground and
+  its 0 bits as the background. Pack type and `cmpCount` are checked for
+  every direct pixmap, packed or not. UncompressedQuickTime payloads are not
+  retained while rendering. `Require_End_Of_Input` probes past the picture
+  outside its byte budget; a version 2 picture ending right after its
+  version is a missing HeaderOp; a byte budget that cuts the look-ahead short
+  is `Limit_Exceeded`; header failures name their opcode and ordinal. A
+  strict PixPat tile too large to index fails before its rows are read, so
+  no reading limit hides it. Region walks stop at the drawing budget left.
+  The encoder's Auto writes Mono_1 exactly whatever the threshold and keeps
+  alpha only from views that have it. The specification now says PixMap
+  `hRes`, `vRes`, `pixelType`, `planeBytes` and `pmReserved` are ignored and
+  `picSize` is never checked, as the code does. `pictlib_check` reports
+  policy findings instead of stopping on the first, and checks that
+  production code depends only on its allowed units and binds no foreign
+  code; `pictlib_real_world` fails on recorded pictures that are missing.
 - Fixes from the full-project review, part 2. A QuickTime image's pixel
   buffer is set aside only once its JPEG header agrees with the
   description, and jpeglib's own buffers share the allocation budget with

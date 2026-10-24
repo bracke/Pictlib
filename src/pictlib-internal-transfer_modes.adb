@@ -38,6 +38,14 @@ package body Pictlib.Internal.Transfer_Modes is
    is
       Fore : constant Images.RGB_Color := (if Colorize then Colors.Foreground else Images.Black);
       Back : constant Images.RGB_Color := (if Colorize then Colors.Background else Images.White);
+      --  What the arithmetic modes and transparent work on: a bit pattern's 1 bits are the foreground and its 0
+      --  bits the background, as for every mode; a copied pixel is itself. Worked out only for those modes.
+      function Painted return Images.RGB_Color is
+        (if Colorize
+         then (Mix (Component (Fore.Red), Component (Back.Red), Component (Source.Red)),
+               Mix (Component (Fore.Green), Component (Back.Green), Component (Source.Green)),
+               Mix (Component (Fore.Blue), Component (Back.Blue), Component (Source.Blue)))
+         else Source);
 
       function Each (S, D, F, B, Op : Byte) return Byte is
          Inverse : constant Component := Component (255 - S);
@@ -62,7 +70,11 @@ package body Pictlib.Internal.Transfer_Modes is
    begin
       case Kind is
          when Transparent =>
-            return (if Source = Colors.Background then Destination else Source);
+            declare
+               Color : constant Images.RGB_Color := Painted;
+            begin
+               return (if Color = Colors.Background then Destination else Color);
+            end;
          when Hilite =>
             --  Where the source is dark, the background and the highlight color trade places.
             if Natural (Source.Red) + Natural (Source.Green) + Natural (Source.Blue) >= 3 * 128 then
@@ -73,6 +85,15 @@ package body Pictlib.Internal.Transfer_Modes is
                return Colors.Background;
             end if;
             return Destination;
+         when Blend | Add_Pin | Add_Over | Sub_Pin | Add_Max | Sub_Over | Ad_Min =>
+            declare
+               Color : constant Images.RGB_Color := Painted;
+            begin
+               return
+                 (Each (Color.Red, Destination.Red, Fore.Red, Back.Red, Colors.Operation.Red),
+                  Each (Color.Green, Destination.Green, Fore.Green, Back.Green, Colors.Operation.Green),
+                  Each (Color.Blue, Destination.Blue, Fore.Blue, Back.Blue, Colors.Operation.Blue));
+            end;
          when others =>
             return
               (Each (Source.Red, Destination.Red, Fore.Red, Back.Red, Colors.Operation.Red),

@@ -75,13 +75,13 @@ package body Pictlib.Decoding is
 
    --  After the end opcode: by default the rest of the input is not read.
    function Check_Trailing_Data (Object : in out Decoder) return Results.Result is
-      Probe : Streams.Byte_Array (1 .. 1);
       Step : Streams.Source_Result;
    begin
       if not Object.Decode_Options.Require_End_Of_Input then
          return Results.Success;
       end if;
-      Step := Object.Session.Stream.Read (Probe);
+      --  A trailing byte is not picture data: a picture that used its whole byte budget still has it found.
+      Step := Internal.Picture_Stream.Probe_Past_End (Object.Session.Stream);
       if Errors.Is_Fatal (Step.Error) then
          return Results.Failure (Step.Error);
       elsif Step.Count = 0 and then not Step.End_Of_Input then

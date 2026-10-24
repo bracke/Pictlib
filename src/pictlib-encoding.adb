@@ -285,6 +285,8 @@ package body Pictlib.Encoding is
 
    function Encode (Object : in out Encoder; Image : Images.Image_View) return Results.Result is
       Settings : constant Options := Object.Encode_Options;
+      --  The settings the picture is written with.
+      Effective : Options := Settings;
       Budget : constant Limits.Limit_Set := Object.Encode_Limits;
       Colors : Palette;
       Layout : Layout_Kind;
@@ -311,10 +313,21 @@ package body Pictlib.Encoding is
       Survey (Image, Colors);
       Layout := Settings.Layout;
       if Layout = Auto then
-         Layout :=
-           (if Colors.Black_And_White and then not Settings.Keep_Alpha then Mono_1
-            elsif Natural (Colors.Colors.Length) <= Largest_Colors and then not Settings.Keep_Alpha then Indexed_8
-            else Direct_32);
+         declare
+            --  Alpha is kept only from a view that has it.
+            Alpha_Kept : constant Boolean :=
+              Settings.Keep_Alpha and then Image.Descriptor.Format in RGBA_32 | BGRA_32 | ARGB_32;
+         begin
+            Layout :=
+              (if Colors.Black_And_White and then not Alpha_Kept then Mono_1
+               elsif Natural (Colors.Colors.Length) <= Largest_Colors and then not Alpha_Kept then Indexed_8
+               else Direct_32);
+         end;
+         --  Auto takes Mono_1 only for pure black and white, which it must keep exactly, whatever the
+         --  threshold: one between the two does.
+         if Layout = Mono_1 then
+            Effective.Mono_Threshold := 128;
+         end if;
       end if;
       if Layout = Indexed_8 and then Natural (Colors.Colors.Length) > Largest_Colors then
          return Fail
@@ -353,14 +366,14 @@ package body Pictlib.Encoding is
       begin
          Writers.Start
            (Measure, null, Budget.Max_Output_Bytes - Byte_Count'Min (Header_Bytes, Budget.Max_Output_Bytes));
-         Outcome := Write_Picture (Measure, Image, Settings, Layout, Colors, 0);
+         Outcome := Write_Picture (Measure, Image, Effective, Layout, Colors, 0);
          if Results.Succeeded (Outcome) then
             Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes);
             if Settings.File_Header then
                Outcome := Writers.Put (Output, [1 .. 512 => 0]);
             end if;
             if Results.Succeeded (Outcome) then
-               Outcome := Write_Picture (Output, Image, Settings, Layout, Colors, Writers.Picture_Count (Measure));
+               Outcome := Write_Picture (Output, Image, Effective, Layout, Colors, Writers.Picture_Count (Measure));
             end if;
             Object.Written := Writers.Count (Output);
          end if;
