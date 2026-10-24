@@ -1,6 +1,7 @@
 with Ada.Containers.Vectors;
 with Pictlib.Images;
 with Pictlib.Internal.Sessions;
+with Pictlib.Pictures;
 with Pictlib.Results;
 
 --  QuickDraw patterns: an 8x8 bit pattern whose 1 bits are the foreground and 0 bits the background, a color
@@ -47,25 +48,23 @@ package Pictlib.Internal.Patterns is
 
    --  Read pixel pattern.
    --  @param S Session positioned at a PixPat.
+   --  @param Event The pattern opcode, for diagnostics.
    --  @param Item The pattern; its old tile is released before the new one is set aside. After a failure it is
    --  never a part-read tile; the caller sets the default it wants.
    --  @param Allowance Drawing work a tile's decoding may take, a unit per pixel and per row; a tile is decoded
    --  only when that fits.
    --  @param Work The drawing work it took, for the caller to charge: a unit for any pattern, plus a decoded
    --  tile's pixels and rows. The unit alone may exceed Allowance; the charge then fails.
-   --  @param Too_Large True when the tile has more than Max_Tile_Pixels pixels. Such a tile is never decoded,
-   --  whatever the budgets: strictly the read fails with Unsupported_Feature before its rows; leniently its rows
-   --  are skipped, Item holds pat1Data, and the caller warns.
-   --  @param Tile_Pixels The pixels a color tile declares, for the caller's diagnostic; 0 for other patterns.
    --  @return Success, Pattern_Invalid for an unknown type, Limit_Exceeded past Allowance or the allocation
-   --  budget, Unsupported_Feature for a tile too large to index when strict, or the pixmap's failure.
+   --  budget, or the pixmap's failure. A tile of more than Max_Tile_Pixels pixels is never decoded, whatever the
+   --  budgets: strictly it fails with Unsupported_Feature before its rows; leniently its rows are skipped, Item
+   --  holds pat1Data, and an Approximated_Rendering warning says so.
    function Read_Pixel_Pattern
      (S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event;
       Item : out Pattern;
       Allowance : Pixel_Count;
-      Work : out Pixel_Count;
-      Too_Large : out Boolean;
-      Tile_Pixels : out Byte_Count) return Results.Result;
+      Work : out Pixel_Count) return Results.Result;
 
 private
    package Color_Vectors is new Ada.Containers.Vectors (Natural, Images.RGB_Color, Images."=");

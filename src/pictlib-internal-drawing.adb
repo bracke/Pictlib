@@ -397,28 +397,16 @@ package body Pictlib.Internal.Drawing is
             declare
                Slot : constant Rendering.Pattern_Slot := Slot_Of (Event.Op);
                Work : Pixel_Count := 1;
-               Too_Large : Boolean := False;
-               Tile_Pixels : Byte_Count := 0;
-
-               --  A tile too large to index is unsupported, its 1-bit pattern standing in when lenient.
-               function Unsupported_Tile return Results.Result is
-                 (Rendering.Unsupported (S, Event, Expected => Patterns.Max_Tile_Pixels, Actual => Tile_Pixels));
             begin
                if Event.Op in 16#0012# .. 16#0014# then
                   --  Decoded straight into the port's pattern, whose old tile goes first: a tile is held once.
                   Outcome :=
-                    Patterns.Read_Pixel_Pattern
-                      (S, P.Pattern_Set (Slot), Sessions.Work_Left (S), Work, Too_Large, Tile_Pixels);
+                    Patterns.Read_Pixel_Pattern (S, Event, P.Pattern_Set (Slot), Sessions.Work_Left (S), Work);
                else
                   Outcome := Patterns.Read_Bit_Pattern (S, P.Pattern_Set (Slot));
                end if;
                if Results.Succeeded (Outcome) then
                   Outcome := Sessions.Charge_Work (S, Work);
-               end if;
-               --  A tile too large to index read leniently: its 1-bit pattern stands in, reported once the
-               --  charge has succeeded. Strictly the read itself failed.
-               if Results.Succeeded (Outcome) and then Too_Large then
-                  Outcome := Unsupported_Tile;
                end if;
                if not Results.Succeeded (Outcome) then
                   P.Pattern_Set (Slot) := Rendering.Default_Pattern (Slot);

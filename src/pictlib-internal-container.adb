@@ -38,9 +38,8 @@ package body Pictlib.Internal.Container is
       return None;
    end Version_At;
 
-   function Fail (S : Sessions.Session; Code : Errors.Error_Code; Op : Opcode := 0; Has_Op : Boolean := False)
-     return Results.Result is
-     (Results.Failure (Errors.Make (Code, (Source => S.Stream.Offset, Op => Op, Has_Opcode => Has_Op, others => <>))));
+   function Fail (S : Sessions.Session; Code : Errors.Error_Code) return Results.Result is
+     (Results.Failure (Errors.Make (Code, (Source => S.Stream.Offset, others => <>))));
 
    --  The file header is not an opcode: retained or skipped, the per-opcode byte budget does not apply to it.
    function Read_File_Header (S : in out Sessions.Session) return Results.Result is
@@ -169,25 +168,6 @@ package body Pictlib.Internal.Container is
       return (if Results.Succeeded (Outcome) then Streams.Skip_Exact (S.Stream, Header_Op_Bytes - 4) else Outcome);
    end Read_Header_Op_Data;
 
-   --  A failure inside the version opcode or HeaderOp names that opcode and its ordinal, as the opcode reader
-   --  does for every later one.
-   function Attributed (Outcome : Results.Result; Event : Pictures.Opcode_Event) return Results.Result is
-   begin
-      if Results.Succeeded (Outcome) then
-         return Outcome;
-      end if;
-      declare
-         Item : Errors.Error := Outcome.First_Error;
-      begin
-         if not Item.Context.Has_Opcode or else Item.Context.Op = Event.Op then
-            Item.Context.Op := Event.Op;
-            Item.Context.Has_Opcode := True;
-            Item.Context.Ordinal := Event.Ordinal;
-         end if;
-         return Results.Failure (Item);
-      end;
-   end Attributed;
-
    function Read_Header
      (S : in out Sessions.Session;
       Policy : Header_Policy;
@@ -262,12 +242,12 @@ package body Pictlib.Internal.Container is
          S.Version := Version_1;
          Info.Version := Version_1;
          Events (1).Data_Length := 1;
-         return Attributed (Streams.Skip_Exact (S.Stream, 2), Events (1));
+         return Sessions.Attributed (Streams.Skip_Exact (S.Stream, 2), Events (1));
       end if;
       S.Version := Version_2;
       Info.Version := Version_2;
       Events (1).Data_Length := 2;
-      Outcome := Attributed (Streams.Skip_Exact (S.Stream, 4), Events (1));
+      Outcome := Sessions.Attributed (Streams.Skip_Exact (S.Stream, 4), Events (1));
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
@@ -275,6 +255,11 @@ package body Pictlib.Internal.Container is
       --  Version 2 continues with the HeaderOp at an even offset.
       declare
          Header_Offset : constant Source_Offset := S.Stream.Offset;
+
+         --  The opcode where HeaderOp belongs, with the ordinal HeaderOp would have had.
+         function In_Place_Of_Header_Op (Op : Opcode) return Errors.Diagnostic_Context is
+           ((Source => Header_Offset, Op => Op, Has_Opcode => True, Ordinal => Events (1).Ordinal + 1,
+             others => <>));
       begin
          Outcome := Bytes.Read_U16_BE (S.Stream, Word);
          if not Results.Succeeded (Outcome)
@@ -283,37 +268,27 @@ package body Pictlib.Internal.Container is
          then
             --  The input ends right after the version opcode, at an opcode boundary: the picture has no
             --  HeaderOp, and leniently it then ends without its end opcode, as the opcode reader reports.
-            if not Sessions.Is_Lenient (S) then
-               --  Named as the HeaderOp that should follow the version opcode.
-               return Attributed
-                 (Fail (S, Errors.Header_Invalid, Opcodes.Header_Op, True),
-                  (Op => Opcodes.Header_Op, Ordinal => Events (1).Ordinal + 1, others => <>));
-            end if;
-            Sessions.Warn (S, Errors.Compatibility_Issue, Errors.Compatibility,
-                           (Source => Header_Offset, Op => Opcodes.Header_Op, Has_Opcode => True, others => <>));
-            return Results.Success;
+            return Sessions.Reject_Or_Warn
+              (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility,
+               In_Place_Of_Header_Op (Opcodes.Header_Op));
          elsif not Results.Succeeded (Outcome) then
             return Outcome;
          elsif Opcode (Word) /= Opcodes.Header_Op then
-            if not Sessions.Is_Lenient (S) then
-               --  The opcode found where HeaderOp belongs, with the ordinal HeaderOp would have had.
-               return Attributed
-                 (Fail (S, Errors.Header_Invalid, Opcode (Word), True),
-                  (Op => Opcode (Word), Ordinal => Events (1).Ordinal + 1, others => <>));
+            --  Leniently the opcode found is the first one the opcode reader reads.
+            Outcome := Sessions.Reject_Or_Warn
+              (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility,
+               In_Place_Of_Header_Op (Opcode (Word)));
+            if Results.Succeeded (Outcome) then
+               Sessions.Defer_Opcode (S, Opcode (Word), Header_Offset);
             end if;
-            Sessions.Warn (S, Errors.Compatibility_Issue, Errors.Compatibility,
-                                (Source => Header_Offset, Op => Opcode (Word), Has_Opcode => True, others => <>));
-            S.Has_Pending := True;
-            S.Pending_Op := Opcode (Word);
-            S.Pending_Offset := Header_Offset;
-            return Results.Success;
+            return Outcome;
          end if;
 
          Event_Count := 2;
          Events (2) := (Offset => Header_Offset, Op => Opcodes.Header_Op, Data_Length => Header_Op_Bytes, others => <>);
          Outcome := Sessions.Claim_Ordinal (S, Events (2).Ordinal);
          if Results.Succeeded (Outcome) then
-            Outcome := Attributed (Read_Header_Op_Data (S, Info), Events (2));
+            Outcome := Sessions.Attributed (Read_Header_Op_Data (S, Info), Events (2));
          end if;
          if Results.Succeeded (Outcome) then
             Info.Has_Header_Opcode := True;

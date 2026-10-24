@@ -246,7 +246,6 @@ package body Pictlib.Internal.Opcode_Reader is
       end case;
    end Consume_Data;
 
-
    function Next
      (S : in out Session;
       Event : out Pictures.Opcode_Event;
@@ -259,11 +258,7 @@ package body Pictlib.Internal.Opcode_Reader is
       Event := (others => <>);
       At_End_Of_Input := False;
 
-      if S.Has_Pending then
-         Op := S.Pending_Op;
-         Event.Offset := S.Pending_Offset;
-         S.Has_Pending := False;
-      else
+      if not Sessions.Take_Deferred (S, Op, Event.Offset) then
          if S.Version /= Version_1 and then Picture_Stream.Picture_Offset (S.Stream) mod 2 = 1 then
             Outcome := Streams.Skip_Exact (S.Stream, 1);
          end if;
@@ -312,21 +307,11 @@ package body Pictlib.Internal.Opcode_Reader is
          Event.Data_Length := Picture_Stream.Picture_Offset (S.Stream) - S.Data_Start;
       end if;
       if not Results.Succeeded (Outcome) then
-         declare
-            Item : Errors.Error := Outcome.First_Error;
-         begin
-            if not Item.Context.Has_Opcode then
-               Item.Context.Op := Op;
-               Item.Context.Has_Opcode := True;
-               Item.Context.Ordinal := Event.Ordinal;
-            end if;
-            return Results.Failure (Item);
-         end;
+         return Sessions.Attributed (Outcome, Event);
       end if;
       if Event.Reserved then
          Sessions.Warn (S, Errors.Reserved_Opcode_Skipped, Errors.Informational,
-                        (Source => Event.Offset, Op => Op, Has_Opcode => True, Ordinal => Event.Ordinal,
-                         Actual => Event.Data_Length, others => <>));
+                        (Sessions.Context_Of (Event) with delta Actual => Event.Data_Length));
       end if;
       return Results.Success;
    end Next;

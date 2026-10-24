@@ -56,11 +56,10 @@ package body Pictlib.Internal.Patterns is
    --  them.
    function Read_Color_Tile
      (S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event;
       Item : in out Pattern;
       Allowance : Pixel_Count;
-      Work : in out Pixel_Count;
-      Too_Large : out Boolean;
-      Tile_Pixels : out Byte_Count) return Results.Result
+      Work : in out Pixel_Count) return Results.Result
    is
       Header : Pixmaps.Bits_Header;
       Decoder : Pixmaps.Row_Decoder;
@@ -70,25 +69,17 @@ package body Pictlib.Internal.Patterns is
       --  The tile's pixels, once its extent is read.
       function Pixels return Byte_Count is (Byte_Count (Header.Width) * Byte_Count (Header.Height));
    begin
-      Too_Large := False;
-      Tile_Pixels := 0;
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
       --  A tile of more than Max_Tile_Pixels is not malformed, and no budget raises the bound, so it is never
       --  decoded and its budgets do not apply. Strictly that ends the picture at once, before any row is read,
-      --  so no limit on reading them hides it; leniently its rows are skipped, success meaning the opcode was
-      --  read, Item keeps pat1Data, and the caller warns.
-      Tile_Pixels := Pixels;
+      --  so no limit on reading them hides it; leniently its rows are skipped and Item keeps pat1Data.
       if Pixels > Max_Tile_Pixels then
-         Too_Large := True;
-         if not Sessions.Is_Lenient (S) then
-            return Results.Failure
-              (Errors.Make
-                 (Errors.Unsupported_Feature,
-                  (Source => S.Stream.Offset, Expected => Max_Tile_Pixels, Actual => Pixels, others => <>)));
-         end if;
-         return Pixmaps.Skip_Pixels (S, Header);
+         Outcome := Sessions.Reject_Or_Warn
+           (S, Errors.Unsupported_Feature, Errors.Approximated_Rendering, Errors.Data_Loss,
+            (Sessions.Context_Of (Event) with delta Expected => Max_Tile_Pixels, Actual => Pixels));
+         return (if Results.Succeeded (Outcome) then Pixmaps.Skip_Pixels (S, Header) else Outcome);
       end if;
       --  Decoding is drawing work, a unit per pixel and per row, like converting a copied row: checked before
       --  anything is set aside, so a picture without the budget for its tile never allocates it.
@@ -120,19 +111,16 @@ package body Pictlib.Internal.Patterns is
 
    function Read_Pixel_Pattern
      (S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event;
       Item : out Pattern;
       Allowance : Pixel_Count;
-      Work : out Pixel_Count;
-      Too_Large : out Boolean;
-      Tile_Pixels : out Byte_Count) return Results.Result
+      Work : out Pixel_Count) return Results.Result
    is
       Pattern_Type : Interfaces.Unsigned_16 := 0;
       Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
    begin
       --  Every PixPat costs a unit, whatever its type.
       Work := 1;
-      Too_Large := False;
-      Tile_Pixels := 0;
       Item := (others => <>);
       if Results.Succeeded (Outcome) then
          --  pat1Data, the 1-bit fallback for black-and-white ports.
@@ -141,7 +129,7 @@ package body Pictlib.Internal.Patterns is
       if Results.Succeeded (Outcome) then
          case Pattern_Type is
             when 1 =>
-               Outcome := Read_Color_Tile (S, Item, Allowance, Work, Too_Large, Tile_Pixels);
+               Outcome := Read_Color_Tile (S, Event, Item, Allowance, Work);
             when 2 =>
                --  A dither pattern: in true color, its RGB color.
                declare

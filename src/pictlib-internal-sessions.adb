@@ -61,6 +61,38 @@ package body Pictlib.Internal.Sessions is
       return Results.Success;
    end Reject_Or_Warn;
 
+   function Attributed (Outcome : Results.Result; Event : Pictures.Opcode_Event) return Results.Result is
+      Item : Errors.Error;
+   begin
+      if Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
+      Item := Outcome.First_Error;
+      --  A byte reader names the opcode it reads for, but knows no ordinal.
+      if not Item.Context.Has_Opcode or else Item.Context.Op = Event.Op then
+         Item.Context.Op := Event.Op;
+         Item.Context.Has_Opcode := True;
+         Item.Context.Ordinal := Event.Ordinal;
+      end if;
+      return Results.Failure (Item);
+   end Attributed;
+
+   procedure Defer_Opcode (S : in out Session; Op : Opcode; Offset : Source_Offset) is
+   begin
+      S.Has_Pending := True;
+      S.Pending_Op := Op;
+      S.Pending_Offset := Offset;
+   end Defer_Opcode;
+
+   function Take_Deferred (S : in out Session; Op : out Opcode; Offset : out Source_Offset) return Boolean is
+      Deferred : constant Boolean := S.Has_Pending;
+   begin
+      Op := S.Pending_Op;
+      Offset := S.Pending_Offset;
+      S.Has_Pending := False;
+      return Deferred;
+   end Take_Deferred;
+
    procedure Start_Drawing (S : in out Session) is
    begin
       S.Work_Used := 0;
@@ -179,13 +211,10 @@ package body Pictlib.Internal.Sessions is
       end if;
       if Keep then
          return Admission;
-      elsif not Is_Lenient (S) then
-         return Results.Failure
-           ((Admission.First_Error with delta
-               Context => (Admission.First_Error.Context with delta Source => S.Stream.Offset)));
       end if;
-      Warn (S, Errors.Data_Loss, Errors.Data_Loss, Admission.First_Error.Context);
-      return Results.Success;
+      return Reject_Or_Warn
+        (S, Admission.First_Error.Code, Errors.Data_Loss, Errors.Data_Loss,
+         (Admission.First_Error.Context with delta Source => S.Stream.Offset));
    end Admit_Item;
 
    function Retain (S : in out Session; Info : Metadata.Item_Info; Length : Byte_Count) return Results.Result is

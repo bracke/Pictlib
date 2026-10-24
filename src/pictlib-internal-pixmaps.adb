@@ -382,16 +382,18 @@ package body Pictlib.Internal.Pixmaps is
                         Decoder.Colors (X) := (if Index = 1 then Images.Black else Images.White);
                      elsif Header.Table.Defined (Index) then
                         Decoder.Colors (X) := Header.Table.Colors (Index);
-                     elsif not Sessions.Is_Lenient (S) then
-                        return Results.Failure
-                          (Errors.Make
-                             (Errors.Color_Table_Invalid,
-                              (Source => S.Stream.Offset, Row => Row_Index (Row), Actual => Byte_Count (Index),
-                               others => <>)));
                      else
+                        --  Leniently black, reported once per opcode.
                         if not Decoder.Bad_Index_Reported then
-                           Sessions.Warn (S, Errors.Recovery_Applied, Errors.Recovery,
-                                          (Row => Row_Index (Row), Actual => Byte_Count (Index), others => <>));
+                           declare
+                              Verdict : constant Results.Result := Sessions.Reject_Or_Warn
+                                (S, Errors.Color_Table_Invalid, Errors.Recovery_Applied, Errors.Recovery,
+                                 (Row => Row_Index (Row), Actual => Byte_Count (Index), others => <>));
+                           begin
+                              if not Results.Succeeded (Verdict) then
+                                 return Verdict;
+                              end if;
+                           end;
                            Decoder.Bad_Index_Reported := True;
                         end if;
                         Decoder.Colors (X) := Images.Black;

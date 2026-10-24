@@ -61,6 +61,10 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - An encoder frame taller than `Max_Frame_Height` reports the height limit
   and height, not the width's.
 - A per-opcode size that overflows reports the size that saturated, not 0.
+- Every strict failure and its lenient warning carry the same context: a
+  wrong or missing HeaderOp, a dropped metadata item, a bad color index and
+  an oversized pattern tile now name their offset, opcode and ordinal both
+  ways, and every failure inside an opcode names its ordinal.
 
 ### Tooling
 

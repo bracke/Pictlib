@@ -102,6 +102,25 @@ package Pictlib.Internal.Sessions is
       Severity : Errors.Warning_Severity;
       Context : Errors.Diagnostic_Context) return Results.Result;
 
+   --  Attributed: a failure while an opcode is read names that opcode.
+   --  @param Outcome A result.
+   --  @param Event The opcode being read.
+   --  @return Outcome; a failure naming no opcode, or Event's without its ordinal, names Event's opcode and
+   --  ordinal.
+   function Attributed (Outcome : Results.Result; Event : Pictures.Opcode_Event) return Results.Result;
+
+   --  Defer opcode: the header reader read an opcode it does not consume.
+   --  @param S Session.
+   --  @param Op The opcode read.
+   --  @param Offset Its source offset.
+   procedure Defer_Opcode (S : in out Session; Op : Opcode; Offset : Source_Offset);
+   --  Take deferred.
+   --  @param S Session; its deferred opcode, if any, is taken.
+   --  @param Op The deferred opcode.
+   --  @param Offset Its source offset.
+   --  @return True when an opcode was deferred; Op and Offset are then the next opcode's.
+   function Take_Deferred (S : in out Session; Op : out Opcode; Offset : out Source_Offset) return Boolean;
+
    --  Drawing work: one counter per render, against Max_Drawing_Work.
 
    --  Start drawing.
