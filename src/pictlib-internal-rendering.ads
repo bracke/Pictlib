@@ -40,6 +40,12 @@ package Pictlib.Internal.Rendering is
    type Pattern_Slot is (Back_Slot, Pen_Slot, Fill_Slot);
    type Port_Patterns is array (Pattern_Slot) of Patterns.Pattern;
 
+   --  Default pattern.
+   --  @param Slot A port pattern.
+   --  @return QuickDraw's default for it: white for the background, black for the pen and fill.
+   function Default_Pattern (Slot : Pattern_Slot) return Patterns.Pattern is
+     (Patterns.From_Bits (if Slot = Back_Slot then Patterns.White else Patterns.Black));
+
    type Painter is limited record
       Target : Canvas.Canvas;
       --  The canvas in picture coordinates.
@@ -53,9 +59,7 @@ package Pictlib.Internal.Rendering is
       Pen_Width : Integer := 1;
       Pen_Height : Integer := 1;
       Pen_Mode : Transfer_Modes.Mode_Kind := Transfer_Modes.Copy;
-      Patterns : Port_Patterns :=
-        [Back_Slot => Pictlib.Internal.Patterns.From_Bits (Pictlib.Internal.Patterns.White),
-         others => Pictlib.Internal.Patterns.From_Bits (Pictlib.Internal.Patterns.Black)];
+      Pattern_Set : Port_Patterns := [for Slot in Pattern_Slot => Default_Pattern (Slot)];
       --  Pen location in picture coordinates.
       Pen_H : Integer := 0;
       Pen_V : Integer := 0;

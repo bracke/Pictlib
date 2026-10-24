@@ -2,6 +2,12 @@
 
 ## 0.1.0-dev
 
+- Fixes from the seventh review. Every pattern opcode is read, then charged,
+  and any failure puts that slot's default pattern back, as the
+  specification now says; the extra skip after an over-budget bit pattern is
+  gone. The index bound on a tile is checked after the drawing budget and
+  reported as itself, not as the allocation budget. The port's patterns are
+  `Pattern_Set`, with one `Default_Pattern` for the record and `Start`.
 - Fixes from the sixth review. A tile too large to index is
   `Limit_Exceeded`, a resource bound, not `Pattern_Invalid`; a pattern
   opcode that fails always leaves the default pattern; a bit pattern past the

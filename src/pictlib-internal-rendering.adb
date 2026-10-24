@@ -23,8 +23,7 @@ package body Pictlib.Internal.Rendering is
       P.Pen_Width := 1;
       P.Pen_Height := 1;
       P.Pen_Mode := Transfer_Modes.Copy;
-      P.Patterns :=
-        [Back_Slot => Patterns.From_Bits (Patterns.White), others => Patterns.From_Bits (Patterns.Black)];
+      P.Pattern_Set := [for Slot in Pattern_Slot => Default_Pattern (Slot)];
       P.Pen_H := 0;
       P.Pen_V := 0;
       P.Oval_Width := 0;
@@ -119,7 +118,7 @@ package body Pictlib.Internal.Rendering is
       Outcome : Results.Result :=
         (if Coverage.Exhausted (Shape) then Over_Budget (P, S, Coverage.Work (Shape))
          else Charge (P, S, Coverage.Work (Shape)));
-      Source : Patterns.Pattern renames P.Patterns (How.Source);
+      Source : Patterns.Pattern renames P.Pattern_Set (How.Source);
       Colorize : constant Boolean := Patterns.Kind (Source) = Patterns.Bit_Pattern;
       Kind : constant Transfer_Modes.Mode_Kind :=
         (if P.Hilite_Next then Transfer_Modes.Hilite else How.Mode);

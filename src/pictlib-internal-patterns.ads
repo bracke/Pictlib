@@ -44,8 +44,8 @@ package Pictlib.Internal.Patterns is
    function Read_Bit_Pattern (S : in out Sessions.Session; Item : out Pattern) return Results.Result;
    --  Read pixel pattern.
    --  @param S Session positioned at a PixPat.
-   --  @param Item The pattern; its old tile is released before the new one is set aside, and it is the default
-   --  pattern after any failure.
+   --  @param Item The pattern; its old tile is released before the new one is set aside. After a failure it is
+   --  incomplete, and the caller puts its default back.
    --  @param Allowance Drawing work a tile's decoding may take, a unit per pixel and per row; a tile is decoded
    --  only when that fits.
    --  @param Work The drawing work it took, for the caller to charge: a unit for any pattern, plus a tile's

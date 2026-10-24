@@ -94,13 +94,6 @@ package body Pictlib.Internal.Patterns is
       if Results.Succeeded (Outcome) then
          Outcome := Pixmaps.Decide_Layout (S, Header, For_Decoding => True);
       end if;
-      --  A tile holds at most Count_Type'Last pixels: a bound on what can be allocated, whatever the budget.
-      if Results.Succeeded (Outcome) and then Pixels > Byte_Count (Ada.Containers.Count_Type'Last) then
-         Outcome := Sessions.Over_Limit
-           (S, Allocation_Byte_Limit,
-            Byte_Count'Min (S.Budget.Max_Allocation_Bytes, 3 * Byte_Count (Ada.Containers.Count_Type'Last)),
-            3 * Pixels);
-      end if;
       --  Decoding is drawing work, a unit per pixel and per row, like converting a copied row: checked before
       --  anything is set aside, so a picture without the budget for its tile never allocates it.
       if Results.Succeeded (Outcome) then
@@ -113,6 +106,12 @@ package body Pictlib.Internal.Patterns is
                Work := Work + Needed;
             end if;
          end;
+      end if;
+      --  A tile holds at most Count_Type'Last pixels: a bound on what can be allocated, whatever the budget.
+      if Results.Succeeded (Outcome) and then Pixels > Byte_Count (Ada.Containers.Count_Type'Last) then
+         --  Reported as that bound, which no budget raises.
+         Outcome := Sessions.Over_Limit
+           (S, Allocation_Byte_Limit, 3 * Byte_Count (Ada.Containers.Count_Type'Last), 3 * Pixels);
       end if;
       --  The tile and the row buffers are one opcode's allocation; the tile is set aside whole, once.
       if Results.Succeeded (Outcome) then
@@ -161,7 +160,7 @@ package body Pictlib.Internal.Patterns is
             when 2 =>
                --  A dither pattern: in true color, its RGB color.
                declare
-                  Color : Streams.Byte_Array (1 .. 6) := [others => 0];
+                  Color : Streams.Byte_Array (1 .. 6);
                begin
                   Outcome := Sessions.Read_Into (S, Color);
                   if Results.Succeeded (Outcome) then
@@ -172,10 +171,6 @@ package body Pictlib.Internal.Patterns is
             when others =>
                Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 2, Byte_Count (Pattern_Type));
          end case;
-      end if;
-      --  Whatever failed, and wherever, the port is left the default pattern, never a part-read one.
-      if not Results.Succeeded (Outcome) then
-         Item := (others => <>);
       end if;
       return Outcome;
    end Read_Pixel_Pattern;

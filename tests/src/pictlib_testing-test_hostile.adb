@@ -195,6 +195,10 @@ package body Pictlib_Testing.Test_Hostile is
       --  A resource bound, not a malformed picture: whatever the budget, a tile indexes at most 2^31 - 1 pixels.
       Tight.Max_Allocation_Bytes := Pictlib.Byte_Count'Last;
       Over (Unindexable_Tile, Tight, Pictlib.Allocation_Byte_Limit, "65535 x 65535 PixPat");
+      --  Limits apply only to rendering: enumeration reads on, to the rows this picture does not have.
+      Recorders.Decode (Unindexable_Tile, Decoder, Events, Outcome);
+      Assert (Outcome.First_Error.Code = Errors.Source_Unexpected_End,
+              "65535 x 65535 PixPat enumerated with " & Outcome.First_Error.Code'Image);
       Tight := Pictlib.Limits.Default_Limits;
       Tight.Max_Allocation_Bytes := 120_880;
       Over (Grown_Tile, Tight, Pictlib.Allocation_Byte_Limit, "a tile and its row buffers over the budget");
@@ -308,6 +312,7 @@ package body Pictlib_Testing.Test_Hostile is
                             & W (0) & Zeros (2), 20));
       Pen_Bits : aliased constant Bytes := Pic (4, 4, W (16#09#) & Zeros (8));
       Cut_Pen_Bits : aliased constant Bytes := V2_Prefix (0, 0, 4, 4) & W (16#09#) & Zeros (3);
+      Cut_Pixel_Pattern : aliased constant Bytes := V2_Prefix (0, 0, 4, 4) & W (16#13#) & W (1);
       Started : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
    begin
       Canvases.Expect_Failure (Empty_Rows, 64, 1_000, Errors.PackBits_Invalid, "empty packed rows", 16#98#,
@@ -324,12 +329,15 @@ package body Pictlib_Testing.Test_Hostile is
                                Budget => Small);
       Canvases.Expect_Failure (Missing, 16, 1, Errors.Limit_Exceeded, "skipped rows over budget", 16#98#,
                                Budget => Small);
-      --  A bit pattern past the budget reports the limit, complete or cut short.
+      --  Pattern opcodes are read, then charged, like every other opcode: a complete one past the budget reports
+      --  the limit, one cut short the truncation, as a PixPat does.
       Small.Max_Drawing_Work := 0;
       Canvases.Expect_Failure (Pen_Bits, 4, 4, Errors.Limit_Exceeded, "PnPat past the budget", 16#09#,
                                Budget => Small);
-      Canvases.Expect_Failure (Cut_Pen_Bits, 4, 4, Errors.Limit_Exceeded, "cut PnPat past the budget", 16#09#,
-                               Budget => Small);
+      Canvases.Expect_Failure (Cut_Pen_Bits, 4, 4, Errors.Source_Unexpected_End, "cut PnPat past the budget",
+                               16#09#, Budget => Small);
+      Canvases.Expect_Failure (Cut_Pixel_Pattern, 4, 4, Errors.Source_Unexpected_End, "cut PnPixPat past the budget",
+                               16#13#, Budget => Small);
       Check_Time (Started, "pixel work");
    end Pixel_Work;
 end Pictlib_Testing.Test_Hostile;

@@ -379,28 +379,24 @@ package body Pictlib.Internal.Drawing is
          when 16#0001# =>  --  Clip, kept in local coordinates
             Outcome := Regions.Read (S, P.Clip);
             P.Has_Clip := Results.Succeeded (Outcome);
-         --  Every pattern costs at least a unit of drawing work. Past the budget a bit pattern leaves the port
-         --  alone and still takes its 8 bytes, so the error is the limit and the stream stays on opcode bounds.
-         when 16#0002# | 16#0009# | 16#000A# =>
-            Outcome := Rendering.Charge (P, S, Natural'(1));
-            if Results.Succeeded (Outcome) then
-               Outcome := Patterns.Read_Bit_Pattern (S, P.Patterns (Slot_Of (Event.Op)));
-            else
-               declare
-                  Ignored : constant Results.Result := Sessions.Skip_Data (S, 8);
-               begin
-                  null;
-               end;
-            end if;
-         when 16#0012# .. 16#0014# =>
-            --  Decoded straight into the port's pattern, whose old tile goes first: a tile is held once.
+         --  Every pattern opcode is read, then charged (at least a unit of drawing work), like every other
+         --  opcode; whatever fails leaves the slot its default pattern.
+         when 16#0002# | 16#0009# | 16#000A# | 16#0012# .. 16#0014# =>
             declare
-               Allowed : constant Pixel_Count := Rendering.Allowance (P, S);
-               Work : Pixel_Count;
+               Slot : constant Rendering.Pattern_Slot := Slot_Of (Event.Op);
+               Work : Pixel_Count := 1;
             begin
-               Outcome := Patterns.Read_Pixel_Pattern (S, P.Patterns (Slot_Of (Event.Op)), Allowed, Work);
+               if Event.Op in 16#0012# .. 16#0014# then
+                  --  Decoded straight into the port's pattern, whose old tile goes first: a tile is held once.
+                  Outcome := Patterns.Read_Pixel_Pattern (S, P.Pattern_Set (Slot), Rendering.Allowance (P, S), Work);
+               else
+                  Outcome := Patterns.Read_Bit_Pattern (S, P.Pattern_Set (Slot));
+               end if;
                if Results.Succeeded (Outcome) then
                   Outcome := Rendering.Charge (P, S, Work);
+               end if;
+               if not Results.Succeeded (Outcome) then
+                  P.Pattern_Set (Slot) := Rendering.Default_Pattern (Slot);
                end if;
             end;
          when 16#0007# =>
