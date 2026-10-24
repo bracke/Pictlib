@@ -1,0 +1,69 @@
+with Pictlib.Errors;
+with Pictlib.Limits;
+with Pictlib.Pictures;
+with Pictlib.Results;
+
+--  The failures several units report, each built in one place: a crossed limit, a malformed opcode, a failure
+--  within a row, and the frame size limits the decoder and the encoder share.
+package Pictlib.Internal.Failures is
+   pragma Preelaborate;
+
+   --  Context of.
+   --  @param Event An opcode.
+   --  @return A diagnostic context naming it: its offset, opcode and ordinal.
+   function Context_Of (Event : Pictures.Opcode_Event) return Errors.Diagnostic_Context is
+     ((Source => Event.Offset, Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal, others => <>));
+
+   --  Over limit.
+   --  @param Limit The budget crossed.
+   --  @param Expected The budget.
+   --  @param Actual The amount asked for.
+   --  @param Source Source offset, when the input has one.
+   --  @return A Limit_Exceeded failure.
+   function Over_Limit
+     (Limit : Limit_Kind;
+      Expected, Actual : Byte_Count;
+      Source : Source_Offset := 0) return Results.Result is
+     (Results.Failure
+        (Errors.Make
+           (Errors.Limit_Exceeded,
+            (Source => Source, Expected => Expected, Actual => Actual, Limit => Limit, others => <>))));
+
+   --  In opcode: a failure of an opcode's data.
+   --  @param Event The opcode.
+   --  @param Code Error code.
+   --  @param Expected Expected count or value, for the diagnostic context.
+   --  @param Actual Actual count or value, for the diagnostic context.
+   --  @return The failure, naming the opcode's offset, opcode and ordinal.
+   function In_Opcode
+     (Event : Pictures.Opcode_Event;
+      Code : Errors.Error_Code;
+      Expected, Actual : Byte_Count := 0) return Results.Result is
+     (Results.Failure (Errors.Make (Code, (Context_Of (Event) with delta Expected => Expected, Actual => Actual))));
+
+   --  At row.
+   --  @param Outcome A result.
+   --  @param Row The pixel row being read, from 0.
+   --  @return Outcome; a failure naming no row names Row.
+   function At_Row (Outcome : Results.Result; Row : Natural) return Results.Result is
+     (if Results.Succeeded (Outcome) or else Outcome.First_Error.Context.Row /= 0 then Outcome
+      else Results.Failure
+             ((Outcome.First_Error with delta
+                 Context => (Outcome.First_Error.Context with delta Row => Row_Index (Row)))));
+
+   --  Check frame size.
+   --  @param Width A picture's width.
+   --  @param Height Its height.
+   --  @param Budget Limits whose frame width and height apply.
+   --  @param Source Source offset, when the input has one.
+   --  @return Success, or Limit_Exceeded naming the frame width or height limit crossed.
+   function Check_Frame_Size
+     (Width, Height : Natural;
+      Budget : Limits.Limit_Set;
+      Source : Source_Offset := 0) return Results.Result is
+     (if Width > Natural (Budget.Max_Frame_Width)
+      then Over_Limit (Frame_Width_Limit, Byte_Count (Budget.Max_Frame_Width), Byte_Count (Width), Source)
+      elsif Height > Natural (Budget.Max_Frame_Height)
+      then Over_Limit (Frame_Height_Limit, Byte_Count (Budget.Max_Frame_Height), Byte_Count (Height), Source)
+      else Results.Success);
+end Pictlib.Internal.Failures;

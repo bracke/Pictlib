@@ -2,6 +2,7 @@ with Pictlib.Internal.Checked_Arithmetic;
 with Ada.Unchecked_Deallocation;
 with Pictlib.Errors;
 with Pictlib.Internal.Bytes;
+with Pictlib.Internal.Failures;
 with Pictlib.Internal.Region_Reader;
 with Pictlib.Internal.PackBits;
 with Pictlib.Opcodes;
@@ -87,9 +88,7 @@ package body Pictlib.Internal.Pixmaps is
             Outcome := Sessions.Skip_Data (S, Byte_Count (Count));
          end if;
          if not Results.Succeeded (Outcome) then
-            return Results.Failure
-              ((Outcome.First_Error with delta
-                  Context => (Outcome.First_Error.Context with delta Row => Row_Index (Row))));
+            return Failures.At_Row (Outcome, Row);
          end if;
       end loop;
       return Results.Success;
@@ -552,12 +551,8 @@ package body Pictlib.Internal.Pixmaps is
                   Decoder.Unpacked (1 .. Header.Unpacked_Length), Written, Status);
                --  In every mode: Recover_When_Safe turns it into a partial picture.
                if Status /= PackBits.Exact then
-                  Outcome := Results.Failure
-                    (Errors.Make
-                       (Errors.PackBits_Invalid,
-                        (Source => S.Stream.Offset, Row => Row_Index (Row),
-                         Expected => Byte_Count (Header.Unpacked_Length), Actual => Byte_Count (Written),
-                         others => <>)));
+                  Outcome := Sessions.Fail
+                    (S, Errors.PackBits_Invalid, Byte_Count (Header.Unpacked_Length), Byte_Count (Written));
                end if;
             end if;
             if Results.Succeeded (Outcome) then
@@ -565,20 +560,15 @@ package body Pictlib.Internal.Pixmaps is
             end if;
          end;
       end if;
-      if not Results.Succeeded (Outcome) and then Outcome.First_Error.Context.Row = 0 then
-         return Results.Failure
-           ((Outcome.First_Error with delta
-               Context => (Outcome.First_Error.Context with delta Row => Row_Index (Row))));
-      end if;
-      return Outcome;
+      return Failures.At_Row (Outcome, Row);
    end Read_Row;
 
    function Pixel (Decoder : Row_Decoder; Column : Natural) return Images.RGB_Color is (Decoder.Colors (Column));
 
    procedure Finish (Decoder : in out Row_Decoder) is
    begin
-      Sessions.Free (Decoder.Stored);
-      Sessions.Free (Decoder.Unpacked);
+      Bytes.Free (Decoder.Stored);
+      Bytes.Free (Decoder.Unpacked);
       Free (Decoder.Colors);
    end Finish;
 end Pictlib.Internal.Pixmaps;

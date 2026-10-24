@@ -1,6 +1,7 @@
 with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Geometry;
+with Pictlib.Internal.Bytes;
 with Pictlib.Streams;
 
 package body Pictlib.Internal.Region_Reader is
@@ -55,7 +56,7 @@ package body Pictlib.Internal.Region_Reader is
       then
          Outcome := Sessions.Fail (S, Errors.Region_Invalid, Actual => Byte_Count (Size));
       end if;
-      Sessions.Free (Data);
+      Bytes.Free (Data);
       return Outcome;
    end Read;
 end Pictlib.Internal.Region_Reader;

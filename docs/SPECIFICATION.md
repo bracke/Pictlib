@@ -305,7 +305,8 @@ The internal ones, from the bottom up:
 ```text
 Pictlib.Internal                   -- PICT format constants
 Pictlib.Internal.Checked_Arithmetic -- checked and saturating counts (proved)
-Pictlib.Internal.Bytes             -- checked big-endian readers and test-side writers
+Pictlib.Internal.Bytes             -- checked big-endian readers, heap byte buffers
+Pictlib.Internal.Failures          -- the shared failures: limits, opcodes, rows, frame size
 Pictlib.Internal.Picture_Stream    -- look-ahead source wrapper, picture byte budget
 Pictlib.Internal.Diagnostics       -- bounded warning log
 Pictlib.Internal.Metadata_Store    -- retained metadata under budgets

@@ -11,6 +11,7 @@ with Pictlib.Errors;
 with Pictlib.Geometry;
 with Pictlib.Images;
 with Pictlib.Internal.Bytes;
+with Pictlib.Internal.Failures;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Internal.Region_Reader;
 with Pictlib.Internal.Regions;
@@ -143,7 +144,7 @@ package body Pictlib.Internal.QuickTime is
          return Sessions.Over_Limit
            (S, Embedded_Image_Byte_Limit, S.Budget.Max_Embedded_Image_Bytes, Byte_Count (Item.Data_Size));
       elsif Pixels = 0 then
-         return Results.Failure (Errors.Make (Errors.Embedded_Image_Failed, Sessions.Context_Of (Event)));
+         return Failures.In_Opcode (Event, Errors.Embedded_Image_Failed);
       elsif Pixel_Count (Pixels) > S.Budget.Max_Embedded_Image_Pixels then
          return Sessions.Over_Limit
            (S, Embedded_Image_Pixel_Limit, Byte_Count (S.Budget.Max_Embedded_Image_Pixels), Pixels);
@@ -252,7 +253,7 @@ package body Pictlib.Internal.QuickTime is
       then
          --  The JPEG must be the image the description states.
          Jpeglib.Decoding.Finalize (Decoder);
-         return Results.Failure (Errors.Make (Errors.Embedded_Image_Failed, Sessions.Context_Of (Event)));
+         return Failures.In_Opcode (Event, Errors.Embedded_Image_Failed);
       end if;
       if Jpeglib.Results.Succeeded (Decoded) then
          Pixels := new Jpeglib.Streams.Byte_Array (1 .. Bytes);
@@ -306,16 +307,16 @@ package body Pictlib.Internal.QuickTime is
       Destination_Width : constant Long_Long_Integer := Long_Long_Integer (Destination.Right - Destination.Left);
       Destination_Height : constant Long_Long_Integer := Long_Long_Integer (Destination.Bottom - Destination.Top);
       Kind : Transfer_Modes.Mode_Kind;
-      Outcome : Results.Result := Rendering.Mode (S, Event, Header.Mode_Word, Kind);
+      --  The drawing after HiliteMode, as for any copy.
+      Outcome : Results.Result :=
+        Rendering.Drawing_Mode (S, Event, Header.Mode_Word, Rendering.Take_Hilite (P), Kind);
 
       --  The image pixel destination pixel X, Y samples; a decompressed image is not colorized.
       function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
          Row : constant Natural :=
-           Natural (Clamped.Top) + Natural ((Long_Long_Integer (Y - Destination.Top) * Source_Height)
-                                            / Destination_Height);
+           Natural (Clamped.Top) + Rendering.Sampled (Y - Destination.Top, Source_Height, Destination_Height);
          Column : constant Natural :=
-           Natural (Clamped.Left) + Natural ((Long_Long_Integer (X - Destination.Left) * Source_Width)
-                                             / Destination_Width);
+           Natural (Clamped.Left) + Rendering.Sampled (X - Destination.Left, Source_Width, Destination_Width);
          At_Pixel : constant Positive := Bytes_Per_Pixel * (Row * Item.Width + Column) + 1;
       begin
          return Transfer_Modes.Compose
@@ -324,10 +325,6 @@ package body Pictlib.Internal.QuickTime is
       end Color_At;
       function Paint is new Rendering.Paint_Row (Color_At);
    begin
-      --  The drawing after HiliteMode, as for any copy.
-      if Rendering.Take_Hilite (P) then
-         Kind := Transfer_Modes.Hilite;
-      end if;
       if not Results.Succeeded (Outcome) or else Geometry.Is_Empty (Clamped) or else Regions.Is_Empty (Destination)
       then
          return Outcome;
@@ -369,10 +366,7 @@ package body Pictlib.Internal.QuickTime is
       end Finish;
 
       function Too_Long (Wanted : Byte_Count) return Results.Result is
-        (Results.Failure
-           (Errors.Make
-              (Errors.Opcode_Length_Invalid,
-               (Sessions.Context_Of (Event) with delta Expected => Length, Actual => Used + Wanted))));
+        (Failures.In_Opcode (Event, Errors.Opcode_Length_Invalid, Length, Used + Wanted));
    begin
       --  Only an image drawn by this opcode hides the bits opcode after it.
       P.Skip_Next_Bits := False;
@@ -419,11 +413,7 @@ package body Pictlib.Internal.QuickTime is
       if not Results.Succeeded (Outcome) then
          return Outcome;
       elsif Item.Size < Description_Bytes then
-         return Results.Failure
-           (Errors.Make
-              (Errors.Opcode_Length_Invalid,
-               (Sessions.Context_Of (Event) with delta
-                  Expected => Description_Bytes, Actual => Byte_Count (Item.Size))));
+         return Failures.In_Opcode (Event, Errors.Opcode_Length_Invalid, Description_Bytes, Byte_Count (Item.Size));
       elsif Byte_Count (Item.Size) - Description_Bytes > Length - Used then
          return Too_Long (Byte_Count (Item.Size) - Description_Bytes);
       end if;

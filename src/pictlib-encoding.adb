@@ -1,6 +1,7 @@
 with Pictlib.Internal.Canvas;
 with Ada.Containers.Hashed_Maps;
-with Ada.Unchecked_Deallocation;
+with Pictlib.Internal.Bytes;
+with Pictlib.Internal.Failures;
 with Ada.Containers.Vectors;
 with Interfaces;
 with Pictlib.Internal.PackBits;
@@ -13,7 +14,6 @@ package body Pictlib.Encoding is
 
    package Writers renames Internal.Writers;
 
-   procedure Streams_Free is new Ada.Unchecked_Deallocation (Streams.Byte_Array, Streams.Byte_Array_Access);
 
    --  The longest even rowBytes a PixMap can state.
    Largest_Row_Bytes : constant := Internal.Pixmap_Row_Bytes_Mask - 1;
@@ -89,6 +89,10 @@ package body Pictlib.Encoding is
          when Indexed_8 => Width + Width mod 2,
          when others => ((Width + 7) / 8 + 1) / 2 * 2);
 
+   --  Alpha is kept only from a view that has it.
+   function Alpha_Kept (Image : Images.Image_View; Settings : Options) return Boolean is
+     (Settings.Keep_Alpha and then Image.Descriptor.Format in RGBA_32 | BGRA_32 | ARGB_32);
+
    --  What one image is written as.
    type Plan is record
       Width : Natural := 0;
@@ -104,8 +108,7 @@ package body Pictlib.Encoding is
    function Plan_For (Image : Images.Image_View; Settings : Options; Layout : Layout_Kind) return Plan is
       Width : constant Natural := Natural (Image.Descriptor.Width);
       Height : constant Natural := Natural (Image.Descriptor.Height);
-      Components : constant Natural :=
-        (if Settings.Keep_Alpha and then Image.Descriptor.Format in RGBA_32 | BGRA_32 | ARGB_32 then 4 else 3);
+      Components : constant Natural := (if Alpha_Kept (Image, Settings) then 4 else 3);
       Stored : constant Natural := Row_Bytes (Layout, Width);
    begin
       return
@@ -295,8 +298,8 @@ package body Pictlib.Encoding is
             Step (Outcome, Writers.Put (Out_Bytes, Packed (1 .. Packed_Length)));
          end if;
       end loop;
-      Streams_Free (Row);
-      Streams_Free (Packed);
+      Internal.Bytes.Free (Row);
+      Internal.Bytes.Free (Packed);
    end Put_Rows;
 
    --  One picture, measured or written.
@@ -363,37 +366,25 @@ package body Pictlib.Encoding is
          return Invalid (0, 0);
       elsif Settings.Horizontal_Resolution <= 0 or else Settings.Vertical_Resolution <= 0 then
          return Invalid (1, 0);
-      elsif Image.Descriptor.Width > Budget.Max_Frame_Width then
-         return Fail
-           (Object,
-            Results.Failure
-              (Errors.Make
-                 (Errors.Limit_Exceeded,
-                  (Expected => Byte_Count (Budget.Max_Frame_Width), Actual => Byte_Count (Image.Descriptor.Width),
-                   Limit => Frame_Width_Limit, others => <>))));
-      elsif Image.Descriptor.Height > Budget.Max_Frame_Height then
-         return Fail
-           (Object,
-            Results.Failure
-              (Errors.Make
-                 (Errors.Limit_Exceeded,
-                  (Expected => Byte_Count (Budget.Max_Frame_Height), Actual => Byte_Count (Image.Descriptor.Height),
-                   Limit => Frame_Height_Limit, others => <>))));
       end if;
+      declare
+         Framed : constant Results.Result :=
+           Internal.Failures.Check_Frame_Size
+             (Natural (Image.Descriptor.Width), Natural (Image.Descriptor.Height), Budget);
+      begin
+         if not Results.Succeeded (Framed) then
+            return Fail (Object, Framed);
+         end if;
+      end;
 
       Survey (Image, Colors);
       Layout := Settings.Layout;
       if Layout = Auto then
-         declare
-            --  Alpha is kept only from a view that has it.
-            Alpha_Kept : constant Boolean :=
-              Settings.Keep_Alpha and then Image.Descriptor.Format in RGBA_32 | BGRA_32 | ARGB_32;
-         begin
-            Layout :=
-              (if Colors.Black_And_White and then not Alpha_Kept then Mono_1
-               elsif Natural (Colors.Colors.Length) <= Largest_Colors and then not Alpha_Kept then Indexed_8
-               else Direct_32);
-         end;
+         Layout :=
+           (if Alpha_Kept (Image, Settings) then Direct_32
+            elsif Colors.Black_And_White then Mono_1
+            elsif Natural (Colors.Colors.Length) <= Largest_Colors then Indexed_8
+            else Direct_32);
          --  Auto takes Mono_1 only for pure black and white, which it must keep exactly, whatever the
          --  threshold: one between the two does.
          if Layout = Mono_1 then
@@ -417,12 +408,7 @@ package body Pictlib.Encoding is
             return Fail (Object, Invalid (Largest_Row_Bytes, Byte_Count (Item.Stored)));
          elsif Buffers > Budget.Max_Allocation_Bytes then
             return Fail
-              (Object,
-               Results.Failure
-                 (Errors.Make
-                    (Errors.Limit_Exceeded,
-                     (Expected => Budget.Max_Allocation_Bytes, Actual => Buffers, Limit => Allocation_Byte_Limit,
-                      others => <>))));
+              (Object, Internal.Failures.Over_Limit (Allocation_Byte_Limit, Budget.Max_Allocation_Bytes, Buffers));
          end if;
       end;
 

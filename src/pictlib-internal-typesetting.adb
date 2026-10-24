@@ -78,10 +78,7 @@ package body Pictlib.Internal.Typesetting is
             return Outcome;
          end if;
       end if;
-      Outcome := Rendering.Mode (S, Event, State.Mode, Kind);
-      if Hilited then
-         Kind := Transfer_Modes.Hilite;
-      end if;
+      Outcome := Rendering.Drawing_Mode (S, Event, State.Mode, Hilited, Kind);
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;

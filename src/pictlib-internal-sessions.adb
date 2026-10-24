@@ -51,10 +51,7 @@ package body Pictlib.Internal.Sessions is
         (Errors.Make (Code, (Source => S.Stream.Offset, Expected => Expected, Actual => Actual, others => <>))));
 
    function Over_Limit (S : Session; Limit : Limit_Kind; Expected, Actual : Byte_Count) return Results.Result is
-     (Results.Failure
-        (Errors.Make
-           (Errors.Limit_Exceeded,
-            (Source => S.Stream.Offset, Expected => Expected, Actual => Actual, Limit => Limit, others => <>))));
+     (Failures.Over_Limit (Limit, Expected, Actual, S.Stream.Offset));
 
    function Reject_Or_Warn
      (S : in out Session;
@@ -206,7 +203,7 @@ package body Pictlib.Internal.Sessions is
       Data := new Streams.Byte_Array (1 .. Natural (Length));
       Outcome := Streams.Read_Exact (S.Stream, Data.all);
       if not Results.Succeeded (Outcome) then
-         Free (Data);
+         Bytes.Free (Data);
       end if;
       return Outcome;
    end Read_Payload;
@@ -242,7 +239,7 @@ package body Pictlib.Internal.Sessions is
       Outcome := Read_Payload (S, Length, Data);
       if Results.Succeeded (Outcome) then
          Metadata_Store.Append (S.Store, Info, Data.all);
-         Free (Data);
+         Bytes.Free (Data);
       end if;
       return Outcome;
    end Retain;

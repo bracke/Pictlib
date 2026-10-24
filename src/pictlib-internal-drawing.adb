@@ -4,6 +4,7 @@ with Pictlib.Geometry;
 with Pictlib.Images;
 with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Coverage;
+with Pictlib.Internal.Failures;
 with Pictlib.Internal.Text;
 with Pictlib.Internal.Typesetting;
 with Pictlib.Internal.Patterns;
@@ -27,30 +28,27 @@ package body Pictlib.Internal.Drawing is
    function Signed (Value : Byte) return Integer is
      (if Value >= 16#80# then Integer (Value) - 16#100# else Integer (Value));
 
+   --  A (v, h) pair as read, without the origin: pen and oval sizes, angles, polygon points.
+   function Read_Pair (S : in out Sessions.Session; V, H : out Integer) return Results.Result is
+      Raw_V, Raw_H : Interfaces.Unsigned_16 := 0;
+      Outcome : Results.Result := Sessions.Read_Word (S, Raw_V);
+   begin
+      if Results.Succeeded (Outcome) then
+         Outcome := Sessions.Read_Word (S, Raw_H);
+      end if;
+      V := Signed (Raw_V);
+      H := Signed (Raw_H);
+      return Outcome;
+   end Read_Pair;
+
    --  A local point (v, h) as a picture point.
    function Read_Point (P : Rendering.Painter; S : in out Sessions.Session; Item : out Point) return Results.Result is
-      V, H : Interfaces.Unsigned_16 := 0;
-      Outcome : Results.Result := Sessions.Read_Word (S, V);
+      V, H : Integer;
+      Outcome : constant Results.Result := Read_Pair (S, V, H);
    begin
-      if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Read_Word (S, H);
-      end if;
-      Item := (H => Signed (H) - P.Origin_H, V => Signed (V) - P.Origin_V);
+      Item := (H => H - P.Origin_H, V => V - P.Origin_V);
       return Outcome;
    end Read_Point;
-
-   --  A (v, h) pair as read, without the origin: pen and oval sizes.
-   function Read_Size (S : in out Sessions.Session; Height, Width : out Integer) return Results.Result is
-      V, H : Interfaces.Unsigned_16 := 0;
-      Outcome : Results.Result := Sessions.Read_Word (S, V);
-   begin
-      if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Read_Word (S, H);
-      end if;
-      Height := Signed (V);
-      Width := Signed (H);
-      return Outcome;
-   end Read_Size;
 
    --  Classic QuickDraw's eight planar colors, as Color QuickDraw shows them.
    function Planar_Color (Value : Interfaces.Unsigned_32; Color : out Images.RGB_Color) return Boolean is
@@ -89,27 +87,20 @@ package body Pictlib.Internal.Drawing is
       for Index in 1 .. Count loop
          exit when not Results.Succeeded (Outcome);
          declare
-            V, H : Interfaces.Unsigned_16 := 0;
+            V, H : Integer;
          begin
-            Outcome := Sessions.Read_Word (S, V);
-            if Results.Succeeded (Outcome) then
-               Outcome := Sessions.Read_Word (S, H);
-            end if;
+            Outcome := Read_Pair (S, V, H);
             --  Kept local; the origin applies when the polygon is drawn.
-            Points.Append (Point'(H => Signed (H), V => Signed (V)));
+            Points.Append (Point'(H => H, V => V));
          end;
       end loop;
       return Outcome;
    end Read_Polygon;
 
    --  A coordinate the picture moved beyond Rendering.Reach.
-   function Out_Of_Reach (Event : Pictures.Opcode_Event; Value : Integer)
-     return Results.Result is
-     (Results.Failure
-        (Errors.Make
-           (Errors.Opcode_Invalid,
-            (Source => Event.Offset, Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal,
-             Expected => Rendering.Reach, Actual => Byte_Count (abs Long_Long_Integer (Value)), others => <>))));
+   function Out_Of_Reach (Event : Pictures.Opcode_Event; Value : Integer) return Results.Result is
+     (Failures.In_Opcode
+        (Event, Errors.Opcode_Invalid, Rendering.Reach, Byte_Count (abs Long_Long_Integer (Value))));
 
    function Inset (Item : Area; Width, Height : Integer) return Area is
      ((Item.Top + Height, Item.Left + Width, Item.Bottom - Height, Item.Right - Width));
@@ -198,7 +189,7 @@ package body Pictlib.Internal.Drawing is
                   Outcome := Sessions.Read_Bounds (S, P.Last_Rect);
                end if;
                if Results.Succeeded (Outcome) and then Kind = Arc_Shape then
-                  Outcome := Read_Size (S, Start_Angle, Arc_Angle);
+                  Outcome := Read_Pair (S, Start_Angle, Arc_Angle);
                end if;
                if not Results.Succeeded (Outcome) then
                   return Outcome;
@@ -412,7 +403,7 @@ package body Pictlib.Internal.Drawing is
    begin
       case Event.Op is
          when Opcodes.Pen_Size =>
-            Outcome := Read_Size (S, P.Pen_Height, P.Pen_Width);
+            Outcome := Read_Pair (S, P.Pen_Height, P.Pen_Width);
          when Opcodes.Pen_Mode =>
             declare
                Value : Interfaces.Unsigned_16;
@@ -423,13 +414,13 @@ package body Pictlib.Internal.Drawing is
                end if;
             end;
          when Opcodes.Oval_Size =>
-            Outcome := Read_Size (S, P.Oval_Height, P.Oval_Width);
+            Outcome := Read_Pair (S, P.Oval_Height, P.Oval_Width);
          when others =>  --  Origin: the clip region keeps its local coordinates
             declare
                Dh, Dv : Integer;
             begin
                --  Origin's data is dh, then dv.
-               Outcome := Read_Size (S, Dh, Dv);
+               Outcome := Read_Pair (S, Dh, Dv);
                if Results.Succeeded (Outcome) then
                   if not Rendering.Origin_Within_Reach (P.Origin_H + Dh) then
                      return Out_Of_Reach (Event, P.Origin_H + Dh);
@@ -517,9 +508,9 @@ package body Pictlib.Internal.Drawing is
             declare
                Numerator_V, Numerator_H, Denominator_V, Denominator_H : Integer;
             begin
-               Outcome := Read_Size (S, Numerator_V, Numerator_H);
+               Outcome := Read_Pair (S, Numerator_V, Numerator_H);
                if Results.Succeeded (Outcome) then
-                  Outcome := Read_Size (S, Denominator_V, Denominator_H);
+                  Outcome := Read_Pair (S, Denominator_V, Denominator_H);
                end if;
                State.Unit_Ratio := Numerator_V = Denominator_V and then Numerator_H = Denominator_H;
             end;

@@ -1,9 +1,9 @@
-with Ada.Unchecked_Deallocation;
 with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Geometry;
 with Pictlib.Images;
 with Pictlib.Internal.Diagnostics;
+with Pictlib.Internal.Failures;
 with Pictlib.Internal.Metadata_Store;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Limits;
@@ -36,8 +36,6 @@ package Pictlib.Internal.Sessions is
       Pending_Op : Opcode := 0;
       Pending_Offset : Source_Offset := 0;
    end record;
-
-   procedure Free is new Ada.Unchecked_Deallocation (Streams.Byte_Array, Streams.Byte_Array_Access);
 
    --  Clear.
    --  @param S Session whose stream binding, retained metadata, warnings and counters are discarded.
@@ -96,8 +94,8 @@ package Pictlib.Internal.Sessions is
    --  Context of.
    --  @param Event An opcode.
    --  @return A diagnostic context naming it: its offset, opcode and ordinal.
-   function Context_Of (Event : Pictures.Opcode_Event) return Errors.Diagnostic_Context is
-     ((Source => Event.Offset, Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal, others => <>));
+   function Context_Of (Event : Pictures.Opcode_Event) return Errors.Diagnostic_Context
+     renames Failures.Context_Of;
 
    --  Reject or warn: the strictness rule for a deviation a lenient session tolerates.
    --  @param S Session whose strictness decides and whose log records the warning.

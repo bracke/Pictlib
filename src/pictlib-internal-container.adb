@@ -2,6 +2,7 @@ with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Geometry;
 with Pictlib.Internal.Bytes;
+with Pictlib.Internal.Failures;
 with Pictlib.Internal.Metadata_Store;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Metadata;
@@ -37,9 +38,6 @@ package body Pictlib.Internal.Container is
       return None;
    end Version_At;
 
-   function Fail (S : Sessions.Session; Code : Errors.Error_Code) return Results.Result is
-     (Results.Failure (Errors.Make (Code, (Source => S.Stream.Offset, others => <>))));
-
    --  The file header is not an opcode: retained or skipped, the per-opcode byte budget does not apply to it.
    function Read_File_Header (S : in out Sessions.Session) return Results.Result is
       Keep : Boolean := False;
@@ -63,40 +61,16 @@ package body Pictlib.Internal.Container is
       if Results.Succeeded (Outcome) then
          Metadata_Store.Append (S.Store, (Kind => Metadata.File_Header, Offset => Offset, others => <>), Data.all);
       end if;
-      Sessions.Free (Data);
+      Bytes.Free (Data);
       return Outcome;
    end Read_File_Header;
 
    function Check_Frame (S : Sessions.Session; Frame : Geometry.Rect) return Results.Result is
-   begin
-      if Geometry.Is_Empty (Frame) then
-         return Results.Failure
-           (Errors.Make
-              (Errors.Header_Invalid,
-               (Source => S.Stream.Offset,
-                Actual => Byte_Count (Integer'Max (0, Integer'Min (Geometry.Width (Frame), Geometry.Height (Frame)))),
-                others => <>)));
-      elsif Geometry.Width (Frame) > Integer (S.Budget.Max_Frame_Width) then
-         return Results.Failure
-           (Errors.Make
-              (Errors.Limit_Exceeded,
-               (Source => S.Stream.Offset,
-                Expected => Byte_Count (S.Budget.Max_Frame_Width),
-                Actual => Byte_Count (Geometry.Width (Frame)),
-                Limit => Frame_Width_Limit,
-                others => <>)));
-      elsif Geometry.Height (Frame) > Integer (S.Budget.Max_Frame_Height) then
-         return Results.Failure
-           (Errors.Make
-              (Errors.Limit_Exceeded,
-               (Source => S.Stream.Offset,
-                Expected => Byte_Count (S.Budget.Max_Frame_Height),
-                Actual => Byte_Count (Geometry.Height (Frame)),
-                Limit => Frame_Height_Limit,
-                others => <>)));
-      end if;
-      return Results.Success;
-   end Check_Frame;
+     (if Geometry.Is_Empty (Frame)
+      then Sessions.Fail
+             (S, Errors.Header_Invalid,
+              Actual => Byte_Count (Integer'Max (0, Integer'Min (Geometry.Width (Frame), Geometry.Height (Frame)))))
+      else Failures.Check_Frame_Size (Geometry.Width (Frame), Geometry.Height (Frame), S.Budget, S.Stream.Offset));
 
    --  Where HeaderOp's own diagnostics point.
    Header_Op_Context : constant Errors.Diagnostic_Context :=
@@ -200,7 +174,7 @@ package body Pictlib.Internal.Container is
          return Sessions.Over_Limit
            (S, Picture_Byte_Limit, S.Budget.Max_Picture_Bytes, S.Budget.Max_Picture_Bytes + 1);
       elsif Detected = None then
-         return Fail (S, Errors.Version_Invalid);
+         return Sessions.Fail (S, Errors.Version_Invalid);
       end if;
       return Results.Success;
    end Detect_Layout;

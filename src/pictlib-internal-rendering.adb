@@ -65,6 +65,21 @@ package body Pictlib.Internal.Rendering is
          (Sessions.Context_Of (Event) with delta Actual => Byte_Count (Value)));
    end Mode;
 
+   function Drawing_Mode
+     (S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event;
+      Value : Interfaces.Unsigned_16;
+      Hilited : Boolean;
+      Kind : out Transfer_Modes.Mode_Kind) return Results.Result
+   is
+      Outcome : constant Results.Result := Mode (S, Event, Value, Kind);
+   begin
+      if Hilited then
+         Kind := Transfer_Modes.Hilite;
+      end if;
+      return Outcome;
+   end Drawing_Mode;
+
    function Take_Hilite (P : in out Painter) return Boolean is
       Hilited : constant Boolean := P.Hilite_Next;
    begin
@@ -245,7 +260,7 @@ package body Pictlib.Internal.Rendering is
       Destination_Width : constant Long_Long_Integer := Long_Long_Integer (Destination.Right - Destination.Left);
       Destination_Height : constant Long_Long_Integer := Long_Long_Integer (Destination.Bottom - Destination.Top);
       Relative : constant Long_Long_Integer := Long_Long_Integer (Source_Y) - Long_Long_Integer (Source.Top);
-      --  Destination rows k sample source row floor (k * Source_Height / Destination_Height).
+      --  Destination rows k sample source row Sampled (k, Source_Height, Destination_Height): these.
       First_Row : constant Long_Long_Integer :=
         Coverage.Ceiling_Divide (Relative * Destination_Height, Source_Height);
       Last_Row : constant Long_Long_Integer :=
@@ -254,9 +269,8 @@ package body Pictlib.Internal.Rendering is
 
       function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
          pragma Unreferenced (Y);
-         Column : constant Long_Long_Integer :=
-           (Long_Long_Integer (X) - Long_Long_Integer (Destination.Left)) * Source_Width / Destination_Width;
-         Source_X : constant Integer := Integer (Source.Left) + Integer (Column);
+         Source_X : constant Integer :=
+           Integer (Source.Left) + Sampled (X - Destination.Left, Source_Width, Destination_Width);
       begin
          return Transfer_Modes.Compose
            (Kind, Pixmaps.Pixel (Decoder, Source_X - Integer (Header.Bounds.Left)), Under, P.Colors);
@@ -335,10 +349,7 @@ package body Pictlib.Internal.Rendering is
          P.Skip_Next_Bits := False;
          return Skip_Copy (S, Header);
       end if;
-      Outcome := Mode (S, Event, Header.Mode, Kind);
-      if Take_Hilite (P) then
-         Kind := Transfer_Modes.Hilite;
-      end if;
+      Outcome := Drawing_Mode (S, Event, Header.Mode, Take_Hilite (P), Kind);
       if Results.Succeeded (Outcome) then
          Outcome := Source_Rect (S, Header, Event, Source);
       end if;

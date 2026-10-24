@@ -1,9 +1,11 @@
+with Ada.Unchecked_Deallocation;
 with Interfaces;
 with Pictlib.Geometry;
 with Pictlib.Results;
 with Pictlib.Streams;
 
---  Checked big-endian readers. PICT stores every multi-byte value most significant byte first.
+--  Checked big-endian readers, and the heap byte buffers they fill. PICT stores every multi-byte value most
+--  significant byte first.
 package Pictlib.Internal.Bytes is
    pragma Preelaborate;
    use type Interfaces.Unsigned_16;
@@ -16,6 +18,9 @@ package Pictlib.Internal.Bytes is
    end record;
 
    No_Opcode : constant Opcode_Context := (others => <>);
+
+   --  Free: releases a heap byte buffer.
+   procedure Free is new Ada.Unchecked_Deallocation (Streams.Byte_Array, Streams.Byte_Array_Access);
 
    --  Within.
    --  @param Op Opcode whose data is being transferred.

@@ -115,7 +115,7 @@ package body Pictlib.Internal.Opcode_Reader is
          return Outcome;
       end if;
       if Data'Length < 3 or else Natural (Data (3)) > Data'Length - 3 then
-         Sessions.Free (Data);
+         Bytes.Free (Data);
          return Sessions.Reject_Or_Warn
            (S, Errors.Opcode_Length_Invalid, Errors.Data_Loss, Errors.Data_Loss,
             (Sessions.Context_Of (Event) with delta Source => 0, Expected => 3, Actual => Length));
@@ -127,7 +127,7 @@ package body Pictlib.Internal.Opcode_Reader is
          if Paint /= null then
             Outcome := Sessions.Admit_Aggregate (S, Byte_Count (Name_Length) + Sessions.Item_Overhead_Bytes);
             if not Results.Succeeded (Outcome) then
-               Sessions.Free (Data);
+               Bytes.Free (Data);
                return Outcome;
             end if;
             declare
@@ -149,7 +149,7 @@ package body Pictlib.Internal.Opcode_Reader is
               (S.Store, (Item_For (Metadata.Font_Name, Event) with delta Font_ID => Font), Data (4 .. 3 + Name_Length));
          end if;
       end;
-      Sessions.Free (Data);
+      Bytes.Free (Data);
       return Outcome;
    end Consume_Font_Name;
 

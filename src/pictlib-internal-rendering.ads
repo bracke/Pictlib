@@ -115,6 +115,15 @@ package Pictlib.Internal.Rendering is
    function To_Picture (P : Painter; Item : Geometry.Rect) return Area is
      (Regions.To_Area (Item, -P.Origin_H, -P.Origin_V));
 
+   --  Sampled: the nearest-neighbour rule copies and images scale by.
+   --  @param Offset A destination pixel's offset from the destination's first pixel, from 0.
+   --  @param Source_Length Source pixels across.
+   --  @param Destination_Length Destination pixels across; positive.
+   --  @return The offset of the source pixel it samples, floor (Offset * Source_Length / Destination_Length).
+   function Sampled (Offset : Natural; Source_Length, Destination_Length : Long_Long_Integer) return Natural is
+     (Natural (Long_Long_Integer (Offset) * Source_Length / Destination_Length))
+     with Pre => Destination_Length > 0;
+
    --  Unsupported: a construct a release cannot render, reported by the strictness rule.
    --  @param S Session whose strictness decides.
    --  @param Event The opcode that cannot be rendered yet.
@@ -143,6 +152,19 @@ package Pictlib.Internal.Rendering is
       Value : Interfaces.Unsigned_16;
       Kind : out Transfer_Modes.Mode_Kind) return Results.Result;
 
+   --  Drawing mode: the mode a copy, an image or text draws in.
+   --  @param S Session whose strictness decides.
+   --  @param Event The opcode, for diagnostics.
+   --  @param Value Its transfer mode word.
+   --  @param Hilited Take_Hilite's answer for this drawing.
+   --  @param Kind Hilite when Hilited, otherwise Value classified as by Mode.
+   --  @return As Mode: Value is checked either way.
+   function Drawing_Mode
+     (S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event;
+      Value : Interfaces.Unsigned_16;
+      Hilited : Boolean;
+      Kind : out Transfer_Modes.Mode_Kind) return Results.Result;
 
    --  Every drawing paints a row at a time through these: Begin_Row (Begin_Masked_Row when a mask applies),
    --  then Paint_Row, so clipping, masking and charging happen once, in one order. Fill does the same for a shape's

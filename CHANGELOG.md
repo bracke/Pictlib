@@ -70,6 +70,20 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - The encoder checks `Max_Allocation_Bytes` against the row buffers of the
   layout it writes, not always against 32-bit rows.
 
+### Internal structure
+
+No behaviour changes; what each part of the library does now lives in one
+place:
+
+- `Internal.Failures` builds the failures several units report: a crossed
+  limit, a malformed opcode, a failure within a pixel row, and the frame
+  size limits the decoder and the encoder share.
+- `Rendering.Drawing_Mode` gives copies, QuickTime images and text their
+  transfer mode, hilite included; `Rendering.Sampled` is the one
+  nearest-neighbour scaling rule copies and images use.
+- One reader for QuickDraw's (v, h) pairs, one heap buffer deallocator, and
+  one test of whether the encoder keeps alpha.
+
 ### Tooling
 
 All tooling is Ada, in the `tests` crate:

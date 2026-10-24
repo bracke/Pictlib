@@ -1,6 +1,7 @@
 with Pictlib.Internal.Container;
 with Pictlib.Internal.Sessions;
 with Pictlib.Internal.Diagnostics;
+with Pictlib.Internal.Failures;
 with Pictlib.Internal.Opcode_Reader;
 with Pictlib.Internal.Metadata_Store;
 with Pictlib.Geometry;
@@ -194,17 +195,11 @@ package body Pictlib.Decoding is
                 Actual => Byte_Count (Output.Descriptor.Width) * Byte_Count (Output.Descriptor.Height),
                 others => <>)));
       elsif Pixels > Budget.Max_Canvas_Pixels then
-         return Results.Failure
-           (Errors.Make
-              (Errors.Limit_Exceeded,
-               (Expected => Byte_Count (Budget.Max_Canvas_Pixels), Actual => Byte_Count (Pixels),
-                Limit => Canvas_Pixel_Limit, others => <>)));
+         return Internal.Failures.Over_Limit
+           (Canvas_Pixel_Limit, Byte_Count (Budget.Max_Canvas_Pixels), Byte_Count (Pixels));
       elsif Output.Descriptor.Accessible_Bytes > Budget.Max_Output_Bytes then
-         return Results.Failure
-           (Errors.Make
-              (Errors.Limit_Exceeded,
-               (Expected => Budget.Max_Output_Bytes, Actual => Output.Descriptor.Accessible_Bytes,
-                Limit => Output_Byte_Limit, others => <>)));
+         return Internal.Failures.Over_Limit
+           (Output_Byte_Limit, Budget.Max_Output_Bytes, Output.Descriptor.Accessible_Bytes);
       end if;
       return Results.Success;
    end Check_View;
