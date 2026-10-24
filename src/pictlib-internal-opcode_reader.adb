@@ -1,7 +1,6 @@
 with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Fonts;
-with Pictlib.Geometry;
 with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Drawing;
 with Pictlib.Internal.Metadata_Store;
@@ -43,9 +42,8 @@ package body Pictlib.Internal.Opcode_Reader is
 
    function Skip_Pixel_Pattern (S : in out Session) return Results.Result is
       Pattern_Type, Raw_Row_Bytes : Interfaces.Unsigned_16;
-      Bounds : Geometry.Rect;
-      Fields : Pixmaps.Pixmap_Fields;
-      Width, Height : Natural;
+      --  The rows are laid out as rendering decodes them, so both agree where the opcode ends.
+      Header : Pixmaps.Bits_Header;
       Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
    begin
       if Results.Succeeded (Outcome) then
@@ -56,27 +54,29 @@ package body Pictlib.Internal.Opcode_Reader is
       end if;
       case Pattern_Type is
          when 1 =>
+            Header.Op := Opcodes.Pack_Bits_Rect;
+            Header.Is_Pixmap := True;
             Outcome := Sessions.Read_Word (S, Raw_Row_Bytes);
+            Header.Row_Bytes := Natural (Raw_Row_Bytes and 16#3FFF#);
             if Results.Succeeded (Outcome) then
-               Outcome := Sessions.Read_Bounds (S, Bounds);
+               Outcome := Sessions.Read_Bounds (S, Header.Bounds);
             end if;
             if Results.Succeeded (Outcome) then
-               Outcome := Pixmaps.Read_Pixmap_Tail (S, Fields);
+               Outcome := Pixmaps.Read_Pixmap_Tail (S, Header.Fields);
             end if;
             if Results.Succeeded (Outcome) then
                Outcome := Pixmaps.Skip_Color_Table (S);
             end if;
             if Results.Succeeded (Outcome) then
-               Outcome := Sessions.Extent (S, Bounds, Width, Height);
+               Outcome := Sessions.Extent (S, Header.Bounds, Header.Width, Header.Height);
+            end if;
+            if Results.Succeeded (Outcome) then
+               Outcome := Pixmaps.Decide_Layout (S, Header, For_Decoding => False);
             end if;
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
-            declare
-               Row_Bytes : constant Natural := Natural (Raw_Row_Bytes and 16#3FFF#);
-            begin
-               return Sessions.Skip_Rows (S, Row_Bytes, Height, Row_Bytes >= 8, Byte_Count (Row_Bytes));
-            end;
+            return Pixmaps.Skip_Pixels (S, Header);
          when 2 =>
             return Sessions.Skip_Data (S, 6);  --  an RGB color to dither
          when others =>

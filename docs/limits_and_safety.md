@@ -18,12 +18,19 @@ bounds a read, a skip, an allocation or a loop.
 
 | `Max_Canvas_Pixels` | the frame, when `Render` starts | `Limit_Exceeded` |
 | `Max_Output_Bytes` | the view's accessible bytes, when `Render` starts | `Limit_Exceeded` |
-| `Max_Drawing_Work` | every pixel painted, every unit of region, polygon, line and shape-building work | `Limit_Exceeded` |
+| `Max_Drawing_Work` | every pixel painted, every pixel converted from a copied row, every unit of region, polygon, line and shape-building work, checked while a shape is built | `Limit_Exceeded` |
 | `Max_Polygon_Points` | each polygon, also while rendering | `Limit_Exceeded` |
 | `Max_Allocation_Bytes` | each opcode's row buffers, each font's glyph atlas | `Limit_Exceeded` |
 
 | `Max_Embedded_Image_Bytes` | a QuickTime image's dataSize, before decoding | `Limit_Exceeded` |
 | `Max_Embedded_Image_Pixels` | a QuickTime image's width × height, before decoding, and jpeglib's pixel limit | `Limit_Exceeded` |
+| `Max_Allocation_Bytes` | a QuickTime image's RGB buffer, which is also never above 2^31 − 1 bytes | `Limit_Exceeded` |
+
+Coordinates are bounded rather than budgeted: the origin, line ends and the
+text origin stay within ±2^24, and an opcode that moves one further fails with
+`Opcode_Invalid`. Moving the origin costs nothing, since the clip region stays
+in local coordinates; copying a region for a "same" opcode is charged as
+drawing work.
 
 The encoder applies `Max_Frame_Width` and `Max_Frame_Height` to the image,
 `Max_Allocation_Bytes` to its row buffers and `Max_Output_Bytes` to the whole
@@ -37,7 +44,11 @@ no canvas byte limit: `Max_Output_Bytes` bounds the view.
 `pictlib_fuzz` mutates the fixture pictures and fresh encoder output and runs
 every mutant through enumeration and both lenient renders under tight limits:
 a 1024 x 1024 frame, 2^20 canvas and embedded pixels, 2^26 units of drawing
-work, 64 MiB of allocation. Any exception, or any input taking more than two
+work, 64 MiB of allocation. Besides flipping, replacing, truncating, deleting
+and inserting bytes, it plants opcodes, writes extreme points (±32 768) and
+repeats short chunks up to 64 KiB, as runaway origins, pens and text do.
+`hostile.*` in the AUnit suite holds the cases that once overflowed or
+worked without bound. Any exception, or any input taking more than two
 seconds, is saved for replay and fails the run. `pictlib_real_world` holds
 LibreOffice's PICT filter test files, CVE reproductions among them, to their
 recorded outcomes.

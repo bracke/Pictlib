@@ -20,7 +20,9 @@ package Pictlib.Internal.Coverage is
    --  Start.
    --  @param Item Shape to empty.
    --  @param Window Rows and columns outside it are not kept.
-   procedure Start (Item : out Shape; Window : Area);
+   --  @param Allowance Units of work building it may take; once they are spent, building stops and Work reports
+   --  more than Allowance.
+   procedure Start (Item : out Shape; Window : Area; Allowance : Natural := Natural'Last);
    --  Window of.
    --  @param Item Shape.
    --  @return Its window.
@@ -34,6 +36,14 @@ package Pictlib.Internal.Coverage is
    --  @param Item Shape.
    --  @return Units of work building it took, for the drawing budget.
    function Work (Item : Shape) return Natural;
+   --  Exhausted.
+   --  @param Item Shape.
+   --  @return True when building it spent its allowance and it is incomplete.
+   function Exhausted (Item : Shape) return Boolean;
+   --  Remaining.
+   --  @param Item Shape.
+   --  @return The allowance building it has not spent.
+   function Remaining (Item : Shape) return Natural;
 
    --  Rectangle: rows Top .. Bottom - 1, columns Left .. Right - 1.
    procedure Rectangle (Item : in out Shape; Bounds : Area);
@@ -63,5 +73,7 @@ private
       Window : Area;
       Rows : Row_Vectors.Vector;
       Units : Natural := 0;
+      Allowance : Natural := Natural'Last;
+      Spent : Boolean := False;
    end record;
 end Pictlib.Internal.Coverage;

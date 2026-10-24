@@ -119,7 +119,9 @@ package body Pictlib.Internal.Typesetting is
             exit when not Results.Succeeded (Outcome);
             if Item >= Space then
                declare
-                  Metric : Textrender.Glyph_Metric;
+                  --  Defined even when the font lacks the glyph and leaves it alone.
+                  Metric : Textrender.Glyph_Metric :=
+                    (X | Y | W | H => 0, U0 | V0 | U1 | V1 | Advance_X | Bearing_X | Bearing_Y => 0.0);
                   Status : constant Textrender.Status_Code :=
                     Font.Get_Glyph (Text.To_Unicode (Item), Metric, Style);
                   Drawable : constant Boolean :=

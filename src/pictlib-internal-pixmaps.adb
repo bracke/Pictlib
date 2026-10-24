@@ -175,7 +175,8 @@ package body Pictlib.Internal.Pixmaps is
          end if;
          Header.Layout := Packed_Bytes;
          Header.Encoding := Planar;
-         if For_Decoding and then Header.Fields.Component_Count not in 3 | 4 then
+         --  The planes are counted from cmpCount, so where the opcode ends depends on it too.
+         if Header.Fields.Component_Count not in 3 | 4 then
             return Invalid (3, Header.Fields.Component_Count);
          end if;
          Header.Unpacked_Length := Header.Fields.Component_Count * Header.Width;
@@ -401,19 +402,14 @@ package body Pictlib.Internal.Pixmaps is
                PackBits.Unpack
                  (Decoder.Stored (1 .. Count), (if Header.Layout = Packed_Words then 2 else 1),
                   Decoder.Unpacked (1 .. Header.Unpacked_Length), Written, Status);
+               --  In every mode: Recover_When_Safe turns it into a partial picture.
                if Status /= PackBits.Exact then
-                  if not Sessions.Is_Lenient (S) then
-                     Outcome := Results.Failure
-                       (Errors.Make
-                          (Errors.PackBits_Invalid,
-                           (Source => S.Stream.Offset, Row => Row_Index (Row),
-                            Expected => Byte_Count (Header.Unpacked_Length), Actual => Byte_Count (Written),
-                            others => <>)));
-                  else
-                     Sessions.Warn (S, Errors.Recovery_Applied, Errors.Recovery,
-                                    (Row => Row_Index (Row), Expected => Byte_Count (Header.Unpacked_Length),
-                                     Actual => Byte_Count (Written), others => <>));
-                  end if;
+                  Outcome := Results.Failure
+                    (Errors.Make
+                       (Errors.PackBits_Invalid,
+                        (Source => S.Stream.Offset, Row => Row_Index (Row),
+                         Expected => Byte_Count (Header.Unpacked_Length), Actual => Byte_Count (Written),
+                         others => <>)));
                end if;
             end if;
             if Results.Succeeded (Outcome) then

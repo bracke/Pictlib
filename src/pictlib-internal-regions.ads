@@ -51,6 +51,10 @@ package Pictlib.Internal.Regions is
    --  @param Item Region.
    --  @return True when Item is its bounding box.
    function Is_Rectangular (Item : Region) return Boolean;
+   --  Size.
+   --  @param Item Region.
+   --  @return Its scanlines and inversion points, the work of copying or moving it.
+   function Size (Item : Region) return Natural;
    --  Translate.
    --  @param Item Region to move.
    --  @param DX Added to every horizontal coordinate.

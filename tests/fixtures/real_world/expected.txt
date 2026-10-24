@@ -3,6 +3,6 @@ libreoffice/fail/CVE-2012-0277-1.pct pict.version.invalid pict.version.invalid p
 libreoffice/fail/CVE-2013-2577-1.pct pict.version.invalid pict.version.invalid pict.version.invalid
 libreoffice/fail/EDB-19332-1.pct pict.version.invalid pict.version.invalid pict.version.invalid
 libreoffice/fail/exception-1.pct pict.header.invalid pict.region.invalid partial
-libreoffice/fail/hang-1.pct pict.source.unexpected_end pict.source.unexpected_end partial
+libreoffice/fail/hang-1.pct pict.source.unexpected_end pict.packbits.invalid partial
 libreoffice/pass/ooo25876-2.pct ok ok ok
 libreoffice/pass/tdf92789.pct ok ok ok

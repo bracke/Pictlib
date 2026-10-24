@@ -15,6 +15,8 @@ package body Pictlib.Internal.Regions is
 
    function Is_Rectangular (Item : Region) return Boolean is (Item.Rectangular);
 
+   function Size (Item : Region) return Natural is (Natural (Item.Lines.Length) + Natural (Item.Points.Length) + 1);
+
    procedure Translate (Item : in out Region; DX, DY : Integer) is
    begin
       Item.Box := (Item.Box.Top + DY, Item.Box.Left + DX, Item.Box.Bottom + DY, Item.Box.Right + DX);

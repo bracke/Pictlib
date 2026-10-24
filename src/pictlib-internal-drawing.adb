@@ -115,6 +115,15 @@ package body Pictlib.Internal.Drawing is
       return Outcome;
    end Read_Polygon;
 
+   --  A coordinate the picture moved beyond Rendering.Reach.
+   function Out_Of_Reach (Event : Pictures.Opcode_Event; Value : Integer)
+     return Results.Result is
+     (Results.Failure
+        (Errors.Make
+           (Errors.Opcode_Invalid,
+            (Source => Event.Offset, Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal,
+             Expected => Rendering.Reach, Actual => Byte_Count (abs Long_Long_Integer (Value)), others => <>))));
+
    function Inset (Item : Area; Width, Height : Integer) return Area is
      ((Item.Top + Height, Item.Left + Width, Item.Bottom - Height, Item.Right - Width));
 
@@ -152,7 +161,7 @@ package body Pictlib.Internal.Drawing is
       end if;
       Interior (Shape, Bounds, P.Oval_Width, P.Oval_Height);
       if Frame then
-         Coverage.Start (Inner, Coverage.Window_Of (Shape));
+         Coverage.Start (Inner, Coverage.Window_Of (Shape), Coverage.Remaining (Shape));
          Interior (Inner, Inset (Bounds, P.Pen_Width, P.Pen_Height),
                    P.Oval_Width - 2 * P.Pen_Width, P.Oval_Height - 2 * P.Pen_Height);
          Coverage.Subtract (Shape, Inner);
@@ -173,7 +182,7 @@ package body Pictlib.Internal.Drawing is
       Shape : Coverage.Shape;
       Outcome : Results.Result := Results.Success;
    begin
-      Coverage.Start (Shape, P.Window);
+      Coverage.Start (Shape, P.Window, Rendering.Allowance (P, S));
       case Group is
          when 3 .. 6 =>
             declare
@@ -222,6 +231,11 @@ package body Pictlib.Internal.Drawing is
             declare
                Region : Regions.Region := P.Last_Region;
             begin
+               --  Copying and moving the region is work like drawing it.
+               Outcome := Rendering.Charge (P, S, Regions.Size (Region));
+               if not Results.Succeeded (Outcome) then
+                  return Outcome;
+               end if;
                Regions.Translate (Region, -P.Origin_H, -P.Origin_V);
                if Verb = 0 then
                   Coverage.Region_Frame (Shape, Region, P.Pen_Width, P.Pen_Height);
@@ -233,10 +247,20 @@ package body Pictlib.Internal.Drawing is
       return Rendering.Fill (P, S, Shape, Paint_For (P, Verb));
    end Draw_Shape;
 
-   function Draw_Line (P : in out Rendering.Painter; S : Sessions.Session; From, To : Point) return Results.Result is
+   function Draw_Line
+     (P : in out Rendering.Painter;
+      S : Sessions.Session;
+      Event : Pictures.Opcode_Event;
+      From, To : Point) return Results.Result
+   is
       Shape : Coverage.Shape;
    begin
-      Coverage.Start (Shape, P.Window);
+      if not Rendering.Within_Reach (To.H) then
+         return Out_Of_Reach (Event, To.H);
+      elsif not Rendering.Within_Reach (To.V) then
+         return Out_Of_Reach (Event, To.V);
+      end if;
+      Coverage.Start (Shape, P.Window, Rendering.Allowance (P, S));
       Coverage.Line (Shape, From, To, P.Pen_Width, P.Pen_Height);
       P.Pen_H := To.H;
       P.Pen_V := To.V;
@@ -275,7 +299,7 @@ package body Pictlib.Internal.Drawing is
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
-      return Draw_Line (P, S, From, To);
+      return Draw_Line (P, S, Event, From, To);
    end Consume_Line;
 
    --  LongText, DHText, DVText, DHDVText: move the text origin, then draw the characters from it.
@@ -308,6 +332,11 @@ package body Pictlib.Internal.Drawing is
                Outcome := Sessions.Read_Count_Byte (S, Offset);
                P.Text_State.Origin_V := P.Text_State.Origin_V + Natural (Offset);
             end if;
+            if Results.Succeeded (Outcome) and then not Rendering.Within_Reach (P.Text_State.Origin_H) then
+               return Out_Of_Reach (Event, P.Text_State.Origin_H);
+            elsif Results.Succeeded (Outcome) and then not Rendering.Within_Reach (P.Text_State.Origin_V) then
+               return Out_Of_Reach (Event, P.Text_State.Origin_V);
+            end if;
          end;
       end if;
       if Results.Succeeded (Outcome) then
@@ -337,9 +366,8 @@ package body Pictlib.Internal.Drawing is
    begin
       Handled := True;
       case Event.Op is
-         when 16#0001# =>  --  Clip
+         when 16#0001# =>  --  Clip, kept in local coordinates
             Outcome := Regions.Read (S, P.Clip);
-            Regions.Translate (P.Clip, -P.Origin_H, -P.Origin_V);
             P.Has_Clip := Results.Succeeded (Outcome);
          when 16#0002# =>
             Outcome := Patterns.Read_Bit_Pattern (S, P.Back_Pattern);
@@ -373,9 +401,13 @@ package body Pictlib.Internal.Drawing is
                Outcome := Read_Size (S, Dh, Dv);
                --  Origin's data is dh, then dv.
                if Results.Succeeded (Outcome) then
+                  if not Rendering.Within_Reach (P.Origin_H + Dh) then
+                     return Out_Of_Reach (Event, P.Origin_H + Dh);
+                  elsif not Rendering.Within_Reach (P.Origin_V + Dv) then
+                     return Out_Of_Reach (Event, P.Origin_V + Dv);
+                  end if;
                   P.Origin_H := P.Origin_H + Dh;
                   P.Origin_V := P.Origin_V + Dv;
-                  Regions.Translate (P.Clip, -Dh, -Dv);
                end if;
             end;
          when 16#000E# | 16#000F# =>

@@ -368,8 +368,11 @@ package body Pictlib_Testing.Test_Rendering is
               and then Outcome.First_Error.Context.Op = 16#98# and then Outcome.First_Error.Context.Row = 0
               and then Outcome.First_Error.Context.Expected = 8 and then Outcome.First_Error.Context.Actual = 4,
               "a short packed row was accepted");
-      Expect_Lenient (Short_Packed_Row, 64, 1, [1 .. 32 => 'B'] & [1 .. 32 => 'W'], Pictlib.Errors.Recovery_Applied,
-                      "short packed row");
+      --  A row that unpacks short is never patched: Compatible fails, Recover_When_Safe keeps what came before.
+      Expect_Render_Failure (Short_Packed_Row, 64, 1, Pictlib.Errors.PackBits_Invalid, "short packed row, compatible",
+                             Op => 16#98#, Options => (Strictness => Pictlib.Compatible, others => <>));
+      Expect_Lenient (Short_Packed_Row, 64, 1, [1 .. 64 => 'W'], Pictlib.Errors.Partial_Picture,
+                      "short packed row", Pictlib.Recover_When_Safe);
 
       Expect_Render_Failure (Undefined_Index, 4, 2, Pictlib.Errors.Color_Table_Invalid, "undefined index", 16#98#);
       Expect_Lenient (Undefined_Index, 4, 2, "RGBR/UUGR", Pictlib.Errors.Recovery_Applied, "undefined index");

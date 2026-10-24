@@ -2,6 +2,23 @@
 
 ## 0.1.0-dev
 
+- Library fixes from code review, each with a reproducer in the new
+  `hostile` AUnit tests. A line from (-32768, -32768) to (32767, 32767) no
+  longer raises `Constraint_Error`. The origin, line ends and text origin are
+  bounded to ±2^24 (`Opcode_Invalid` beyond), and the clip region stays in
+  local coordinates, so moving the origin no longer translates it. Shape
+  building is checked against the drawing budget as it goes and stops when
+  the budget is spent, lines hold only the rows their pen can bring into the
+  frame, and spans arriving left to right are appended in place. A planar
+  `cmpCount` other than 3 or 4 is `Pixmap_Invalid` when enumerating too, and
+  a PixPat's rows are skipped with the layout rendering decodes them with.
+  Copied rows are charged as drawing work, drawn or not, and a PackBits row
+  of the wrong length is `PackBits_Invalid` in every mode, as the
+  specification says (`Recover_When_Safe` ends the picture as partial). A
+  missing glyph's metrics are defined, a QuickTime image no longer hides the
+  placeholder after a later image that was not drawn, and a QuickTime image
+  whose RGB buffer would pass 2^31 - 1 bytes is `Limit_Exceeded`. The fuzzer
+  also writes extreme points and repeats short chunks.
 - Tooling fixes from code review. `pictlib_generate` makes everything in a
   staging directory and copies it into place only when every step succeeded,
   refuses `--output` without a value, and no longer raises on a missing

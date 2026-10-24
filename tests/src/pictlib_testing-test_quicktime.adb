@@ -201,6 +201,9 @@ package body Pictlib_Testing.Test_QuickTime is
       After_Unsupported : aliased constant Bytes :=
         Image (QuickTime ("rle ", Image_Width, Image_Height, [1, 2, 3]) & Placeholder, 8, 6);
       Not_Next : aliased constant Bytes := Image (Plain & W (16#00A0#) & W (0) & Placeholder, 8, 6);
+      --  An image drawn, then one that is not: only the second one's placeholder follows, and it is drawn.
+      Drawn_Then_Not : aliased constant Bytes :=
+        Image (Plain & QuickTime ("rle ", Image_Width, Image_Height, [1, 2, 3]) & Placeholder, 8, 6);
    begin
       Expect (After_Image, 8, 6, Identity'Access, "the placeholder after an image is skipped");
       Canvases.Expect_Raster (After_Unsupported, 8, 6, "BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB",
@@ -208,6 +211,9 @@ package body Pictlib_Testing.Test_QuickTime is
                               (Strictness => Pictlib.Compatible, others => <>));
       Canvases.Expect_Raster (Not_Next, 8, 6, "BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB",
                               "only the opcode right after the image is skipped");
+      Canvases.Expect_Raster (Drawn_Then_Not, 8, 6, "BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB",
+                              "a drawn image does not hide a later placeholder",
+                              (Strictness => Pictlib.Compatible, others => <>));
    end Placeholder_Bitmap;
 
    procedure Unsupported_Images (T : in out AUnit.Test_Cases.Test_Case'Class) is

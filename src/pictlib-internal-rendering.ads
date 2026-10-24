@@ -19,6 +19,15 @@ with Pictlib.Results;
 package Pictlib.Internal.Rendering is
    subtype Area is Regions.Area;
 
+   --  The origin, the pen location and the text origin stay within this many units of picture coordinate 0, so
+   --  every coordinate derived from them fits the arithmetic the renderer uses.
+   Reach : constant := 2 ** 24;
+
+   --  Within reach.
+   --  @param Value A picture coordinate.
+   --  @return True when Value is within Reach.
+   function Within_Reach (Value : Integer) return Boolean is (Value in -Reach .. Reach);
+
    type Painter is limited record
       Target : Canvas.Canvas;
       --  The canvas in picture coordinates.
@@ -26,6 +35,7 @@ package Pictlib.Internal.Rendering is
       Origin_H : Integer := 0;
       Origin_V : Integer := 0;
       Has_Clip : Boolean := False;
+      --  In local coordinates, as read: the clip keeps them when the origin moves, so moving costs nothing.
       Clip : Regions.Region;
       Colors : Transfer_Modes.Port_Colors;
       Pen_Width : Integer := 1;
@@ -95,6 +105,10 @@ package Pictlib.Internal.Rendering is
    --  @param Units Units of work about to be done.
    --  @return Success, or Limit_Exceeded when the drawing budget would be crossed.
    function Charge (P : in out Painter; S : Sessions.Session; Units : Natural) return Results.Result;
+   --  Drawing work still allowed, capped to a shape's allowance.
+   function Allowance (P : Painter; S : Sessions.Session) return Natural is
+     (Natural (Pixel_Count'Min
+        (S.Budget.Max_Drawing_Work - Pixel_Count'Min (P.Work, S.Budget.Max_Drawing_Work), Pixel_Count (Natural'Last))));
 
    --  Unsupported.
    --  @param S Session whose strictness decides.
@@ -115,7 +129,7 @@ package Pictlib.Internal.Rendering is
       Kind : out Transfer_Modes.Mode_Kind) return Results.Result;
 
    --  Clip row.
-   --  @param P Painter whose Row_Spans are narrowed to the clip region's row Y.
+   --  @param P Painter whose Row_Spans are narrowed to the clip region's row Y, moved by the origin.
    --  @param S Session whose drawing budget applies.
    --  @param Y Picture row.
    --  @return Success, or Limit_Exceeded when the drawing budget is crossed.

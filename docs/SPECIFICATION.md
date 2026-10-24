@@ -92,7 +92,8 @@ are retained, never interpreted.
 - Coordinates read from the picture are local. `Origin` (`dh`, `dv`) moves the local system and
   accumulates; a local point `p` is picture point `p − origin`. The clip region keeps its local
   coordinates when the origin moves, as `SetOrigin` leaves `clipRgn` alone. Pen location is kept
-  in picture coordinates.
+  in picture coordinates. The origin, line ends and the text origin stay within ±2^24: an opcode
+  that would move one further fails with `Opcode_Invalid`, so no coordinate arithmetic overflows.
 - Pixel model: pixel `(x, y)` is the unit square from `(x, y)` to `(x + 1, y + 1)`; a rectangle
   covers columns `left .. right − 1` and rows `top .. bottom − 1`. The pen is `pnSize`
   (`v`, `h` = height, width) and hangs below and right of its location. A zero or negative pen
@@ -166,7 +167,9 @@ are retained, never interpreted.
   0/default uses PackBits on bytes (indexed) or on 16-bit words (16 bpp, pack type 3); 32 bpp uses
   pack type 2 (pad byte dropped, unpacked RGB) or 4 (PackBits over component planes, A plane first
   when `cmpCount = 4`). A row that unpacks to more or fewer than its row length fails with
-  `PackBits_Invalid`.
+  `PackBits_Invalid` in every mode; `Recover_When_Safe` ends the picture there, as partial. A
+  planar `cmpCount` other than 3 or 4 is `Pixmap_Invalid` when enumerating too, since the row
+  length depends on it.
 - Color tables: seed, flags (`16#8000#` = device table, index is entry position), `ctSize`
   (count − 1, at most 255; `16#FFFF#` is an empty table) and entries of value plus 16-bit R, G, B. Entries are reduced to
   8 bits by taking the high byte. An index beyond the table fails with `Color_Table_Invalid` in
@@ -419,7 +422,9 @@ opcode, region bytes, polygon points, total picture bytes, total drawing work (p
 counting every shape and scaled copy), retained metadata, allocation, output bytes, embedded image
 bytes and pixels, warnings. Every input-derived size is checked with `Checked_Arithmetic` before
 allocation, indexing or a loop bound. Drawing work is the guard against tiny pictures with huge
-repeated fills.
+repeated fills. It counts every pixel row a copy converts, drawn or not, and the work of building
+each shape, which stops as soon as it would exceed what is left of the budget (at most 2^31 − 1
+units for one shape); only the path rows a line's pen can bring into the frame are held.
 
 ## 10. Errors and diagnostics
 

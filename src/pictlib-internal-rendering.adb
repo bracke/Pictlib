@@ -87,7 +87,11 @@ package body Pictlib.Internal.Rendering is
       if not P.Has_Clip then
          return Results.Success;
       end if;
-      Regions.Row_Spans (P.Clip, Y, P.Clip_Spans, Work);
+      --  The clip is local: picture row Y is its row Y + origin, and its columns lie origin to the right.
+      Regions.Row_Spans (P.Clip, Y + P.Origin_V, P.Clip_Spans, Work);
+      for Item of P.Clip_Spans loop
+         Item := (Item.Left - P.Origin_H, Item.Right - P.Origin_H);
+      end loop;
       Regions.Intersect (P.Row_Spans, P.Clip_Spans, P.Scratch);
       P.Row_Spans.Move (P.Scratch);
       return Charge (P, S, Work);
@@ -107,7 +111,13 @@ package body Pictlib.Internal.Rendering is
       Shape : Coverage.Shape;
       How : Paint) return Results.Result
    is
-      Outcome : Results.Result := Charge (P, S, Coverage.Work (Shape));
+      --  A shape that spent its allowance, the budget left or at most Natural'Last, is over the limit.
+      Outcome : Results.Result :=
+        (if Coverage.Exhausted (Shape)
+         then Sessions.Over_Limit
+                (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
+                 Byte_Count (P.Work) + Byte_Count (Coverage.Work (Shape)))
+         else Charge (P, S, Coverage.Work (Shape)));
       Colorize : constant Boolean := Patterns.Kind (How.Source) = Patterns.Bit_Pattern;
       Kind : constant Transfer_Modes.Mode_Kind :=
         (if P.Hilite_Next then Transfer_Modes.Hilite else How.Mode);
@@ -305,7 +315,11 @@ package body Pictlib.Internal.Rendering is
       Outcome := Pixmaps.Start (S, Decoder, Header);
       for Row in 0 .. Header.Height - 1 loop
          exit when not Results.Succeeded (Outcome);
-         Outcome := Pixmaps.Read_Row (S, Decoder, Row);
+         --  Each row is converted whether or not any of it is drawn.
+         Outcome := Charge (P, S, Header.Width + 1);
+         if Results.Succeeded (Outcome) then
+            Outcome := Pixmaps.Read_Row (S, Decoder, Row);
+         end if;
          if Results.Succeeded (Outcome) then
             Outcome := Put_Row (P, S, Header, Source, Destination, Kind, Mask, Decoder,
                                 Integer (Header.Bounds.Top) + Row);

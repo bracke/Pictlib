@@ -79,6 +79,8 @@ package body Pictlib.Internal.QuickTime is
       function Read_Long (Value : out Interfaces.Unsigned_32) return Results.Result is
         (Sessions.Read_Long (S, Value));
    begin
+      --  Only an image drawn by this opcode hides the bits opcode after it.
+      P.Skip_Next_Bits := False;
       if Length < Header_Bytes + Description_Bytes then
          return Too_Long (Header_Bytes + Description_Bytes);
       end if;
@@ -200,9 +202,12 @@ package body Pictlib.Internal.QuickTime is
             return Sessions.Over_Limit
               (S, Embedded_Image_Pixel_Limit, Byte_Count (S.Budget.Max_Embedded_Image_Pixels),
                Byte_Count (Image_Width) * Byte_Count (Image_Height));
-         elsif 3 * Byte_Count (Image_Width) * Byte_Count (Image_Height) > S.Budget.Max_Allocation_Bytes then
+         elsif 3 * Byte_Count (Image_Width) * Byte_Count (Image_Height)
+           > Byte_Count'Min (S.Budget.Max_Allocation_Bytes, Byte_Count (Natural'Last))
+         then
+            --  The pixels are one buffer indexed by Natural, whatever the budget allows.
             return Sessions.Over_Limit
-              (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes,
+              (S, Allocation_Byte_Limit, Byte_Count'Min (S.Budget.Max_Allocation_Bytes, Byte_Count (Natural'Last)),
                3 * Byte_Count (Image_Width) * Byte_Count (Image_Height));
          end if;
 

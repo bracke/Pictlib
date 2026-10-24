@@ -60,10 +60,12 @@ package body Pictlib.Internal.Coverage is
    function Height_Of (Item : Shape) return Natural is
      (Natural'Max (0, Item.Window.Bottom - Item.Window.Top));
 
-   procedure Start (Item : out Shape; Window : Area) is
+   procedure Start (Item : out Shape; Window : Area; Allowance : Natural := Natural'Last) is
    begin
       Item.Window := Window;
       Item.Units := 0;
+      Item.Allowance := Allowance;
+      Item.Spent := False;
       Item.Rows.Clear;
       Item.Rows.Set_Length (Ada.Containers.Count_Type (Natural'Max (0, Window.Bottom - Window.Top)));
    end Start;
@@ -76,9 +78,17 @@ package body Pictlib.Internal.Coverage is
 
    function Work (Item : Shape) return Natural is (Item.Units);
 
+   function Exhausted (Item : Shape) return Boolean is (Item.Spent);
+
+   function Remaining (Item : Shape) return Natural is
+     (if Item.Units >= Item.Allowance then 0 else Item.Allowance - Item.Units);
+
    procedure Charge (Item : in out Shape; Units : Natural) is
    begin
       Item.Units := (if Natural'Last - Item.Units < Units then Natural'Last else Item.Units + Units);
+      if Item.Units > Item.Allowance then
+         Item.Spent := True;
+      end if;
    end Charge;
 
    --  Add pixels Left .. Right - 1 of row Y, merging with what the row holds.
@@ -89,6 +99,20 @@ package body Pictlib.Internal.Coverage is
       if Y not in Item.Window.Top .. Item.Window.Bottom - 1 or else First >= Last then
          return;
       end if;
+      --  Spans mostly arrive left to right: append, or widen the last span, in place.
+      declare
+         Row : Span_List renames Item.Rows.Reference (Y - Item.Window.Top).Element.all;
+      begin
+         Charge (Item, 1);
+         if Row.Is_Empty or else Row.Last_Element.Right < First then
+            Row.Append (Regions.Span'(First, Last));
+            return;
+         elsif Row.Last_Element.Left <= First then
+            Row.Replace_Element
+              (Row.Last_Index, Regions.Span'(Row.Last_Element.Left, Integer'Max (Row.Last_Element.Right, Last)));
+            return;
+         end if;
+      end;
       declare
          Old : constant Span_List := Item.Rows (Y - Item.Window.Top);
          Merged : Span_List;
@@ -128,6 +152,7 @@ package body Pictlib.Internal.Coverage is
    begin
       if Row_Range (Item, Bounds, First, Last) then
          for Y in First .. Last loop
+            exit when Item.Spent;
             Add (Item, Y, Bounds.Left, Bounds.Right);
          end loop;
       end if;
@@ -167,6 +192,7 @@ package body Pictlib.Internal.Coverage is
    begin
       if Row_Range (Item, Bounds, First, Last) then
          for Y in First .. Last loop
+            exit when Item.Spent;
             if Oval_Row (Bounds, Y, Left, Right) then
                Add (Item, Y, Left, Right);
             end if;
@@ -189,6 +215,7 @@ package body Pictlib.Internal.Coverage is
          Corner : constant Area := (0, 0, Height, Width);
       begin
          for Y in First .. Last loop
+            exit when Item.Spent;
             declare
                Oval_Y : constant Integer :=
                  (if Y < Bounds.Top + Height / 2 then Y - Bounds.Top
@@ -241,6 +268,7 @@ package body Pictlib.Internal.Coverage is
          end Inside;
       begin
          for Index in 0 .. Height_Of (Item) - 1 loop
+            exit when Item.Spent;
             declare
                Y : constant Integer := Item.Window.Top + Index;
                Old : constant Span_List := Item.Rows (Index);
@@ -311,6 +339,7 @@ package body Pictlib.Internal.Coverage is
       Edge_Sorting.Sort (Edges);
 
       for Y in Item.Window.Top .. Item.Window.Bottom - 1 loop
+         exit when Item.Spent;
          declare
             Row : constant Long_Long_Integer := Long_Long_Integer (Y);
             Center : constant Long_Long_Integer := 2 * Row + 1;
@@ -357,15 +386,19 @@ package body Pictlib.Internal.Coverage is
       package Integer_Vectors is new Ada.Containers.Vectors (Natural, Integer);
       Top : constant Integer := Integer'Min (From.V, To.V);
       Bottom : constant Integer := Integer'Max (From.V, To.V);
+      --  Only the path rows whose pen reaches the window are kept.
+      Kept_Top : constant Integer := Integer'Max (Top, Item.Window.Top - Pen_Height + 1);
+      Kept_Bottom : constant Integer := Integer'Min (Bottom, Item.Window.Bottom - 1);
       Low_X, High_X : Integer_Vectors.Vector;
-      Increasing : constant Boolean := (To.H - From.H) * (To.V - From.V) >= 0;
+      --  Along a line the columns move one way as the rows go down.
+      Increasing : constant Boolean := (To.H >= From.H) = (To.V >= From.V);
    begin
-      if Pen_Width <= 0 or else Pen_Height <= 0 then
+      if Pen_Width <= 0 or else Pen_Height <= 0 or else Kept_Top > Kept_Bottom then
          return;
       end if;
-      Low_X.Set_Length (Ada.Containers.Count_Type (Bottom - Top + 1));
-      High_X.Set_Length (Ada.Containers.Count_Type (Bottom - Top + 1));
-      for Index in 0 .. Bottom - Top loop
+      Low_X.Set_Length (Ada.Containers.Count_Type (Kept_Bottom - Kept_Top + 1));
+      High_X.Set_Length (Ada.Containers.Count_Type (Kept_Bottom - Kept_Top + 1));
+      for Index in 0 .. Kept_Bottom - Kept_Top loop
          Low_X (Index) := Integer'Last;
          High_X (Index) := Integer'First;
       end loop;
@@ -379,10 +412,12 @@ package body Pictlib.Internal.Coverage is
          Error : Integer := Dx + Dy;
       begin
          loop
-            Low_X (Y - Top) := Integer'Min (Low_X (Y - Top), X);
-            High_X (Y - Top) := Integer'Max (High_X (Y - Top), X);
+            if Y in Kept_Top .. Kept_Bottom then
+               Low_X (Y - Kept_Top) := Integer'Min (Low_X (Y - Kept_Top), X);
+               High_X (Y - Kept_Top) := Integer'Max (High_X (Y - Kept_Top), X);
+            end if;
             Charge (Item, 1);
-            exit when X = To.H and then Y = To.V;
+            exit when Item.Spent or else (X = To.H and then Y = To.V);
             if 2 * Error >= Dy then
                Error := Error + Dy;
                X := X + Step_X;
@@ -393,12 +428,15 @@ package body Pictlib.Internal.Coverage is
             end if;
          end loop;
       end;
-      --  Row Y is covered by the pen at every path row from Y - Pen_Height + 1 to Y; along a line the path's
-      --  columns move one way, so the extremes are at the ends of that window.
-      for Y in Integer'Max (Top, Item.Window.Top) .. Integer'Min (Bottom + Pen_Height, Item.Window.Bottom) - 1 loop
+      if Item.Spent then
+         return;
+      end if;
+      --  Row Y is covered by the pen at every path row from Y - Pen_Height + 1 to Y, the extremes at the ends.
+      for Y in Integer'Max (Kept_Top, Item.Window.Top) .. Integer'Min (Kept_Bottom + Pen_Height, Item.Window.Bottom) - 1
+      loop
          declare
-            First : constant Integer := Integer'Max (Top, Y - Pen_Height + 1) - Top;
-            Last : constant Integer := Integer'Min (Bottom, Y) - Top;
+            First : constant Integer := Integer'Max (Kept_Top, Y - Pen_Height + 1) - Kept_Top;
+            Last : constant Integer := Integer'Min (Kept_Bottom, Y) - Kept_Top;
             Left : constant Integer := (if Increasing then Low_X (First) else Low_X (Last));
             Right : constant Integer := (if Increasing then High_X (Last) else High_X (First));
          begin
@@ -415,6 +453,7 @@ package body Pictlib.Internal.Coverage is
    begin
       if Row_Range (Item, Box, First, Last) then
          for Y in First .. Last loop
+            exit when Item.Spent;
             Regions.Row_Spans (Source, Y, Spans, Units);
             Charge (Item, Units);
             for S of Spans loop
@@ -440,6 +479,7 @@ package body Pictlib.Internal.Coverage is
          Units : Natural;
       begin
          for Y in Low .. High loop
+            exit when Item.Spent;
             Regions.Row_Spans (Source, Y, Spans, Units);
             Charge (Item, Units);
             Whole.Append (Spans);
@@ -455,6 +495,7 @@ package body Pictlib.Internal.Coverage is
             end;
          end loop;
          for Y in First .. Last loop
+            exit when Item.Spent;
             declare
                Eroded : Span_List;
                Scratch : Span_List;
@@ -462,6 +503,7 @@ package body Pictlib.Internal.Coverage is
                if Y - Pen_Height >= Box.Top and then Y + Pen_Height <= Box.Bottom - 1 then
                   Eroded := Narrowed (Y - Pen_Height - Low);
                   for R in Y - Pen_Height + 1 .. Y + Pen_Height loop
+                     exit when Item.Spent;
                      Regions.Intersect (Eroded, Narrowed (R - Low), Scratch);
                      Eroded := Scratch;
                      Charge (Item, Natural (Eroded.Length) + 1);
@@ -501,7 +543,11 @@ package body Pictlib.Internal.Coverage is
 
    procedure Subtract (Item : in out Shape; Other : Shape) is
    begin
+      --  Taking away an incomplete shape leaves an incomplete one.
+      Charge (Item, Other.Units);
+      Item.Spent := Item.Spent or else Other.Spent;
       for Index in 0 .. Height_Of (Item) - 1 loop
+         exit when Item.Spent;
          declare
             Kept : Span_List := Item.Rows (Index);
          begin

@@ -125,7 +125,7 @@ procedure Pictlib_Fuzz is
             exit when Length = 0;
             declare
                At_Byte : constant Positive := Current'First + Random (Length);
-               Choice : constant Natural := Random (8);
+               Choice : constant Natural := Random (10);
             begin
                case Choice is
                   when 0 =>  --  flip a bit
@@ -183,14 +183,44 @@ procedure Pictlib_Fuzz is
                           (Bytes'(Current (Current'First .. At_Byte - 1) & Inserted
                                   & Current (At_Byte .. Current'Last)));
                      end;
+                  when 7 =>  --  an extreme point: both words at the ends of their range
+                     if At_Byte + 2 < Current'Last then
+                        declare
+                           Changed : Bytes := Current;
+                           Ends : constant Bytes := [16#80#, 16#00#, 16#7F#, 16#FF#];
+                        begin
+                           for Offset in 0 .. 1 loop
+                              declare
+                                 Pick : constant Natural := 2 * Random (2);
+                              begin
+                                 Changed (At_Byte + 2 * Offset) := Ends (Ends'First + Pick);
+                                 Changed (At_Byte + 2 * Offset + 1) := Ends (Ends'First + Pick + 1);
+                              end;
+                           end loop;
+                           Data.Append (Changed);
+                        end;
+                     end if;
+                  when 8 =>  --  repeat a short chunk, as runaway origins, pens and text do, up to 64 KiB
+                     declare
+                        Last : constant Natural := Natural'Min (Current'Last, At_Byte + 1 + Random (15));
+                        Chunk : constant Bytes := Current (At_Byte .. Last);
+                        Times : constant Positive := 1 + Random (65_536 / Chunk'Length);
+                        Repeated : Bytes (1 .. Chunk'Length * Times);
+                     begin
+                        for Index in 0 .. Times - 1 loop
+                           Repeated (1 + Index * Chunk'Length .. (Index + 1) * Chunk'Length) := Chunk;
+                        end loop;
+                        Data.Append
+                          (Bytes'(Current (Current'First .. Last) & Repeated & Current (Last + 1 .. Current'Last)));
+                     end;
                   when others =>  --  plant an opcode
                      if At_Byte < Current'Last then
                         declare
                            Changed : Bytes := Current;
-                           Ops : constant array (1 .. 12) of Natural :=
-                             [16#0001#, 16#0012#, 16#0028#, 16#0070#, 16#0081#, 16#0090#, 16#0098#, 16#009A#,
-                              16#00A1#, 16#00FF#, 16#0C00#, 16#8200#];
-                           Value : constant Natural := Ops (1 + Random (12));
+                           Ops : constant array (1 .. 15) of Natural :=
+                             [16#0001#, 16#000C#, 16#0012#, 16#0023#, 16#0028#, 16#0029#, 16#0070#, 16#0081#,
+                              16#0090#, 16#0098#, 16#009A#, 16#00A1#, 16#00FF#, 16#0C00#, 16#8200#];
+                           Value : constant Natural := Ops (1 + Random (15));
                         begin
                            Changed (At_Byte) := Pictlib.Byte (Value / 256);
                            Changed (At_Byte + 1) := Pictlib.Byte (Value mod 256);
