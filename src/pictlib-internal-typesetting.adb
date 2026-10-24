@@ -16,19 +16,12 @@ package body Pictlib.Internal.Typesetting is
    Ink_Threshold : constant := 128;
    Space : constant := 16#20#;
 
-   function Context_Of (Event : Pictures.Opcode_Event) return Errors.Diagnostic_Context is
-     ((Source => Event.Offset, Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal, others => <>));
 
    function Has (Face : Byte; Bit : Byte) return Boolean is ((Face and Bit) /= 0);
 
    function Unavailable (S : in out Sessions.Session; Event : Pictures.Opcode_Event) return Results.Result is
-   begin
-      if not Sessions.Is_Lenient (S) then
-         return Results.Failure (Errors.Make (Errors.Font_Unavailable, Context_Of (Event)));
-      end if;
-      Sessions.Warn (S, Errors.Approximated_Rendering, Errors.Data_Loss, Context_Of (Event));
-      return Results.Success;
-   end Unavailable;
+     (Sessions.Reject_Or_Warn
+        (S, Errors.Font_Unavailable, Errors.Approximated_Rendering, Errors.Data_Loss, Sessions.Context_Of (Event)));
 
    --  The characters, with the font in Slot loaded; called under the textrender lock.
    function Draw_Characters
@@ -77,7 +70,7 @@ package body Pictlib.Internal.Typesetting is
          begin
             Outcome := Sessions.Admit_Allocation (S, Text.Atlas_Bytes (Size) + File);
             if Results.Succeeded (Outcome) then
-               Outcome := Rendering.Charge (P, S, Text.Load_Work (Size, File));
+               Outcome := Sessions.Charge_Work (S, Text.Load_Work (Size, File));
             end if;
          end;
          if not Results.Succeeded (Outcome) then
@@ -188,7 +181,7 @@ package body Pictlib.Internal.Typesetting is
          exit when not Results.Succeeded (Outcome);
          --  Every glyph request is drawing work, wherever the character lands; control characters draw nothing.
          if Item >= Space then
-            Outcome := Rendering.Charge (P, S, Text.Glyph_Work (Size));
+            Outcome := Sessions.Charge_Work (S, Text.Glyph_Work (Size));
             exit when not Results.Succeeded (Outcome);
             declare
                --  Defined even when the font lacks the glyph and leaves it alone.
@@ -201,7 +194,7 @@ package body Pictlib.Internal.Typesetting is
             begin
                if Status /= Textrender.Success and then not Missing_Reported then
                   Sessions.Warn (S, Errors.Data_Loss, Errors.Data_Loss,
-                                 (Context_Of (Event) with delta Actual => Byte_Count (Item)));
+                                 (Sessions.Context_Of (Event) with delta Actual => Byte_Count (Item)));
                   Missing_Reported := True;
                end if;
                if Item = Space then

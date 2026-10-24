@@ -122,13 +122,9 @@ package body Pictlib.Internal.Opcode_Reader is
       end if;
       if Data'Length < 3 or else Natural (Data (3)) > Data'Length - 3 then
          Sessions.Free (Data);
-         if not Sessions.Is_Lenient (S) then
-            return Sessions.Fail (S, Errors.Opcode_Length_Invalid, 3, Length);
-         end if;
-         Sessions.Warn (S, Errors.Data_Loss, Errors.Data_Loss,
-                        (Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal, Actual => Length,
-                         others => <>));
-         return Results.Success;
+         return Sessions.Reject_Or_Warn
+           (S, Errors.Opcode_Length_Invalid, Errors.Data_Loss, Errors.Data_Loss,
+            (Sessions.Context_Of (Event) with delta Source => 0, Expected => 3, Actual => Length));
       end if;
       declare
          Name_Length : constant Natural := Natural (Data (3));
@@ -136,7 +132,7 @@ package body Pictlib.Internal.Opcode_Reader is
            Interfaces.Shift_Left (Interfaces.Unsigned_16 (Data (1)), 8) or Interfaces.Unsigned_16 (Data (2));
       begin
          if Paint /= null then
-            Outcome := Sessions.Admit_Aggregate (S, Byte_Count (Name_Length) + 128);
+            Outcome := Sessions.Admit_Aggregate (S, Byte_Count (Name_Length) + Sessions.Item_Overhead_Bytes);
             if not Results.Succeeded (Outcome) then
                Sessions.Free (Data);
                return Outcome;

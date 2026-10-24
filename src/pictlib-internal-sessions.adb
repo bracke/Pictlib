@@ -10,6 +10,7 @@ package body Pictlib.Internal.Sessions is
       Metadata_Store.Clear (S.Store);
       Diagnostics.Clear (S.Log);
       S.Total_Allocation_Bytes := 0;
+      S.Work_Used := 0;
       S.Next_Ordinal := 0;
       S.Data_Start := 0;
       S.Has_Pending := False;
@@ -43,50 +44,71 @@ package body Pictlib.Internal.Sessions is
            (Errors.Limit_Exceeded,
             (Source => S.Stream.Offset, Expected => Expected, Actual => Actual, Limit => Limit, others => <>))));
 
-   function Over_Work (S : Session; Used, Units : Pixel_Count) return Results.Result is
+   function Reject_Or_Warn
+     (S : in out Session;
+      Code : Errors.Error_Code;
+      Warning : Errors.Warning_Code;
+      Severity : Errors.Warning_Severity;
+      Context : Errors.Diagnostic_Context) return Results.Result
+   is
+      Item : constant Errors.Diagnostic_Context :=
+        (if Context.Source = 0 then (Context with delta Source => S.Stream.Offset) else Context);
+   begin
+      if not Is_Lenient (S) then
+         return Results.Failure (Errors.Make (Code, Item));
+      end if;
+      Warn (S, Warning, Severity, Item);
+      return Results.Success;
+   end Reject_Or_Warn;
+
+   procedure Start_Drawing (S : in out Session) is
+   begin
+      S.Work_Used := 0;
+   end Start_Drawing;
+
+   function Over_Work (S : Session; Units : Pixel_Count) return Results.Result is
      (Over_Limit
         (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
-         (if Units > Pixel_Count'Last - Used then Byte_Count'Last else Byte_Count (Used + Units))));
+         Byte_Count (Checked_Arithmetic.Saturating_Add (S.Work_Used, Units))));
 
-   function Admit_Allocation
-     (S : in out Session;
-      Length : Byte_Count) return Results.Result is
+   function Charge_Work (S : in out Session; Units : Pixel_Count) return Results.Result is
+   begin
+      if Units > Work_Left (S) then
+         return Over_Work (S, Units);
+      end if;
+      S.Work_Used := S.Work_Used + Units;
+      return Results.Success;
+   end Charge_Work;
+
+   function Charge_Work (S : in out Session; Units : Natural) return Results.Result is
+     (Charge_Work (S, Pixel_Count (Units)));
+
+   function Admit_Allocation (S : in out Session; Length : Byte_Count) return Results.Result is
    begin
       if Length > S.Budget.Max_Allocation_Bytes then
-         return Over_Limit
-           (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Length);
+         return Over_Limit (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Length);
       end if;
       return Admit_Aggregate (S, Length);
    end Admit_Allocation;
 
-   function Admit_Aggregate
-     (S : in out Session;
-      Length : Byte_Count) return Results.Result
-   is
-      Total : constant Byte_Count :=
-        (if Length > Byte_Count'Last - S.Total_Allocation_Bytes
-         then Byte_Count'Last else S.Total_Allocation_Bytes + Length);
+   function Admit_Aggregate (S : in out Session; Length : Byte_Count) return Results.Result is
+      Total : constant Byte_Count := Checked_Arithmetic.Saturating_Add (S.Total_Allocation_Bytes, Length);
    begin
       if Total > S.Budget.Max_Total_Allocation_Bytes then
-         return Over_Limit
-           (S, Total_Allocation_Byte_Limit,
-            S.Budget.Max_Total_Allocation_Bytes, Total);
+         return Over_Limit (S, Total_Allocation_Byte_Limit, S.Budget.Max_Total_Allocation_Bytes, Total);
       end if;
       S.Total_Allocation_Bytes := Total;
       return Results.Success;
    end Admit_Aggregate;
 
-   function Allocation_Allowance
-     (S : Session;
-      Bytes_Per_Unit : Positive) return Pixel_Count
-   is
-      Remaining : constant Byte_Count :=
-        (if S.Total_Allocation_Bytes >= S.Budget.Max_Total_Allocation_Bytes
-         then 0
-         else S.Budget.Max_Total_Allocation_Bytes - S.Total_Allocation_Bytes);
-   begin
-      return Pixel_Count (Remaining / Byte_Count (Bytes_Per_Unit));
-   end Allocation_Allowance;
+   function Allocation_Units_Left (S : Session; Bytes_Per_Unit : Positive) return Pixel_Count is
+     (Pixel_Count
+        ((S.Budget.Max_Total_Allocation_Bytes
+          - Byte_Count'Min (S.Total_Allocation_Bytes, S.Budget.Max_Total_Allocation_Bytes))
+         / Byte_Count (Bytes_Per_Unit)));
+
+   function Shape_Work_Left (S : Session) return Pixel_Count is
+     (Pixel_Count'Min (Work_Left (S), Allocation_Units_Left (S, Shape_Bytes_Per_Work_Unit)));
 
    function Claim_Ordinal (S : in out Session; Ordinal : out Opcode_Ordinal) return Results.Result is
    begin
@@ -152,10 +174,7 @@ package body Pictlib.Internal.Sessions is
    begin
       Keep := Results.Succeeded (Admission);
       if Keep then
-         Admission :=
-           Admit_Aggregate
-             (S, (if Length > Byte_Count'Last - 128
-                  then Byte_Count'Last else Length + 128));
+         Admission := Admit_Aggregate (S, Checked_Arithmetic.Saturating_Add (Length, Item_Overhead_Bytes));
          Keep := Results.Succeeded (Admission);
       end if;
       if Keep then

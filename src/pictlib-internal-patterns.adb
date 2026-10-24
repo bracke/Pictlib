@@ -94,7 +94,7 @@ package body Pictlib.Internal.Patterns is
       --  anything is set aside, so a picture without the budget for its tile never allocates it.
       Needed := Pixel_Count (Header.Width + 1) * Pixel_Count (Header.Height);
       if Needed > Allowance - Pixel_Count'Min (Work, Allowance) then
-         return Sessions.Over_Work (S, S.Budget.Max_Drawing_Work - Allowance, Work + Needed);
+         return Sessions.Over_Work (S, Work + Needed);
       end if;
       --  The tile and the row buffers are one opcode's allocation; the tile is set aside whole, once.
       Outcome := Pixmaps.Start (S, Decoder, Header, Extra => 3 * Pixels);

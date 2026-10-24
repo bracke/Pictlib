@@ -84,9 +84,9 @@ package body Pictlib.Internal.Drawing is
       Outcome : Results.Result := Sessions.Read_Polygon_Size (S, Count);
    begin
       Points.Clear;
-      --  The points are kept: 8 bytes each against the aggregate allocation quota.
+      --  The points are kept, counted against the session's allocation total.
       if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Admit_Aggregate (S, 8 * Byte_Count (Count));
+         Outcome := Sessions.Admit_Aggregate (S, Sessions.Point_Bytes * Byte_Count (Count));
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Sessions.Read_Bounds (S, Box);
@@ -196,7 +196,7 @@ package body Pictlib.Internal.Drawing is
                if not Results.Succeeded (Outcome) then
                   return Outcome;
                end if;
-               Coverage.Start (Shape, P.Window, Rendering.Shape_Allowance (P, S));
+               Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
                Rect_Like (P, Group, Verb, Rendering.To_Picture (P, P.Last_Rect), Start_Angle, Arc_Angle, Shape);
             end;
          when 7 =>
@@ -207,14 +207,14 @@ package body Pictlib.Internal.Drawing is
                end if;
             end if;
             --  The polygon is copied for drawing; the copy counts against the aggregate allocation quota.
-            Outcome := Sessions.Admit_Aggregate (S, 8 * Byte_Count (P.Last_Polygon.Length));
+            Outcome := Sessions.Admit_Aggregate (S, Sessions.Point_Bytes * Byte_Count (P.Last_Polygon.Length));
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
             declare
                Points : Coverage.Point_Vectors.Vector;
             begin
-               Coverage.Start (Shape, P.Window, Rendering.Shape_Allowance (P, S));
+               Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
                for Item of P.Last_Polygon loop
                   Points.Append (Point'(H => Item.H - P.Origin_H, V => Item.V - P.Origin_V));
                end loop;
@@ -235,19 +235,20 @@ package body Pictlib.Internal.Drawing is
                end if;
             end if;
             --  Copying and moving the region is work like drawing it.
-            Outcome := Rendering.Charge (P, S, Regions.Size (P.Last_Region));
+            Outcome := Sessions.Charge_Work (S, Regions.Size (P.Last_Region));
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
-            --  So is the region: its scanlines and inversion points, about 8 bytes a unit of its size.
-            Outcome := Sessions.Admit_Aggregate (S, 8 * Byte_Count (Regions.Size (P.Last_Region)));
+            --  So is the region: its scanlines and inversion points, by its size.
+            Outcome :=
+              Sessions.Admit_Aggregate (S, Sessions.Region_Unit_Bytes * Byte_Count (Regions.Size (P.Last_Region)));
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
             declare
                Region : Regions.Region := P.Last_Region;
             begin
-               Coverage.Start (Shape, P.Window, Rendering.Shape_Allowance (P, S));
+               Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
                Regions.Translate (Region, -P.Origin_H, -P.Origin_V);
                if Verb = 0 then
                   Coverage.Region_Frame (Shape, Region, P.Pen_Width, P.Pen_Height);
@@ -272,7 +273,7 @@ package body Pictlib.Internal.Drawing is
       elsif not Rendering.Within_Reach (To.V) then
          return Out_Of_Reach (Event, To.V);
       end if;
-      Coverage.Start (Shape, P.Window, Rendering.Shape_Allowance (P, S));
+      Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
       Coverage.Line (Shape, From, To, P.Pen_Width, P.Pen_Height);
       P.Pen_H := To.H;
       P.Pen_V := To.V;
@@ -398,12 +399,12 @@ package body Pictlib.Internal.Drawing is
                   --  Decoded straight into the port's pattern, whose old tile goes first: a tile is held once.
                   Outcome :=
                     Patterns.Read_Pixel_Pattern
-                      (S, P.Pattern_Set (Slot), Rendering.Allowance (P, S), Work, Too_Large, Tile_Pixels);
+                      (S, P.Pattern_Set (Slot), Sessions.Work_Left (S), Work, Too_Large, Tile_Pixels);
                else
                   Outcome := Patterns.Read_Bit_Pattern (S, P.Pattern_Set (Slot));
                end if;
                if Results.Succeeded (Outcome) then
-                  Outcome := Rendering.Charge (P, S, Work);
+                  Outcome := Sessions.Charge_Work (S, Work);
                end if;
                --  A tile too large to index read leniently: its 1-bit pattern stands in, reported once the
                --  charge has succeeded. Strictly the read itself failed.

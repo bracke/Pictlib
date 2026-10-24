@@ -1,3 +1,4 @@
+with Pictlib.Internal.Checked_Arithmetic;
 package body Pictlib.Internal.Coverage is
    type Wide is range -2 ** 126 .. 2 ** 126;
 
@@ -84,13 +85,9 @@ package body Pictlib.Internal.Coverage is
    function Remaining (Item : Shape) return Pixel_Count is
      (if Item.Units >= Item.Allowance then 0 else Item.Allowance - Item.Units);
 
-   --  What is left of the allowance, as a region walk's.
-   function Walk_Allowance (Item : Shape) return Natural is
-     (Natural (Pixel_Count'Min (Remaining (Item), Pixel_Count (Natural'Last))));
-
    procedure Add_Work (Item : in out Shape; Units : Pixel_Count) is
    begin
-      Item.Units := (if Pixel_Count'Last - Item.Units < Units then Pixel_Count'Last else Item.Units + Units);
+      Item.Units := Checked_Arithmetic.Saturating_Add (Item.Units, Units);
       if Item.Units > Item.Allowance then
          Item.Spent := True;
       end if;
@@ -494,13 +491,13 @@ package body Pictlib.Internal.Coverage is
       Box : constant Area := Regions.Bounds (Source);
       First, Last : Integer;
       Spans : Span_List;
-      Units : Natural;
+      Units : Pixel_Count;
    begin
       if Row_Range (Item, Box, First, Last) then
          for Y in First .. Last loop
             exit when Item.Spent;
-            Regions.Row_Spans (Source, Y, Spans, Units, Walk_Allowance (Item));
-            Charge (Item, Units);
+            Regions.Row_Spans (Source, Y, Spans, Units, Remaining (Item));
+            Add_Work (Item, Units);
             for S of Spans loop
                Add (Item, Y, S.Left, S.Right);
             end loop;
@@ -521,12 +518,12 @@ package body Pictlib.Internal.Coverage is
          High : constant Integer := Integer'Min (Box.Bottom - 1, Last + Pen_Height);
          Whole, Narrowed : Row_Vectors.Vector;
          Spans : Span_List;
-         Units : Natural;
+         Units : Pixel_Count;
       begin
          for Y in Low .. High loop
             exit when Item.Spent;
-            Regions.Row_Spans (Source, Y, Spans, Units, Walk_Allowance (Item));
-            Charge (Item, Units);
+            Regions.Row_Spans (Source, Y, Spans, Units, Remaining (Item));
+            Add_Work (Item, Units);
             Whole.Append (Spans);
             declare
                Inset : Span_List;

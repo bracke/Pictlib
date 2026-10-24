@@ -7,11 +7,13 @@ with Pictlib.Internal.Metadata_Store;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Limits;
 with Pictlib.Metadata;
+with Pictlib.Pictures;
 with Pictlib.Results;
 with Pictlib.Streams;
 
 --  One picture's decoding session: the bounded stream, the decoding policy, retained metadata and warnings,
---  and the budget-checked readers every opcode's data goes through.
+--  the budget-checked readers every opcode's data goes through, and the session's accounting: the drawing work
+--  done, the allocations admitted, and the one place each overrun is reported.
 package Pictlib.Internal.Sessions is
    type Session is limited record
       Stream : Picture_Stream.Reader;
@@ -21,7 +23,10 @@ package Pictlib.Internal.Sessions is
       Budget : Limits.Limit_Set := Limits.Default_Limits;
       Store : Metadata_Store.Store;
       Log : Diagnostics.Warning_Log;
+      --  Allocations admitted this session, never given back.
       Total_Allocation_Bytes : Byte_Count := 0;
+      --  Drawing work done in the current render.
+      Work_Used : Pixel_Count := 0;
       Next_Ordinal : Opcode_Ordinal := 0;
       --  Picture offset where the current opcode's data begins.
       Data_Start : Byte_Count := 0;
@@ -77,22 +82,87 @@ package Pictlib.Internal.Sessions is
    --  @return A Limit_Exceeded failure.
    function Over_Limit (S : Session; Limit : Limit_Kind; Expected, Actual : Byte_Count) return Results.Result;
 
+   --  Context of.
+   --  @param Event An opcode.
+   --  @return A diagnostic context naming it: its offset, opcode and ordinal.
+   function Context_Of (Event : Pictures.Opcode_Event) return Errors.Diagnostic_Context is
+     ((Source => Event.Offset, Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal, others => <>));
+
+   --  Reject or warn: the strictness rule for a deviation a lenient session tolerates.
+   --  @param S Session whose strictness decides and whose log records the warning.
+   --  @param Code The error a strict session fails with.
+   --  @param Warning The warning a lenient one records instead.
+   --  @param Severity The warning's severity.
+   --  @param Context Diagnostic context of either; the current source offset when it names none.
+   --  @return The failure strictly, Success otherwise.
+   function Reject_Or_Warn
+     (S : in out Session;
+      Code : Errors.Error_Code;
+      Warning : Errors.Warning_Code;
+      Severity : Errors.Warning_Severity;
+      Context : Errors.Diagnostic_Context) return Results.Result;
+
+   --  Drawing work: one counter per render, against Max_Drawing_Work.
+
+   --  Start drawing.
+   --  @param S Session about to render; no drawing work is done yet.
+   procedure Start_Drawing (S : in out Session);
+   --  Work left.
+   --  @param S Session.
+   --  @return The drawing work the budget still allows.
+   function Work_Left (S : Session) return Pixel_Count is
+     (S.Budget.Max_Drawing_Work - Pixel_Count'Min (S.Work_Used, S.Budget.Max_Drawing_Work));
+   --  Charge work.
+   --  @param S Session doing the work.
+   --  @param Units Drawing work about to be done.
+   --  @return Success, the work then counted, or Limit_Exceeded when it would cross the budget.
+   function Charge_Work (S : in out Session; Units : Pixel_Count) return Results.Result;
+   --  Charge work.
+   --  @param S Session doing the work.
+   --  @param Units Drawing work about to be done.
+   --  @return As Charge_Work above.
+   function Charge_Work (S : in out Session; Units : Natural) return Results.Result;
    --  Over work.
    --  @param S Session whose drawing budget was crossed.
-   --  @param Used Drawing work already done.
-   --  @param Units Work asked for on top of it.
-   --  @return The Limit_Exceeded failure for drawing work, Used + Units saturated: the one report of it.
-   function Over_Work (S : Session; Used, Units : Pixel_Count) return Results.Result;
+   --  @param Units Work asked for beyond the work done.
+   --  @return The Limit_Exceeded failure for drawing work, saturated: the one report of it.
+   function Over_Work (S : Session; Units : Pixel_Count) return Results.Result;
 
-   function Admit_Allocation
-     (S : in out Session;
-      Length : Byte_Count) return Results.Result;
-   function Admit_Aggregate
-     (S : in out Session;
-      Length : Byte_Count) return Results.Result;
-   function Allocation_Allowance
-     (S : Session;
-      Bytes_Per_Unit : Positive) return Pixel_Count;
+   --  Allocations: each against Max_Allocation_Bytes, all of a session against Max_Total_Allocation_Bytes.
+
+   --  Admit allocation.
+   --  @param S Session about to allocate.
+   --  @param Length Bytes of one allocation.
+   --  @return Success, the bytes then counted against the session's total, or Limit_Exceeded when the
+   --  allocation or the total would cross its limit.
+   function Admit_Allocation (S : in out Session; Length : Byte_Count) return Results.Result;
+   --  Admit aggregate.
+   --  @param S Session about to hold storage that is not one allocation (vectors, copies).
+   --  @param Length Bytes it is estimated at, by the cost model below.
+   --  @return Success, the bytes then counted, or Limit_Exceeded when the session's total would cross its limit.
+   function Admit_Aggregate (S : in out Session; Length : Byte_Count) return Results.Result;
+   --  Allocation units left.
+   --  @param S Session.
+   --  @param Bytes_Per_Unit Bytes one unit holds.
+   --  @return How many such units the session's total still admits.
+   function Allocation_Units_Left (S : Session; Bytes_Per_Unit : Positive) return Pixel_Count;
+   --  Shape work left.
+   --  @param S Session.
+   --  @return What building one shape may spend: the drawing work left, and no more than the spans the session's
+   --  allocation total still admits.
+   function Shape_Work_Left (S : Session) return Pixel_Count;
+
+   --  The cost model: what storage that is not one allocation is counted at against the session's total.
+   --  A retained metadata item or font name, besides its bytes.
+   Item_Overhead_Bytes : constant := 128;
+   --  A polygon point.
+   Point_Bytes : constant := 8;
+   --  A unit of a region's size, for a copy of it.
+   Region_Unit_Bytes : constant := 8;
+   --  Each byte of a region read: its scanlines and inversion points, with capacity growth.
+   Region_Payload_Factor : constant := 4;
+   --  A unit of shape-building work: the spans it can make.
+   Shape_Bytes_Per_Work_Unit : constant := 256;
 
    --  Claim ordinal.
    --  @param S Session counting opcodes.

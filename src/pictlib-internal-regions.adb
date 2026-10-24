@@ -1,3 +1,4 @@
+with Pictlib.Internal.Checked_Arithmetic;
 with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Internal.Bytes;
@@ -133,12 +134,8 @@ package body Pictlib.Internal.Regions is
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
-      --  The payload remains live while scanline and inversion-point vectors
-      --  are built. Four payload bytes per retained byte conservatively covers
-      --  vector elements, capacity growth and node bookkeeping.
-      Outcome :=
-        Sessions.Admit_Aggregate
-          (S, 4 * (Byte_Count (Size) - Smallest_Region));
+      --  The scanlines and inversion points built from the payload, while it is still held.
+      Outcome := Sessions.Admit_Aggregate (S, Sessions.Region_Payload_Factor * (Byte_Count (Size) - Smallest_Region));
       if not Results.Succeeded (Outcome) then
          Sessions.Free (Data);
          return Outcome;
@@ -184,8 +181,8 @@ package body Pictlib.Internal.Regions is
      (Item : in out Region;
       Y : Integer;
       Spans : in out Span_Vectors.Vector;
-      Work : out Natural;
-      Allowance : Natural := Natural'Last)
+      Work : out Pixel_Count;
+      Allowance : Pixel_Count := Pixel_Count'Last)
    is
       Box : constant Area := Item.Box;
    begin
@@ -205,7 +202,7 @@ package body Pictlib.Internal.Regions is
       Item.Cursor_Y := Y;
       while Item.Next_Line <= Natural (Item.Lines.Length) and then Item.Lines (Item.Next_Line).Y <= Y loop
          Invert (Item, Item.Lines (Item.Next_Line));
-         Work := Natural'Min (Natural'Last - 1, Work + Natural (Item.Active.Length) + 1);
+         Work := Checked_Arithmetic.Saturating_Add (Work, Pixel_Count (Item.Active.Length) + 1);
          Item.Next_Line := Item.Next_Line + 1;
          --  The walk resumes from here at the next call; this one is over budget.
          if Work > Allowance then
@@ -229,7 +226,7 @@ package body Pictlib.Internal.Regions is
             Index := Index + 2;
          end loop;
       end;
-      Work := Natural'Min (Natural'Last, Work + Natural (Item.Active.Length));
+      Work := Checked_Arithmetic.Saturating_Add (Work, Pixel_Count (Item.Active.Length));
    end Row_Spans;
 
    procedure Intersect (Left, Right : Span_Vectors.Vector; Result : in out Span_Vectors.Vector) is

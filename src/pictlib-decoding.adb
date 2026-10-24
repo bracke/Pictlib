@@ -89,14 +89,10 @@ package body Pictlib.Decoding is
            (Errors.Make (Errors.Source_Zero_Progress, (Source => Object.Session.Stream.Offset, others => <>)));
       elsif Step.Count = 0 then
          return Results.Success;
-      elsif not Internal.Sessions.Is_Lenient (Object.Session) then
-         return Results.Failure
-           (Errors.Make (Errors.Trailing_Data, (Source => Object.Session.Stream.Offset - 1, others => <>)));
       end if;
-      Internal.Sessions.Warn
-        (Object.Session, Errors.Compatibility_Issue, Errors.Compatibility,
+      return Internal.Sessions.Reject_Or_Warn
+        (Object.Session, Errors.Trailing_Data, Errors.Compatibility_Issue, Errors.Compatibility,
          (Source => Object.Session.Stream.Offset - 1, others => <>));
-      return Results.Success;
    end Check_Trailing_Data;
 
    function Enumerate (Object : in out Decoder; Visitor : in out Opcode_Visitor'Class) return Results.Result is
@@ -212,6 +208,8 @@ package body Pictlib.Decoding is
          Paint : aliased Internal.Rendering.Painter;
          Outcome : Results.Result := Results.Success;
       begin
+         --  Each render has the whole drawing budget.
+         Internal.Sessions.Start_Drawing (Object.Session);
          Internal.Rendering.Start
            (Paint, Output, Object.Info.Frame, Object.Decode_Options.Background, Object.Decode_Options.Fonts);
          loop

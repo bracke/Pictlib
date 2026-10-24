@@ -82,8 +82,8 @@ package Pictlib.Internal.Regions is
      (Item : in out Region;
       Y : Integer;
       Spans : in out Span_Vectors.Vector;
-      Work : out Natural;
-      Allowance : Natural := Natural'Last);
+      Work : out Pixel_Count;
+      Allowance : Pixel_Count := Pixel_Count'Last);
 
    --  Intersect.
    --  @param Left Sorted, disjoint spans.

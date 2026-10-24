@@ -1,3 +1,4 @@
+with Pictlib.Internal.Checked_Arithmetic;
 with Ada.Unchecked_Deallocation;
 with Pictlib.Errors;
 with Pictlib.Internal.PackBits;
@@ -113,11 +114,17 @@ package body Pictlib.Internal.Pixmaps is
             Value := Interfaces.Shift_Left (Interfaces.Unsigned_16 (Item (1)), 8) or Interfaces.Unsigned_16 (Item (2));
             Index := (if (Flags and Device) /= 0 then Position else Natural (Value));
             if Index > 255 then
-               if not Sessions.Is_Lenient (S) then
-                  return Sessions.Fail (S, Errors.Color_Table_Invalid, 255, Byte_Count (Index));
-               end if;
-               Sessions.Warn
-                 (S, Errors.Recovery_Applied, Errors.Recovery, (Actual => Byte_Count (Index), others => <>));
+               --  Leniently the entry is dropped.
+               declare
+                  Outcome : constant Results.Result :=
+                    Sessions.Reject_Or_Warn
+                      (S, Errors.Color_Table_Invalid, Errors.Recovery_Applied, Errors.Recovery,
+                       (Expected => 255, Actual => Byte_Count (Index), others => <>));
+               begin
+                  if not Results.Succeeded (Outcome) then
+                     return Outcome;
+                  end if;
+               end;
             else
                --  The high byte of each 16-bit component.
                Table.Colors (Index) := (Red => Item (3), Green => Item (5), Blue => Item (7));
@@ -326,7 +333,7 @@ package body Pictlib.Internal.Pixmaps is
       Extra : Byte_Count := 0) return Results.Result
    is
       Buffers : constant Byte_Count := Buffer_Bytes (Header);
-      Total : constant Byte_Count := (if Extra > Byte_Count'Last - Buffers then Byte_Count'Last else Buffers + Extra);
+      Total : constant Byte_Count := Checked_Arithmetic.Saturating_Add (Buffers, Extra);
    begin
       Finish (Decoder);
       declare

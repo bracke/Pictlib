@@ -1,3 +1,4 @@
+with Pictlib.Internal.Checked_Arithmetic;
 with Pictlib.Errors;
 
 package body Pictlib.Internal.Rendering is
@@ -36,40 +37,16 @@ package body Pictlib.Internal.Rendering is
       P.Text_State := (others => <>);
       P.Fonts := Font_Files;
       Text.Clear (P.Font_Cache);
-      P.Work := 0;
    end Start;
-
-   function Charge (P : in out Painter; S : Sessions.Session; Units : Natural) return Results.Result is
-     (Charge (P, S, Pixel_Count (Units)));
-
-   function Over_Budget (P : Painter; S : Sessions.Session; Units : Pixel_Count) return Results.Result is
-     (Sessions.Over_Work (S, P.Work, Units));
-
-   function Charge (P : in out Painter; S : Sessions.Session; Units : Pixel_Count) return Results.Result is
-   begin
-      if Units > Allowance (P, S) then
-         return Over_Budget (P, S, Units);
-      end if;
-      P.Work := P.Work + Units;
-      return Results.Success;
-   end Charge;
-
-   function Context_Of (Event : Pictures.Opcode_Event) return Errors.Diagnostic_Context is
-     ((Source => Event.Offset, Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal, others => <>));
 
    function Unsupported
      (S : in out Sessions.Session;
       Event : Pictures.Opcode_Event;
-      Expected, Actual : Byte_Count := 0) return Results.Result
-   is
-      Context : constant Errors.Diagnostic_Context :=
-        (Context_Of (Event) with delta Expected => Expected, Actual => Actual);
+      Expected, Actual : Byte_Count := 0) return Results.Result is
    begin
-      if not Sessions.Is_Lenient (S) then
-         return Results.Failure (Errors.Make (Errors.Unsupported_Feature, Context));
-      end if;
-      Sessions.Warn (S, Errors.Approximated_Rendering, Errors.Data_Loss, Context);
-      return Results.Success;
+      return Sessions.Reject_Or_Warn
+        (S, Errors.Unsupported_Feature, Errors.Approximated_Rendering, Errors.Data_Loss,
+         (Sessions.Context_Of (Event) with delta Expected => Expected, Actual => Actual));
    end Unsupported;
 
    function Mode
@@ -80,30 +57,28 @@ package body Pictlib.Internal.Rendering is
    begin
       if Transfer_Modes.Classify (Value, Kind) then
          return Results.Success;
-      elsif not Sessions.Is_Lenient (S) then
-         return Results.Failure
-           (Errors.Make (Errors.Transfer_Mode_Invalid, (Context_Of (Event) with delta Actual => Byte_Count (Value))));
       end if;
-      Sessions.Warn (S, Errors.Recovery_Applied, Errors.Recovery,
-                     (Context_Of (Event) with delta Actual => Byte_Count (Value)));
+      --  Leniently an unknown mode is copy.
       Kind := Transfer_Modes.Copy;
-      return Results.Success;
+      return Sessions.Reject_Or_Warn
+        (S, Errors.Transfer_Mode_Invalid, Errors.Recovery_Applied, Errors.Recovery,
+         (Sessions.Context_Of (Event) with delta Actual => Byte_Count (Value)));
    end Mode;
 
-   function Clip_Row (P : in out Painter; S : Sessions.Session; Y : Integer) return Results.Result is
-      Work : Natural;
+   function Clip_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result is
+      Work : Pixel_Count;
    begin
       if not P.Has_Clip then
          return Results.Success;
       end if;
       --  The clip is local: picture row Y is its row Y + origin, and its columns lie origin to the right.
-      Regions.Row_Spans (P.Clip, Y + P.Origin_V, P.Clip_Spans, Work, Walk_Allowance (P, S));
+      Regions.Row_Spans (P.Clip, Y + P.Origin_V, P.Clip_Spans, Work, Sessions.Work_Left (S));
       for Item of P.Clip_Spans loop
          Item := (Item.Left - P.Origin_H, Item.Right - P.Origin_H);
       end loop;
       Regions.Intersect (P.Row_Spans, P.Clip_Spans, P.Scratch);
       P.Row_Spans.Move (P.Scratch);
-      return Charge (P, S, Work);
+      return Sessions.Charge_Work (S, Work);
    end Clip_Row;
 
    procedure Put (P : in out Painter; X, Y : Integer; Color : Images.RGB_Color) is
@@ -114,7 +89,9 @@ package body Pictlib.Internal.Rendering is
    function Get (P : Painter; X, Y : Integer) return Images.RGB_Color is
      (Canvas.Get (P.Target, X - P.Window.Left, Y - P.Window.Top));
 
-   function Begin_Row (P : in out Painter; S : Sessions.Session; Y, Left, Right : Integer) return Results.Result is
+   function Begin_Row (P : in out Painter; S : in out Sessions.Session; Y, Left, Right : Integer)
+     return Results.Result
+   is
       First : constant Integer := Integer'Max (Left, P.Window.Left);
       Last : constant Integer := Integer'Min (Right, P.Window.Right);
    begin
@@ -126,14 +103,14 @@ package body Pictlib.Internal.Rendering is
       return Clip_Row (P, S, Y);
    end Begin_Row;
 
-   function Mask_Row (P : in out Painter; S : Sessions.Session; Mask : in out Regions.Region; Y : Integer)
+   function Mask_Row (P : in out Painter; S : in out Sessions.Session; Mask : in out Regions.Region; Y : Integer)
      return Results.Result
    is
-      Work : Natural;
+      Work : Pixel_Count;
       Outcome : Results.Result;
    begin
-      Regions.Row_Spans (Mask, Y, P.Mask_Spans, Work, Walk_Allowance (P, S));
-      Outcome := Charge (P, S, Work);
+      Regions.Row_Spans (Mask, Y, P.Mask_Spans, Work, Sessions.Work_Left (S));
+      Outcome := Sessions.Charge_Work (S, Work);
       if Results.Succeeded (Outcome) then
          Regions.Intersect (P.Row_Spans, P.Mask_Spans, P.Scratch);
          P.Row_Spans.Move (P.Scratch);
@@ -141,11 +118,11 @@ package body Pictlib.Internal.Rendering is
       return Outcome;
    end Mask_Row;
 
-   function Paint_Row (P : in out Painter; S : Sessions.Session; Y : Integer) return Results.Result is
+   function Paint_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result is
       Outcome : Results.Result := Results.Success;
    begin
       for Span of P.Row_Spans loop
-         Outcome := Charge (P, S, Span.Right - Span.Left);
+         Outcome := Sessions.Charge_Work (S, Span.Right - Span.Left);
          exit when not Results.Succeeded (Outcome);
          for X in Span.Left .. Span.Right - 1 loop
             Put (P, X, Y, Color_At (X, Y, Get (P, X, Y)));
@@ -154,13 +131,13 @@ package body Pictlib.Internal.Rendering is
       return Outcome;
    end Paint_Row;
 
-   function Paint_Row_Color (P : in out Painter; S : Sessions.Session; Y : Integer; Color : Images.RGB_Color)
+   function Paint_Row_Color (P : in out Painter; S : in out Sessions.Session; Y : Integer; Color : Images.RGB_Color)
      return Results.Result
    is
       Outcome : Results.Result := Results.Success;
    begin
       for Span of P.Row_Spans loop
-         Outcome := Charge (P, S, Span.Right - Span.Left);
+         Outcome := Sessions.Charge_Work (S, Span.Right - Span.Left);
          exit when not Results.Succeeded (Outcome);
          Canvas.Put_Span (P.Target, Span.Left - P.Window.Left, Span.Right - P.Window.Left, Y - P.Window.Top, Color);
       end loop;
@@ -178,25 +155,18 @@ package body Pictlib.Internal.Rendering is
       Walked : constant Pixel_Count :=
         1 + Pixel_Count (Integer'Max (0, Coverage.Last_Row (Shape) - Coverage.First_Row (Shape) + 1));
       Outcome : Results.Result :=
-        (if Coverage.Exhausted (Shape) then Over_Budget (P, S, Coverage.Work (Shape))
-         elsif Coverage.Work (Shape) > Pixel_Count'Last - Walked then Over_Budget (P, S, Pixel_Count'Last)
-         else Charge (P, S, Coverage.Work (Shape) + Walked));
+        (if Coverage.Exhausted (Shape) then Sessions.Over_Work (S, Coverage.Work (Shape))
+         else Sessions.Charge_Work (S, Checked_Arithmetic.Saturating_Add (Coverage.Work (Shape), Walked)));
       Source : Patterns.Pattern renames P.Pattern_Set (How.Source);
       Colorize : constant Boolean := Patterns.Kind (Source) = Patterns.Bit_Pattern;
       Kind : constant Transfer_Modes.Mode_Kind :=
         (if P.Hilite_Next then Transfer_Modes.Hilite else How.Mode);
    begin
+      --  The spans building made count against the session's allocation total.
       if Results.Succeeded (Outcome) then
-         declare
-            Units : constant Pixel_Count := Coverage.Work (Shape);
-            Storage : constant Byte_Count :=
-              (if Units > Pixel_Count
-                 (Byte_Count'Last / Coverage_Storage_Per_Work_Unit)
-               then Byte_Count'Last
-               else Byte_Count (Units) * Coverage_Storage_Per_Work_Unit);
-         begin
-            Outcome := Sessions.Admit_Aggregate (S, Storage);
-         end;
+         Outcome := Sessions.Admit_Aggregate
+           (S, Checked_Arithmetic.Saturating_Multiply
+                 (Byte_Count (Coverage.Work (Shape)), Sessions.Shape_Bytes_Per_Work_Unit));
       end if;
       P.Hilite_Next := False;
       --  A uniform pattern whose result does not depend on the pixels under it paints one color, or nothing.
@@ -253,7 +223,7 @@ package body Pictlib.Internal.Rendering is
    --  Paint the destination rows that sample source row Source_Y of Decoder.
    function Put_Row
      (P : in out Painter;
-      S : Sessions.Session;
+      S : in out Sessions.Session;
       Header : Pixmaps.Bits_Header;
       Source : Geometry.Rect;
       Destination : Area;
@@ -291,7 +261,7 @@ package body Pictlib.Internal.Rendering is
             Y : constant Integer := Destination.Top + Integer (K);
          begin
             --  Every destination row a copy walks costs a unit, in the frame or not.
-            Outcome := Charge (P, S, Natural'(1));
+            Outcome := Sessions.Charge_Work (S, Natural'(1));
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
@@ -321,25 +291,23 @@ package body Pictlib.Internal.Rendering is
         (Top => Coordinate'Max (Wanted.Top, Bounds.Top), Left => Coordinate'Max (Wanted.Left, Bounds.Left),
          Bottom => Coordinate'Min (Wanted.Bottom, Bounds.Bottom), Right => Coordinate'Min (Wanted.Right, Bounds.Right));
       if Source /= Wanted and then not Geometry.Is_Empty (Wanted) then
-         if not Sessions.Is_Lenient (S) then
-            return Results.Failure (Errors.Make (Errors.Pixmap_Invalid, Context_Of (Event)));
-         end if;
-         Sessions.Warn (S, Errors.Recovery_Applied, Errors.Recovery, Context_Of (Event));
+         return Sessions.Reject_Or_Warn
+           (S, Errors.Pixmap_Invalid, Errors.Recovery_Applied, Errors.Recovery, Sessions.Context_Of (Event));
       end if;
       return Results.Success;
    end Source_Rect;
 
    --  Rows a copy skips undrawn cost a unit each, as their framing is still read.
-   function Skip_Rows (P : in out Painter; S : in out Sessions.Session; Header : Pixmaps.Bits_Header)
+   function Skip_Copy (S : in out Sessions.Session; Header : Pixmaps.Bits_Header)
      return Results.Result
    is
-      Outcome : constant Results.Result := Charge (P, S, Header.Height);
+      Outcome : constant Results.Result := Sessions.Charge_Work (S, Header.Height);
    begin
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
       return Pixmaps.Skip_Pixels (S, Header);
-   end Skip_Rows;
+   end Skip_Copy;
 
    function Copy_Bits
      (P : in out Painter;
@@ -358,7 +326,7 @@ package body Pictlib.Internal.Rendering is
       --  cost.
       if P.Skip_Next_Bits then
          P.Skip_Next_Bits := False;
-         return Skip_Rows (P, S, Header);
+         return Skip_Copy (S, Header);
       end if;
       Outcome := Mode (S, Event, Header.Mode, Kind);
       if P.Hilite_Next then
@@ -372,7 +340,7 @@ package body Pictlib.Internal.Rendering is
          return Outcome;
       end if;
       if Geometry.Is_Empty (Source) or else Regions.Is_Empty (Destination) then
-         return Skip_Rows (P, S, Header);
+         return Skip_Copy (S, Header);
       end if;
       if Header.Masked then
          Regions.Translate (Mask, -P.Origin_H, -P.Origin_V);
@@ -382,7 +350,7 @@ package body Pictlib.Internal.Rendering is
       for Row in 0 .. Header.Height - 1 loop
          exit when not Results.Succeeded (Outcome);
          --  Each row is converted whether or not any of it is drawn.
-         Outcome := Charge (P, S, Header.Width + 1);
+         Outcome := Sessions.Charge_Work (S, Header.Width + 1);
          if Results.Succeeded (Outcome) then
             Outcome := Pixmaps.Read_Row (S, Decoder, Row);
          end if;

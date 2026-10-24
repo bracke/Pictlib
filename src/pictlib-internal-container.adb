@@ -102,6 +102,10 @@ package body Pictlib.Internal.Container is
 
    --  The 24 bytes of HeaderOp data. Version -1 (a long) carries fixed-point bounds; version -2 (a word)
    --  carries the resolution and an integer source rectangle.
+   --  Where HeaderOp's own diagnostics point.
+   Header_Op_Context : constant Errors.Diagnostic_Context :=
+     (Op => Opcodes.Header_Op, Has_Opcode => True, others => <>);
+
    function Read_Header_Op_Data
      (S : in out Sessions.Session;
       Info : in out Pictures.Header_Info) return Results.Result
@@ -149,24 +153,20 @@ package body Pictlib.Internal.Container is
          if Results.Succeeded (Outcome)
            and then (Info.Horizontal_Resolution <= 0 or else Info.Vertical_Resolution <= 0)
          then
-            if not Sessions.Is_Lenient (S) then
-               return Fail (S, Errors.Header_Invalid, Opcodes.Header_Op, True);
-            end if;
-            Sessions.Warn (S, Errors.Compatibility_Issue, Errors.Compatibility,
-                                (Op => Opcodes.Header_Op, Has_Opcode => True, others => <>));
+            --  Leniently the resolution is 72 dpi.
             Info.Horizontal_Resolution := Geometry.Fixed_72;
             Info.Vertical_Resolution := Geometry.Fixed_72;
+            return Sessions.Reject_Or_Warn
+              (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility, Header_Op_Context);
          end if;
          return Outcome;
       end if;
 
-      if not Sessions.Is_Lenient (S) then
-         return Fail (S, Errors.Header_Invalid, Opcodes.Header_Op, True);
-      end if;
-      Sessions.Warn (S, Errors.Compatibility_Issue, Errors.Compatibility,
-                          (Op => Opcodes.Header_Op, Has_Opcode => True, others => <>));
+      --  An unknown HeaderOp version: leniently version 2, its fields skipped.
       Info.Version := Version_2;
-      return Streams.Skip_Exact (S.Stream, Header_Op_Bytes - 4);
+      Outcome := Sessions.Reject_Or_Warn
+        (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility, Header_Op_Context);
+      return (if Results.Succeeded (Outcome) then Streams.Skip_Exact (S.Stream, Header_Op_Bytes - 4) else Outcome);
    end Read_Header_Op_Data;
 
    --  A failure inside the version opcode or HeaderOp names that opcode and its ordinal, as the opcode reader

@@ -77,8 +77,6 @@ package Pictlib.Internal.Rendering is
       Text_State : Text.Text_State;
       Fonts : Pictlib.Fonts.Font_Table;
       Font_Cache : aliased Text.Font_Cache;
-      --  Pixels painted and work done, against Limits.Max_Drawing_Work.
-      Work : Pixel_Count := 0;
       Clip_Spans : Regions.Span_Vectors.Vector;
       Mask_Spans : Regions.Span_Vectors.Vector;
       Row_Spans : Regions.Span_Vectors.Vector;
@@ -116,28 +114,6 @@ package Pictlib.Internal.Rendering is
    function To_Picture (P : Painter; Item : Geometry.Rect) return Area is
      (Regions.To_Area (Item, -P.Origin_H, -P.Origin_V));
 
-   --  Charge.
-   --  @param P Painter whose work grows.
-   --  @param S Session whose drawing budget applies.
-   --  @param Units Units of work about to be done.
-   --  @return Success, or Limit_Exceeded when the drawing budget would be crossed.
-   function Charge (P : in out Painter; S : Sessions.Session; Units : Natural) return Results.Result;
-   function Charge (P : in out Painter; S : Sessions.Session; Units : Pixel_Count) return Results.Result;
-   --  Drawing work still allowed: what a shape may spend being built.
-   function Allowance (P : Painter; S : Sessions.Session) return Pixel_Count is
-     (S.Budget.Max_Drawing_Work - Pixel_Count'Min (P.Work, S.Budget.Max_Drawing_Work));
-   Coverage_Storage_Per_Work_Unit : constant := 256;
-   function Shape_Allowance
-     (P : Painter;
-      S : Sessions.Session) return Pixel_Count is
-     (Pixel_Count'Min
-        (Allowance (P, S),
-         Sessions.Allocation_Allowance
-           (S, Coverage_Storage_Per_Work_Unit)));
-   --  The drawing work still allowed, as a region walk's allowance.
-   function Walk_Allowance (P : Painter; S : Sessions.Session) return Natural is
-     (Natural (Pixel_Count'Min (Allowance (P, S), Pixel_Count (Natural'Last))));
-
    --  Unsupported.
    --  @param S Session whose strictness decides.
    --  @param Event The opcode that cannot be rendered yet.
@@ -166,7 +142,7 @@ package Pictlib.Internal.Rendering is
    --  @param S Session whose drawing budget applies.
    --  @param Y Picture row.
    --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
-   function Clip_Row (P : in out Painter; S : Sessions.Session; Y : Integer) return Results.Result;
+   function Clip_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result;
    --  Get.
    --  @param P Painter.
    --  @param X Picture column inside the canvas.
@@ -191,27 +167,28 @@ package Pictlib.Internal.Rendering is
    --  @param Left First picture column.
    --  @param Right Column after the last.
    --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
-   function Begin_Row (P : in out Painter; S : Sessions.Session; Y, Left, Right : Integer) return Results.Result;
+   function Begin_Row (P : in out Painter; S : in out Sessions.Session; Y, Left, Right : Integer)
+     return Results.Result;
    --  Mask row.
    --  @param P Painter whose Row_Spans are cut by Mask's row Y.
    --  @param S Session whose drawing budget the mask walk is charged to, before the spans are cut.
    --  @param Mask Mask region, in picture coordinates.
    --  @param Y Picture row.
    --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
-   function Mask_Row (P : in out Painter; S : Sessions.Session; Mask : in out Regions.Region; Y : Integer)
+   function Mask_Row (P : in out Painter; S : in out Sessions.Session; Mask : in out Regions.Region; Y : Integer)
      return Results.Result;
    --  Paint row: each span of Row_Spans is charged, then each of its pixels becomes Color_At of what is under it;
    --  nothing is painted past the budget.
    generic
       with function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color;
-   function Paint_Row (P : in out Painter; S : Sessions.Session; Y : Integer) return Results.Result;
+   function Paint_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result;
    --  Paint row color: as Paint_Row, every pixel Color.
    --  @param P Painter.
    --  @param S Session.
    --  @param Y Picture row.
    --  @param Color The color.
    --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
-   function Paint_Row_Color (P : in out Painter; S : Sessions.Session; Y : Integer; Color : Images.RGB_Color)
+   function Paint_Row_Color (P : in out Painter; S : in out Sessions.Session; Y : Integer; Color : Images.RGB_Color)
      return Results.Result;
 
    --  Fill.

@@ -43,8 +43,6 @@ package body Pictlib.Internal.QuickTime is
    type Pixel_Buffer_Access is access Jpeglib.Streams.Byte_Array;
    procedure Free is new Ada.Unchecked_Deallocation (Jpeglib.Streams.Byte_Array, Pixel_Buffer_Access);
 
-   function Context_Of (Event : Pictures.Opcode_Event) return Errors.Diagnostic_Context is
-     ((Source => Event.Offset, Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal, others => <>));
 
    function Signed (Value : Interfaces.Unsigned_32) return Long_Long_Integer is
      (if Value >= 16#8000_0000# then Long_Long_Integer (Value) - 16#1_0000_0000# else Long_Long_Integer (Value));
@@ -150,7 +148,7 @@ package body Pictlib.Internal.QuickTime is
          return Sessions.Over_Limit
            (S, Embedded_Image_Byte_Limit, S.Budget.Max_Embedded_Image_Bytes, Byte_Count (Item.Data_Size));
       elsif Pixels = 0 then
-         return Results.Failure (Errors.Make (Errors.Embedded_Image_Failed, Context_Of (Event)));
+         return Results.Failure (Errors.Make (Errors.Embedded_Image_Failed, Sessions.Context_Of (Event)));
       elsif Pixel_Count (Pixels) > S.Budget.Max_Embedded_Image_Pixels then
          return Sessions.Over_Limit
            (S, Embedded_Image_Pixel_Limit, Byte_Count (S.Budget.Max_Embedded_Image_Pixels), Pixels);
@@ -241,7 +239,7 @@ package body Pictlib.Internal.QuickTime is
          else Results.Failure
            (Errors.Make
               (Errors.Embedded_Image_Failed,
-               (Context_Of (Event) with delta
+               (Sessions.Context_Of (Event) with delta
                   Underlying_Code => Long_Long_Integer (Jpeglib.Errors.Error_Code'Pos (Decoded.First_Error.Code)),
                   Has_Underlying_Code => True))));
    begin
@@ -259,7 +257,7 @@ package body Pictlib.Internal.QuickTime is
       then
          --  The JPEG must be the image the description states.
          Jpeglib.Decoding.Finalize (Decoder);
-         return Results.Failure (Errors.Make (Errors.Embedded_Image_Failed, Context_Of (Event)));
+         return Results.Failure (Errors.Make (Errors.Embedded_Image_Failed, Sessions.Context_Of (Event)));
       end if;
       if Jpeglib.Results.Succeeded (Decoded) then
          Pixels := new Jpeglib.Streams.Byte_Array (1 .. Bytes);
@@ -383,7 +381,7 @@ package body Pictlib.Internal.QuickTime is
         (Results.Failure
            (Errors.Make
               (Errors.Opcode_Length_Invalid,
-               (Context_Of (Event) with delta Expected => Length, Actual => Used + Wanted))));
+               (Sessions.Context_Of (Event) with delta Expected => Length, Actual => Used + Wanted))));
    begin
       --  Only an image drawn by this opcode hides the bits opcode after it.
       P.Skip_Next_Bits := False;
@@ -433,7 +431,8 @@ package body Pictlib.Internal.QuickTime is
          return Results.Failure
            (Errors.Make
               (Errors.Opcode_Length_Invalid,
-               (Context_Of (Event) with delta Expected => Description_Bytes, Actual => Byte_Count (Item.Size))));
+               (Sessions.Context_Of (Event) with delta
+                  Expected => Description_Bytes, Actual => Byte_Count (Item.Size))));
       elsif Byte_Count (Item.Size) - Description_Bytes > Length - Used then
          return Too_Long (Byte_Count (Item.Size) - Description_Bytes);
       end if;
@@ -460,7 +459,8 @@ package body Pictlib.Internal.QuickTime is
          --  Decoding is drawing work, a unit per pixel and per row, drawn or not, as for a copied pixmap; the
          --  pixels and jpeglib's share count against the aggregate allocation quota.
          Outcome :=
-           Rendering.Charge (P, S, Pixel_Count (Item.Width) * Pixel_Count (Item.Height) + Pixel_Count (Item.Height));
+           Sessions.Charge_Work
+             (S, Pixel_Count (Item.Width) * Pixel_Count (Item.Height) + Pixel_Count (Item.Height));
          if Results.Succeeded (Outcome) then
             Outcome := Sessions.Admit_Aggregate (S, Pixel_Bytes + Share);
          end if;
