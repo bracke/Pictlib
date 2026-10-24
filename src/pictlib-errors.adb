@@ -25,6 +25,7 @@ package body Pictlib.Errors is
          when Trailing_Data             => return "pict.trailing_data";
          when Unsupported_Feature       => return "pict.feature.unsupported";
          when Invalid_State             => return "pict.state.invalid";
+         when Invalid_Argument          => return "pict.argument.invalid";
          when Integer_Overflow          => return "pict.security.integer_overflow";
          when Limit_Exceeded            => return "pict.limit.exceeded";
          when Operation_Cancelled       => return "pict.operation.cancelled";

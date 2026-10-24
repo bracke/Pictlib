@@ -19,4 +19,14 @@ Available since Gate M0:
 - `Pictlib.Streams` — `Source`/`Destination` interfaces, `Memory_Source`,
   `Fixed_Buffer_Destination`, `Read_Exact`, `Skip_Exact`, `Write_All`.
 
-Decoding, rendering, metadata and encoding packages arrive with Gates M1–M6.
+Available since Gate M1:
+
+- `Pictlib.Geometry` — `Point`, `Rect`, 16.16 `Fixed`, `Fixed_Rect`.
+- `Pictlib.Opcodes` — named opcodes, `Rule_For`, `Is_Reserved`, `Name`.
+- `Pictlib.Pictures` — `Header_Info`, `Opcode_Event`.
+- `Pictlib.Metadata` — `Item_Kind`, `Retention_Policy`, `Item_Info`.
+- `Pictlib.Decoding` — `Decoder` with `Initialize`, `Reset`, `Read_Header`,
+  `Header`, `Enumerate` through an `Opcode_Visitor`, metadata and warning
+  queries, `Last_Error`, `Cancel`, `Finalize`.
+
+Rendering and encoding arrive with Gates M2–M6.

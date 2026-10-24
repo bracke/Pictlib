@@ -46,7 +46,10 @@ are retained, never interpreted.
   retained as metadata. Picture data in resources or embedded streams has no header.
   `Header_Policy` is `Auto` (default), `Has_File_Header` or `No_File_Header`. `Auto` accepts the
   header when a valid version opcode follows `picSize` and `picFrame` at offset 512, otherwise at
-  offset 0; it shall not require seeking (the first 512 + 12 bytes are buffered, bounded).
+  offset 0 (a file header is preferred when both match); it shall not require seeking. The first
+  528 bytes are held in a look-ahead buffer, which never reads beyond the picture byte limit.
+  When the policy names a header the version opcode must be where it says, otherwise the result is
+  `Version_Invalid`.
 - `picSize` (16 bits) is the low word of the picture length; for version 2 it is unreliable and
   shall be retained but never used to bound parsing. `picFrame` is a `Rect`.
 - **Version 1:** version opcode `16#11#` followed by `16#01#`. Opcodes are one byte; data is not
@@ -102,14 +105,18 @@ are retained, never interpreted.
 - `DirectBitsRect` / `DirectBitsRgn` (`16#009A#`, `16#009B#`): a 4-byte `baseAddr`
   (`16#000000FF#`), then the PixMap without a color table. 16-bit pixels are `x555`; 32-bit
   pixels are `xRGB` or `ARGB` (`cmpCount` 3 or 4).
-- Pixel data is unpacked when `rowBytes < 8` or `packType = 1`. Otherwise every row is prefixed
+- `rowBytes` keeps its flags in the high bits: bit 15 marks a PixMap and the PixMap row length is
+  `rowBytes and 16#3FFF#`; a BitMap's is `rowBytes and 16#7FFF#`.
+- `BitsRect`/`BitsRgn` data is always unpacked, `rowBytes` per row. Otherwise pixel data is
+  unpacked when `rowBytes < 8` or `packType = 1`; `packType = 2` (32 bpp only) is unpacked at
+  three bytes per pixel of the bounds width. Otherwise every row is prefixed
   by its packed byte count, one byte when `rowBytes <= 250` and two bytes otherwise. `packType`
   0/default uses PackBits on bytes (indexed) or on 16-bit words (16 bpp, pack type 3); 32 bpp uses
   pack type 2 (pad byte dropped, unpacked RGB) or 4 (PackBits over component planes, A plane first
   when `cmpCount = 4`). A row that unpacks to more or fewer than its row length fails with
   `PackBits_Invalid`.
 - Color tables: seed, flags (`16#8000#` = device table, index is entry position), `ctSize`
-  (count − 1, at most 255) and entries of value plus 16-bit R, G, B. Entries are reduced to
+  (count − 1, at most 255; `16#FFFF#` is an empty table) and entries of value plus 16-bit R, G, B. Entries are reduced to
   8 bits by taking the high byte. An index beyond the table fails with `Color_Table_Invalid` in
   `Strict`, maps to black with a warning otherwise.
 - The source rectangle is scaled to the destination rectangle with nearest-neighbor sampling,
@@ -157,6 +164,7 @@ Pictlib.Limits                 -- processing, allocation and work bounds
 Pictlib.Streams                -- Source/Destination, memory adapters
 Pictlib.Geometry               -- QuickDraw Point, Rect, Fixed
 Pictlib.Images                 -- RGB/RGBA views and stride checks
+Pictlib.Pictures               -- header info and opcode events
 Pictlib.Opcodes                -- opcode names, classification and length rules
 Pictlib.Metadata               -- comments, font names, QuickTime payloads, retention
 Pictlib.Fonts                  -- Glyph_Source interface and the built-in face
@@ -164,7 +172,11 @@ Pictlib.Decoding               -- forward-only decoder: header, enumerate, rende
 Pictlib.Encoding               -- forward-only raster PICT 2 encoder
 Pictlib.Internal.Bytes             -- checked big-endian readers and writers
 Pictlib.Internal.Checked_Arithmetic
-Pictlib.Internal.Opcode_Reader     -- bounded opcode stream, alignment
+Pictlib.Internal.Picture_Stream    -- look-ahead source wrapper, picture byte budget
+Pictlib.Internal.Container         -- file header, picSize, picFrame, version, HeaderOp
+Pictlib.Internal.Opcode_Reader     -- bounded opcode stream, alignment, structural skipping
+Pictlib.Internal.Diagnostics       -- bounded warning log
+Pictlib.Internal.Metadata_Store    -- retained metadata under budgets
 Pictlib.Internal.Regions           -- region parsing and scanline masks
 Pictlib.Internal.Polygons
 Pictlib.Internal.PackBits          -- unpack/pack byte and word runs
@@ -221,13 +233,25 @@ into the view at 72 dpi or at the extended header's resolution when the caller a
 
 ## 6. Decoder contract
 
-States: `Created`, `Ready`, `Header_Read`, `Rendering`, `Finished`, `Failed`, `Cancelled`.
-Operations: `Initialize (Object, Input, Options, Limits)`, `Read_Header` (container, version,
-frame, resolution), `Header`, `Enumerate (Visitor)` (one callback per opcode with its ordinal,
-offset, opcode and length; the visitor may stop), `Render (Output_View)`, `Metadata`,
-`Warnings`, `Last_Error`, `Cancel`, `Reset`, `Finalize`. Calls in the wrong state fail with
-`Invalid_State` and do not change the state. `Render` after `Enumerate` requires `Reset` (the
-stream is forward-only).
+States: `Created`, `Ready`, `Header_Read`, `Finished`, `Stopped`, `Failed`, `Cancelled`; the
+renderer adds its state with M2. Operations: `Initialize (Object, Input, Options, Limits)`,
+`Reset (Object, Input)` (keeps options and limits), `Read_Header` (container, version, frame,
+resolution), `Header`, `Enumerate (Visitor)` (one callback per opcode, the version opcode and
+`HeaderOp` included, with ordinal, source offset, opcode, data length excluding pad bytes and a
+reserved flag; the visitor may return `Stop`, which ends in `Stopped` unless the opcode was the end
+opcode), `Render (Output_View)` (from M2), `Metadata_Count`/`Metadata_Item`/`Copy_Metadata`,
+`Warning_Count`/`Warning_At`, `Last_Error`, `Cancel`, `Finalize`. Calls in the wrong state fail
+with `Invalid_State` (`Operation_Cancelled` after `Cancel`) and change neither the state nor the
+last error. `Render` after `Enumerate` requires `Reset` (the stream is forward-only).
+
+The decoder reads nothing after the end opcode unless `Require_End_Of_Input` is set; then one more
+byte fails with `Trailing_Data` in `Strict` and is a warning otherwise. Input that ends at an
+opcode boundary without the end opcode fails with `Missing_End_Opcode` in `Strict` and finishes
+with a warning otherwise; input that ends inside an opcode always fails with
+`Source_Unexpected_End`. A version 2 picture without `HeaderOp` fails with `Header_Invalid` in
+`Strict`; otherwise it is treated as version 2 at 72 dpi with a warning and the opcode read in its
+place is enumerated. The warning log holds `Max_Warning_Records` entries; when it overflows, the
+last entry becomes `Warnings_Suppressed`.
 
 ## 7. Encoder contract
 
@@ -261,7 +285,7 @@ repeated fills.
 `Opcode_Length_Invalid`, `Region_Invalid`, `Polygon_Invalid`, `Pixmap_Invalid`,
 `PackBits_Invalid`, `Color_Table_Invalid`, `Pattern_Invalid`, `Transfer_Mode_Invalid`,
 `Embedded_Image_Failed`, `Too_Many_Colors`, `Missing_End_Opcode`, `Trailing_Data`,
-`Unsupported_Feature`, `Invalid_State`, `Integer_Overflow`, `Limit_Exceeded`,
+`Unsupported_Feature`, `Invalid_State`, `Invalid_Argument`, `Integer_Overflow`, `Limit_Exceeded`,
 `Operation_Cancelled`, `Internal_Invariant_Failed`. Identifiers are stable dotted strings
 (`pict.*`). `Diagnostic_Context` carries source/destination offset, opcode, opcode ordinal, row,
 expected/actual counts, limit kind and an underlying code.

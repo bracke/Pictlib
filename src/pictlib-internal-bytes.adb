@@ -97,6 +97,46 @@ package body Pictlib.Internal.Bytes is
       return Outcome;
    end Read_Coordinate;
 
+   function Read_Fixed
+     (Object : in out Streams.Source'Class;
+      Value : out Geometry.Fixed;
+      Context : Opcode_Context := No_Opcode) return Results.Result
+   is
+      Raw : Interfaces.Unsigned_32;
+      Outcome : constant Results.Result := Read_U32_BE (Object, Raw, Context);
+   begin
+      if Raw >= 16#8000_0000# then
+         Value := Geometry.Fixed (Long_Long_Integer (Raw) - 16#1_0000_0000#);
+      else
+         Value := Geometry.Fixed (Raw);
+      end if;
+      return Outcome;
+   end Read_Fixed;
+
+   function Read_Rect
+     (Object : in out Streams.Source'Class;
+      Value : out Geometry.Rect;
+      Context : Opcode_Context := No_Opcode) return Results.Result
+   is
+      Outcome : Results.Result;
+   begin
+      Value := (others => 0);
+      Outcome := Read_Coordinate (Object, Value.Top, Context);
+      if Results.Succeeded (Outcome) then
+         Outcome := Read_Coordinate (Object, Value.Left, Context);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Read_Coordinate (Object, Value.Bottom, Context);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Read_Coordinate (Object, Value.Right, Context);
+      end if;
+      if not Results.Succeeded (Outcome) then
+         Value := (others => 0);
+      end if;
+      return Outcome;
+   end Read_Rect;
+
    function Write_Byte
      (Object : in out Streams.Destination'Class;
       Value : Byte;

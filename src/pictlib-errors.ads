@@ -29,6 +29,7 @@ package Pictlib.Errors is
       Trailing_Data,
       Unsupported_Feature,
       Invalid_State,
+      Invalid_Argument,
       Integer_Overflow,
       Limit_Exceeded,
       Operation_Cancelled,

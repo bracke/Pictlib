@@ -5,9 +5,10 @@ target is decoding of PICT version 1, version 2 and extended version 2 pictures
 — raster opcodes, a QuickDraw renderer for vector and text opcodes, and
 QuickTime-embedded JPEG images — and encoding of raster PICT version 2.
 
-The current library (Gate M0) provides the foundation only: scalar types,
-structured non-raising diagnostics, explicit resource limits, memory stream
-adapters and checked big-endian byte I/O. `Pictlib.Capabilities` lists what is
+The current library (Gate M1) reads PICT version 1, version 2 and extended
+version 2 containers, with or without the 512-byte file header, and enumerates
+every opcode of the picture under explicit resource limits, retaining comments,
+font names and other metadata on request. Rendering is not available yet. `Pictlib.Capabilities` lists what is
 implemented; everything else is unavailable until its implementation-plan gate
 passes.
 

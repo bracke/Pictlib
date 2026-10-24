@@ -1,6 +1,6 @@
 # pictlib — Implementation Plan
 
-**Status:** M0 implemented; M1 is next  
+**Status:** M0 and M1 implemented; M2 is next  
 **Contract:** [SPECIFICATION.md](SPECIFICATION.md) (authoritative)  
 **Reference:** https://github.com/bracke/jpeglib
 
@@ -39,6 +39,13 @@ implemented and verified with `scripts/check_all.sh`.
 **Gate M0:** clean root and tests builds; API consumer compiles; foundation, stream and byte tests pass.
 
 ## M1 — Container and opcode stream
+
+**Completed (2026-10-24):** Tasks 7–12 and Gate M1. Geometry, the opcode
+length-rule table, file-header detection without seeking, v1/v2/extended-v2
+headers, the bounded opcode reader with structural skipping of regions,
+polygons, pixel patterns and pixmaps, the decoder state machine with
+enumeration, metadata retention and the invariant and limits documents are
+covered by hand-assembled fixtures and malformed streams (49 tests).
 
 7. `Geometry` (Point, Rect, Fixed) with checked validation; `Opcodes` length-rule table for every
    opcode and reserved range (SPARK-friendly pure function), exhaustively tested.

@@ -1,4 +1,5 @@
 with Interfaces;
+with Pictlib.Geometry;
 with Pictlib.Results;
 with Pictlib.Streams;
 
@@ -57,6 +58,26 @@ package Pictlib.Internal.Bytes is
    function Read_Coordinate
      (Object : in out Streams.Source'Class;
       Value : out Coordinate;
+      Context : Opcode_Context := No_Opcode) return Results.Result;
+
+   --  Read fixed.
+   --  @param Object Source to read from.
+   --  @param Value Two's-complement big-endian 16.16 value; 0 on failure.
+   --  @param Context Opcode recorded on failure.
+   --  @return Operation result.
+   function Read_Fixed
+     (Object : in out Streams.Source'Class;
+      Value : out Geometry.Fixed;
+      Context : Opcode_Context := No_Opcode) return Results.Result;
+
+   --  Read rect.
+   --  @param Object Source to read from.
+   --  @param Value Rectangle read as top, left, bottom, right; all zero on failure.
+   --  @param Context Opcode recorded on failure.
+   --  @return Operation result.
+   function Read_Rect
+     (Object : in out Streams.Source'Class;
+      Value : out Geometry.Rect;
       Context : Opcode_Context := No_Opcode) return Results.Result;
 
    --  To coordinate.
