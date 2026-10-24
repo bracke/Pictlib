@@ -2,9 +2,10 @@ with Ada.Directories;
 with Ada.Streams.Stream_IO;
 
 package body Pictlib_Testing.Files is
-   function Load (Name : String) return Bytes_Access is
+   function Load (Name : String) return Bytes_Access is (Load_Path ("fixtures/" & Name));
+
+   function Load_Path (Path : String) return Bytes_Access is
       use Ada.Streams.Stream_IO;
-      Path : constant String := "fixtures/" & Name;
       Size : constant Natural := Natural (Ada.Directories.Size (Path));
       Result : constant Bytes_Access := new Pictlib.Streams.Byte_Array (1 .. Size);
       File : File_Type;
@@ -13,7 +14,7 @@ package body Pictlib_Testing.Files is
       Pictlib.Streams.Byte_Array'Read (Stream (File), Result.all);
       Close (File);
       return Result;
-   end Load;
+   end Load_Path;
 
    function Load_Raster (Name : String) return Raster is
       Data : constant Bytes_Access := Load (Name);

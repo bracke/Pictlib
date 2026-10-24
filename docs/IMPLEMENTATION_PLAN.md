@@ -6,8 +6,9 @@
 
 ## Operating rules
 
-- Implement in Ada 2022, using Alire with `gnat_native = "^15"`. The only production dependency is
-  `jpeglib`, used through its public API for QuickTime JPEG images. No C libraries.
+- Implement in Ada 2022, using Alire with `gnat_native = "^15"`. The production dependencies are
+  `jpeglib`, for QuickTime JPEG images, and `textrender`, for TrueType text, both through their
+  public APIs. No C libraries.
 - Read the specification and the relevant `jpeglib` package interfaces before changing a public API.
   Any design conflict is resolved in the specification first.
 - For each task, implement its public contract, internal implementation, positive and adversarial
@@ -23,7 +24,7 @@
 
 **Completed (2026-10-24):** Tasks 1–6 and Gate M0. The GNAT 15 Alire library and
 test crates, public foundation API, diagnostics, limits, stream adapters, checked
-big-endian bytes, compile-only consumer and AUnit runner (15 tests) are
+big-endian bytes, compile-only consumer and AUnit runner are
 implemented and verified with the day-to-day gate (then `scripts/check_all.sh`, since
 replaced by the Ada tool `pictlib_check`).
 
@@ -46,7 +47,7 @@ length-rule table, file-header detection without seeking, v1/v2/extended-v2
 headers, the bounded opcode reader with structural skipping of regions,
 polygons, pixel patterns and pixmaps, the decoder state machine with
 enumeration, metadata retention and the invariant and limits documents are
-covered by hand-assembled fixtures and malformed streams (49 tests).
+covered by hand-assembled fixtures and malformed streams.
 
 7. `Geometry` (Point, Rect, Fixed) with checked validation; `Opcodes` length-rule table for every
    opcode and reserved range (SPARK-friendly pure function), exhaustively tested.
@@ -68,7 +69,7 @@ overflow-safe validation, PackBits for bytes and words, region parsing with a
 top-to-bottom row walker, BitMap and PixMap decoding at every depth and pack
 type, nearest-neighbor copies with clip and mask regions, and `Render` are
 covered by hand-built fixtures and by four PICTs from two independent writers
-(Netpbm `ppmtopict`, ImageMagick) that render pixel-exactly (68 tests). Native
+(Netpbm `ppmtopict`, ImageMagick) that render pixel-exactly. Native
 resolution rendering moved to task 19a.
 
 13. `Images` views and validators (descriptor arithmetic SPARK-ready).
@@ -86,7 +87,7 @@ resolution rendering moved to task 19a.
 pen, bit and pixel patterns, planar and RGB colors, oval size, highlight),
 transfer modes for patterns and copies with colorizing, and every shape verb for
 lines, rects, round rects, ovals, arcs, polygons and regions, with the "same"
-variants, render to hand-computed rasters (80 tests). No QuickDraw reference
+variants, render to hand-computed rasters. No QuickDraw reference
 renderer was available: the geometry follows QuickDraw where it is documented
 and the integer rules of the specification elsewhere; checking those against a
 real QuickDraw rendering is added to task 26. Task 19a stays open.
@@ -123,7 +124,7 @@ clip and transfer mode; the placeholder bitmap QuickTime writes after the image
 is skipped. Two QuickTime PICTs written by ImageMagick render within two levels
 of libjpeg's decoding of their JPEGs, and hand-built opcodes cover placement,
 masks, modes, the placeholder, unsupported codecs, mattes and matrices, broken
-JPEGs and the embedded budgets (95 tests).
+JPEGs and the embedded budgets.
 
 22. `Internal.QuickTime`: parse `16#8200#`/`16#8201#`, `ImageDescription`, matrix, matte, mask.
 23. Bridge to `jpeglib` decoding with byte/pixel budgets; error mapping; drawing via the matrix.
@@ -135,7 +136,7 @@ tolerance of JPEG decoding; non-JPEG codecs and corrupt payloads fail or warn as
 
 **Completed (2026-10-24):** Tasks 24–25 and Gate M6. `Pictlib.Encoding` writes
 `Direct_32`, `Indexed_8` and `Mono_1` pictures (and chooses with `Auto`) from
-views in every pixel format, round-tripping exactly through pictlib (103 tests).
+views in every pixel format, round-tripping exactly through pictlib.
 `pictlib_conformance` has LibreOffice's own PICT import read all ten conformance
 pictures exactly and ImageMagick the four it can read; ImageMagick 7 needs the
 file header, misreads unpacked rows and draws BitMaps black, so those pictures
@@ -152,7 +153,7 @@ passes.
 
 **Completed (2026-10-24):** Tasks 26–29 and the library-complete gate, with the
 open items below. `pictlib_complete` runs every gate: the source policy
-(`pictlib_check`), the AUnit suite (107 tests), the real-world corpus
+(`pictlib_check`), the AUnit suite the real-world corpus
 (`pictlib_real_world`: LibreOffice's PICT filter test files at a pinned commit,
 pass and fail, CVE reproductions among them), mutation fuzzing (`pictlib_fuzz`;
 300 000 inputs found no defect), the SPARK proof profile (`pictlib_prove`) and
@@ -174,8 +175,9 @@ Open:
     compare shape rendering with a QuickDraw reference (classic Mac OS emulation or a reference
     implementation) and revise the specification's shape rules where they differ.
 27. Stress and limit matrix, cancellation/reset reuse, benchmark tool.
-28. `proof/pictlib_proof.gpr`: checked arithmetic, image descriptors, opcode length rules, region
-    bounds; `pictlib_prove` via `alr exec`.
+28. `proof/pictlib_proof.gpr`: checked arithmetic, image descriptors and opcode length rules;
+    `pictlib_prove` via `alr exec`. Region bounds remain open: regions are covered by tests and
+    fuzzing, not proof.
 29. CI workflow mirroring `jpeglib`'s; README capability matrix.
 
 **Library-complete gate:** every `Capabilities` feature is tested, proofs pass, no required check

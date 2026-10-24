@@ -1,7 +1,9 @@
 --  Real-world corpus: every picture under fixtures/real_world is enumerated strictly and rendered compatibly
 --  and recoverably, with the test fonts. An exception escaping pictlib is a defect. Each outcome is printed as
 --  "<file> <strict enumerate> <compatible render> <recovering render>" and compared with
---  fixtures/real_world/expected.txt; --update rewrites that file. Run from the tests directory.
+--  fixtures/real_world/expected.txt; --update rewrites that file. Runs from anywhere below the pictlib tree.
+with Pictlib_Testing.Fonts;
+with Pictlib_Testing.Tools;
 with Ada.Command_Line;
 with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Directories;
@@ -92,10 +94,9 @@ procedure Pictlib_Real_World is
    function Render (Data : Bytes_Access; Strictness : Pictlib.Strictness_Mode) return String is
       Source : aliased Pictlib.Streams.Memory_Source;
       Decoder : Pictlib.Decoding.Decoder;
-      Table : Pictlib.Fonts.Font_Table := Pictlib.Fonts.Empty;
+      Table : constant Pictlib.Fonts.Font_Table := Pictlib_Testing.Fonts.Test_Table;
       Outcome : Pictlib.Results.Result;
    begin
-      Pictlib.Fonts.Set_Default (Table, "fixtures/fonts/DejaVuSans.ttf");
       Pictlib.Streams.Open (Source, Pictlib.Streams.Const_Byte_Array_Access (Data));
       Pictlib.Decoding.Initialize (Decoder, Source'Access, (Strictness => Strictness, Fonts => Table, others => <>));
       Outcome := Pictlib.Decoding.Read_Header (Decoder);
@@ -168,6 +169,9 @@ procedure Pictlib_Real_World is
    Expected : Outcome_Maps.Map;
    Mismatches : Natural := 0;
 begin
+   if not Pictlib_Testing.Tools.Enter_Tests_Directory then
+      return;
+   end if;
    Visit (Root);
    if Ada.Directories.Exists (Expected_File) then
       declare

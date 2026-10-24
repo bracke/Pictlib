@@ -2,7 +2,6 @@
 --  proof/pictlib_proof.gpr. The gnatprove is the one `alr install gnatprove` put under the Alire home, which matches
 --  the pinned toolchain; one on PATH only when there is none. Fails on an unproved check, a severity diagnostic,
 --  or a declared SPARK body that was skipped. Run from anywhere below the pictlib tree.
-with Ada.Command_Line;
 with Ada.Directories;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
@@ -12,6 +11,7 @@ with Project_Tools.Processes;
 with Project_Tools.Text;
 
 procedure Pictlib_Prove is
+   procedure Fail (Message : String) renames Pictlib_Testing.Tools.Fail;
    use Ada.Strings.Unbounded;
 
    --  The units the profile proves; docs/proof_profile.md says what each proof covers.
@@ -23,13 +23,6 @@ procedure Pictlib_Prove is
       To_Unbounded_String ("pictlib-internal-packbits.adb")];
 
    Root : constant String := Project_Tools.Files.Find_Root_Upward (Ada.Directories.Current_Directory, "pictlib.gpr");
-   Failures : Natural := 0;
-
-   procedure Fail (Message : String) is
-   begin
-      Failures := Failures + 1;
-      Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "pictlib_prove: " & Message);
-   end Fail;
 
    Prover : constant String := Pictlib_Testing.Tools.Gnatprove;
 
@@ -76,6 +69,7 @@ procedure Pictlib_Prove is
       end;
    end Prove;
 begin
+   Pictlib_Testing.Tools.Start_Report ("pictlib_prove");
    if Root'Length = 0 then
       Fail ("run below the pictlib tree");
    else
@@ -83,7 +77,5 @@ begin
          Prove (To_String (Unit));
       end loop;
    end if;
-   if Failures > 0 then
-      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-   end if;
+   Pictlib_Testing.Tools.Finish_Report;
 end Pictlib_Prove;

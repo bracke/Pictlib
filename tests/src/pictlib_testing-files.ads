@@ -7,6 +7,8 @@ package Pictlib_Testing.Files is
 
    --  Load: the whole of fixtures/<Name>.
    function Load (Name : String) return Bytes_Access;
+   --  Load path: the whole of the file at Path.
+   function Load_Path (Path : String) return Bytes_Access;
 
    --  A binary Netpbm raster: P6 (8-bit RGB) or P4 (1-bit, 1 is black).
    type Raster is record

@@ -43,8 +43,6 @@ package body Pictlib.Internal.Metadata_Store is
 
    function Count (Object : Store) return Natural is (Natural (Object.Infos.Length));
 
-   function Total_Bytes (Object : Store) return Byte_Count is (Object.Bytes);
-
    function Info (Object : Store; Index : Positive) return Metadata.Item_Info is (Object.Infos.Element (Index));
 
    function Copy_Data

@@ -154,7 +154,8 @@ are retained, never interpreted.
   acts as `srcOr`. Unknown modes fail with `Transfer_Mode_Invalid` in `Strict` and act as copy
   with a warning otherwise.
 - A real QuickDraw reference renderer was not available when these rules were written; comparing
-  them against one is an M7 conformance task, and the rules change only through this document.
+  them against one remains open (it needs classic Mac OS under emulation), and the rules change
+  only through this document.
 - Shapes: `frame`, `paint`, `erase`, `invert`, `fill` for rect (`16#0030#..`), rounded rect
   (`16#0040#..`), oval (`16#0050#..`), arc (`16#0060#..`), polygon (`16#0070#..`) and region
   (`16#0080#..`), plus each "same" variant. Lines: `16#0020#..16#0023#`. QuickDraw draws without
@@ -277,7 +278,9 @@ are retained, never interpreted.
 - `jpeglib` errors are mapped to `Embedded_Image_Failed` with the `jpeglib` identifier kept as the
   underlying code.
 
-## 4. Public package layout
+## 4. Package layout
+
+The public packages:
 
 ```text
 Pictlib                        -- shared scalar types and enums
@@ -295,30 +298,36 @@ Pictlib.Metadata               -- comments, font names, QuickTime payloads, rete
 Pictlib.Fonts                  -- the caller's TrueType font table, classic font IDs
 Pictlib.Decoding               -- forward-only decoder: header, enumerate, render
 Pictlib.Encoding               -- forward-only raster PICT 2 encoder
-Pictlib.Internal.Bytes             -- checked big-endian readers and writers
-Pictlib.Internal.Checked_Arithmetic
+```
+
+The internal ones, from the bottom up:
+
+```text
+Pictlib.Internal                   -- PICT format constants
+Pictlib.Internal.Checked_Arithmetic -- checked and saturating counts (proved)
+Pictlib.Internal.Bytes             -- checked big-endian readers and test-side writers
 Pictlib.Internal.Picture_Stream    -- look-ahead source wrapper, picture byte budget
-Pictlib.Internal.Container         -- file header, picSize, picFrame, version, HeaderOp
-Pictlib.Internal.Sessions          -- decoding session, budget-checked opcode data readers
-Pictlib.Internal.Opcode_Reader     -- bounded opcode stream, alignment, structural skipping
 Pictlib.Internal.Diagnostics       -- bounded warning log
 Pictlib.Internal.Metadata_Store    -- retained metadata under budgets
-Pictlib.Internal.Regions           -- region parsing and scanline masks
-Pictlib.Internal.Polygons
-Pictlib.Internal.PackBits          -- unpack/pack byte and word runs
-Pictlib.Internal.Pixmaps           -- BitMap/PixMap headers, color tables, rows
-Pictlib.Internal.Patterns
+Pictlib.Internal.Sessions          -- decoding session: budget-checked readers, the drawing-work and
+                                   -- allocation accounting, the cost model, the strictness rule
+Pictlib.Internal.Container         -- file header, picSize, picFrame, version, HeaderOp
+Pictlib.Internal.Decoder_State     -- what a public decoder holds besides its lifecycle
+Pictlib.Internal.Regions           -- regions as scanlines, row spans, span arithmetic
+Pictlib.Internal.Region_Reader     -- regions read or skipped under the budgets
+Pictlib.Internal.PackBits          -- unpack/pack byte and word runs (Unpack proved)
+Pictlib.Internal.Pixmaps           -- BitMap/PixMap and PixPat headers, color tables, rows
+Pictlib.Internal.Patterns          -- bit, color and dither patterns
+Pictlib.Internal.Transfer_Modes    -- transfer mode arithmetic
 Pictlib.Internal.Canvas            -- the caller's view as a drawing surface
-Pictlib.Internal.Rendering         -- painter and port state, fills, copies, clip and mask
-Pictlib.Internal.Drawing           -- port state and shape opcodes
-Pictlib.Internal.Coverage          -- shapes as per-row spans
-Pictlib.Internal.Rasterizer        -- shapes, pen, clipping
-Pictlib.Internal.Transfer_Modes
-Pictlib.Internal.Text              -- text state, Mac Roman, loaded fonts
+Pictlib.Internal.Coverage          -- shapes as per-row spans: rects, ovals, arcs, polygons, lines, regions
+Pictlib.Internal.Text              -- text state, Mac Roman, the font cache, text costs
+Pictlib.Internal.Rendering         -- port state, the row blit every drawing paints through, fills, copies
 Pictlib.Internal.Typesetting       -- drawing text opcodes
-Pictlib.Internal.QuickTime         -- 8200 parsing, jpeglib bridge, placement
-Pictlib.Internal.Writers           -- opcode and pixmap emission
-Pictlib.Internal.Ownership         -- allocation/budget accounting
+Pictlib.Internal.QuickTime         -- CompressedQuickTime: description, jpeglib bridge, placement
+Pictlib.Internal.Drawing           -- the render dispatcher: every opcode that changes the port or draws
+Pictlib.Internal.Opcode_Reader     -- opcode framing, alignment, structural skipping and retention
+Pictlib.Internal.Writers           -- the encoder's byte output and dry-run measuring
 ```
 
 Only non-`Internal` packages are the supported public API. Use `pragma Pure` / `Preelaborate`
@@ -358,10 +367,15 @@ an extended header's native resolution is a later task.
   active lifetime.
 - Output pixels are caller-owned; their content is defined only on success or on a reported
   `Partial_Picture`.
-- Region data, row buffers and embedded JPEG pixels are library-owned heap buffers accounted against `Max_Allocation_Bytes` and released on `Reset`/`Finalize`, also
-  after failure and cancellation. `Finalize` is idempotent.
+- Region data, row buffers, pattern tiles, fonts and embedded JPEG pixels are library-owned heap
+  buffers, each checked against `Max_Allocation_Bytes` and all of a session against
+  `Max_Total_Allocation_Bytes`, and released on `Reset`/`Finalize`, also after failure and
+  cancellation. `Finalize` is idempotent.
 - Metadata is copied into bounded library-owned storage valid until `Reset`/`Finalize`, or
   delivered through a caller callback during enumeration.
+- Decoders and encoders keep no shared state and may be used from different tasks, one object per
+  task. Calls into textrender, whose rasterizer shares scratch buffers between renderers, are
+  serialized by one process-wide lock.
 
 ## 6. Decoder contract
 
@@ -516,7 +530,7 @@ ImageMagick 7 reads only pictures with the file header, misreads rows stored unp
 
 Fixtures are independent: hand-assembled byte literals with documented provenance, real-world
 PICT files with recorded origin and license, and expected rasters produced by an external
-reference (ImageMagick, Netpbm `picttoppm`, macOS `sips` where available) and reviewed.
+reference (ImageMagick, Netpbm's `ppmtopict`, libjpeg for QuickTime images) and reviewed.
 External tools are test-only oracles. Round trips complement, never replace, independent
 expected data.
 
@@ -525,10 +539,6 @@ expected data.
 Milestones M0–M7 in the implementation plan. First release: Gate M6 (raster and vector decode,
 text, QuickTime JPEG, raster encode accepted by independent decoders). Library-complete: Gate M7,
 `pictlib_complete`.
-
-Decoders and encoders keep no shared state and may be used from different tasks, one object per
-task. Calls into textrender, whose rasterizer shares scratch buffers between renderers, are
-serialized by one process-wide lock.
 
 ## 14. Implementation discipline for coding agents
 

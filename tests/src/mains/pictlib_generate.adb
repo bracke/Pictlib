@@ -2,7 +2,7 @@
 --  independent encoders (Netpbm ppmtopict and ImageMagick), QuickTime pictures with embedded JPEGs and libjpeg's
 --  decodings of those JPEGs. Test-time tooling only; the tools are run directly, never through a shell. Everything
 --  is made in a staging directory first and copied into place only when every step succeeded.
---  Arguments: [--output DIR], fixtures/external by default. Run from the tests directory.
+--  Arguments: [--output DIR], fixtures/external by default. Runs from anywhere below the pictlib tree.
 with Ada.Command_Line;
 with Ada.Directories;
 with Ada.Strings.Fixed;
@@ -14,6 +14,7 @@ with Project_Tools.Files;
 with Project_Tools.Processes;
 
 procedure Pictlib_Generate is
+   procedure Fail (Message : String) renames Pictlib_Testing.Tools.Fail;
    use Ada.Strings.Unbounded;
    package Processes renames Project_Tools.Processes;
 
@@ -30,20 +31,14 @@ procedure Pictlib_Generate is
    Target : Unbounded_String := +"fixtures/external";
    Magick : constant String := Pictlib_Testing.Tools.ImageMagick;
    Ppmtopict : constant String := Processes.Locate_Command ("ppmtopict");
-   Failed : Boolean := False;
-
-   procedure Fail (Message : String) is
-   begin
-      Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "pictlib_generate: " & Message);
-      Failed := True;
-   end Fail;
 
    procedure Read_Arguments is
       Index : Positive := 1;
    begin
       while Index <= Ada.Command_Line.Argument_Count loop
          if Ada.Command_Line.Argument (Index) = "--output" and then Index < Ada.Command_Line.Argument_Count then
-            Target := +Ada.Command_Line.Argument (Index + 1);
+            --  Relative to where the tool was run, before it moves to the tests directory.
+            Target := +Ada.Directories.Full_Name (Ada.Command_Line.Argument (Index + 1));
             Index := Index + 2;
          else
             Fail ("usage: pictlib_generate [--output DIR]");
@@ -57,7 +52,7 @@ procedure Pictlib_Generate is
    procedure Magick_Run (Arguments : Words) is
       Items : Processes.Argument_Vectors.Vector;
    begin
-      if Failed then
+      if Pictlib_Testing.Tools.Failures > 0 then
          return;
       end if;
       for Item of Arguments loop
@@ -74,7 +69,7 @@ procedure Pictlib_Generate is
       Success : Boolean;
       Status : Integer;
    begin
-      if Failed then
+      if Pictlib_Testing.Tools.Failures > 0 then
          GNAT.OS_Lib.Free (Arguments (1));
          return;
       end if;
@@ -90,7 +85,7 @@ procedure Pictlib_Generate is
       Start_Of_Image : constant String := [Character'Val (16#FF#), Character'Val (16#D8#), Character'Val (16#FF#)];
       End_Of_Image : constant String := [Character'Val (16#FF#), Character'Val (16#D9#)];
    begin
-      if Failed then
+      if Pictlib_Testing.Tools.Failures > 0 then
          return;
       end if;
       declare
@@ -111,11 +106,15 @@ procedure Pictlib_Generate is
       Project_Tools.Files.Delete_File_If_Present (Path (Name));
    end Remove;
 begin
+   Pictlib_Testing.Tools.Start_Report ("pictlib_generate");
    Read_Arguments;
-   if not Failed and then (Magick'Length = 0 or else Ppmtopict'Length = 0) then
+   if not Pictlib_Testing.Tools.Enter_Tests_Directory then
+      return;
+   end if;
+   if Pictlib_Testing.Tools.Failures = 0 and then (Magick'Length = 0 or else Ppmtopict'Length = 0) then
       Fail ("needs ImageMagick (magick, or ImageMagick 6's convert) and Netpbm's ppmtopict");
    end if;
-   if not Failed then
+   if Pictlib_Testing.Tools.Failures = 0 then
       Ada.Directories.Create_Path (Staging);
    end if;
 
@@ -155,14 +154,14 @@ begin
    Remove ("small.ppm");
 
    --  Into place, all or nothing.
-   if not Failed then
+   if Pictlib_Testing.Tools.Failures = 0 then
       for Product of Products loop
          if not Ada.Directories.Exists (Path (To_String (Product))) then
             Fail ("missing " & To_String (Product));
          end if;
       end loop;
    end if;
-   if not Failed then
+   if Pictlib_Testing.Tools.Failures = 0 then
       Ada.Directories.Create_Path (To_String (Target));
       for Product of Products loop
          Ada.Directories.Copy_File (Path (To_String (Product)), To_String (Target) & "/" & To_String (Product));
@@ -172,7 +171,5 @@ begin
    if Ada.Directories.Exists (Staging) then
       Ada.Directories.Delete_Tree (Staging);
    end if;
-   if Failed then
-      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-   end if;
+   Pictlib_Testing.Tools.Finish_Report;
 end Pictlib_Generate;

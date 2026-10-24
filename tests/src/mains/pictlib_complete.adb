@@ -1,7 +1,7 @@
 --  The library-complete gate: every check pictlib has, in order, each required to pass -- the day-to-day gate
 --  (library build, source policy, AUnit suite), the real-world corpus, a fuzzing run, the SPARK proof profile and
 --  encoder conformance against ImageMagick and LibreOffice. --without-conformance leaves out the last, for hosts
---  without those readers. Run from the tests directory after `alr build`.
+--  without those readers. Runs from anywhere below the pictlib tree after `alr build`.
 with Ada.Command_Line;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
@@ -31,6 +31,9 @@ procedure Pictlib_Complete is
    Suffix : constant String := Pictlib_Testing.Tools.Executable_Suffix;
    Failed, Ran : Natural := 0;
 begin
+   if not Pictlib_Testing.Tools.Enter_Tests_Directory then
+      return;
+   end if;
    for Item of Steps loop
       declare
          Name : constant String := To_String (Item.Program);

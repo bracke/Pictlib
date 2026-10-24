@@ -11,8 +11,6 @@ package body Pictlib.Internal.Regions is
 
    function Bounds (Item : Region) return Area is (Item.Box);
 
-   function Is_Rectangular (Item : Region) return Boolean is (Item.Rectangular);
-
    function Size (Item : Region) return Natural is (Natural (Item.Lines.Length) + Natural (Item.Points.Length) + 1);
 
    procedure Translate (Item : in out Region; DX, DY : Integer) is

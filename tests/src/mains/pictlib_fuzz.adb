@@ -6,7 +6,9 @@
 --  run only with --fail-stuck, for a machine whose speed is known. Arguments: [iterations] [seed]
 --  [--fail-stuck]; seeds are taken in file-name order, so a pair is deterministic everywhere. With --replay
 --  FILE..., each saved input is run through the same checks instead, and its time printed.
---  Run from the tests directory.
+--  Runs from anywhere below the pictlib tree.
+with Pictlib_Testing.Fonts;
+with Pictlib_Testing.Tools;
 with Ada.Calendar;
 with Ada.Command_Line;
 with Ada.Containers.Indefinite_Vectors;
@@ -259,9 +261,8 @@ procedure Pictlib_Fuzz is
       Decoder : Pictlib.Decoding.Decoder;
       Visitor : Null_Visitor;
       Outcome : Pictlib.Results.Result;
-      Table : Pictlib.Fonts.Font_Table := Pictlib.Fonts.Empty;
+      Table : constant Pictlib.Fonts.Font_Table := Pictlib_Testing.Fonts.Test_Table;
    begin
-      Pictlib.Fonts.Set_Default (Table, "fixtures/fonts/DejaVuSans.ttf");
       Pictlib.Streams.Open (Source, Input'Unchecked_Access);
       Pictlib.Decoding.Initialize (Decoder, Source'Access, Decode_Limits => Budget);
       Outcome := Pictlib.Decoding.Read_Header (Decoder);
@@ -342,6 +343,9 @@ procedure Pictlib_Fuzz is
       end loop;
    end Replay_Inputs;
 begin
+   if not Pictlib_Testing.Tools.Enter_Tests_Directory then
+      return;
+   end if;
    if Replay then
       Replay_Inputs;
       if Defects > 0 then

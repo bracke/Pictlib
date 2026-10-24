@@ -6,7 +6,7 @@
 --  * LibreOffice (`soffice`), through its own PICT import: the picture is exported as SVG, whose embedded PNG
 --    is the decoded bitmap at its own size; ImageMagick only turns that PNG into a PPM.
 --  A decoder that is not installed is reported as skipped; --require fails the run unless every decoder ran.
---  Run from the tests directory.
+--  Runs from anywhere below the pictlib tree.
 with Ada.Command_Line;
 with Ada.Directories;
 with Ada.Streams.Stream_IO;
@@ -254,6 +254,9 @@ procedure Pictlib_Conformance is
       end if;
    end Discard;
 begin
+   if not Pictlib_Testing.Tools.Enter_Tests_Directory then
+      return;
+   end if;
    Ada.Directories.Create_Path (Directory);
    if Magick'Length = 0 then
       Ada.Text_IO.Put_Line ("SKIP ImageMagick: neither magick nor ImageMagick 6's convert is installed");

@@ -23,10 +23,6 @@ package Pictlib.Internal.Diagnostics is
    --  @return The warning.
    function Element (Log : Warning_Log; Index : Positive) return Errors.Warning
      with Pre => Index <= Count (Log);
-   --  Suppressed.
-   --  @param Log Log to inspect.
-   --  @return Warnings that did not fit.
-   function Suppressed (Log : Warning_Log) return Natural;
 
 private
    package Warning_Vectors is new Ada.Containers.Vectors (Positive, Errors.Warning, Errors."=");

@@ -26,6 +26,4 @@ package body Pictlib.Internal.Diagnostics is
    function Count (Log : Warning_Log) return Natural is (Natural (Log.Items.Length));
 
    function Element (Log : Warning_Log; Index : Positive) return Errors.Warning is (Log.Items.Element (Index));
-
-   function Suppressed (Log : Warning_Log) return Natural is (Log.Dropped);
 end Pictlib.Internal.Diagnostics;

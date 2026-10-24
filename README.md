@@ -13,11 +13,15 @@ lists what is implemented.
 - [Specification](docs/SPECIFICATION.md)
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
 - [Public API notes](docs/PUBLIC_API.md)
+- [Limits and safety](docs/limits_and_safety.md)
+- [Invariant registry](docs/invariants.md)
+- [Proof profile](docs/proof_profile.md)
+- [Security policy](SECURITY.md)
 - [Agent instructions](AGENTS.md)
 
 The reference architecture is [bracke/jpeglib](https://github.com/bracke/jpeglib).
 `jpeglib` decodes JPEG images embedded in pictures and
-[textrender](../textrender) rasterizes TrueType text; they are the only
+[textrender](https://github.com/bracke/textrender) rasterizes TrueType text; they are the only
 production dependencies. No C library is used by the production crate.
 
 ## Capabilities

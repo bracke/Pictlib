@@ -1,5 +1,6 @@
 --  Throughput, for information only: each layout encoded from and rendered back into a 1024 x 768 view, and the
---  real-world vector picture rendered. Prints megapixels per second. Run from the tests directory.
+--  real-world vector picture rendered. Prints megapixels per second. Runs from anywhere below the pictlib tree.
+with Pictlib_Testing.Tools;
 with Ada.Calendar;
 with Ada.Directories;
 with Ada.Streams.Stream_IO;
@@ -111,6 +112,9 @@ procedure Pictlib_Benchmark is
       end;
    end Vector_Picture;
 begin
+   if not Pictlib_Testing.Tools.Enter_Tests_Directory then
+      return;
+   end if;
    Layout (Pictlib_Testing.Samples.Gradient, Pictlib.Encoding.Direct_32);
    Layout (Pictlib_Testing.Samples.Three_Colors, Pictlib.Encoding.Indexed_8);
    Layout (Pictlib_Testing.Samples.Black_And_White, Pictlib.Encoding.Mono_1);

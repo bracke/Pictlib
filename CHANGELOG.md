@@ -66,4 +66,6 @@ All tooling is Ada, in the `tests` crate:
   ImageMagick and LibreOffice (`pictlib_conformance`).
 - `pictlib_generate` regenerates the external fixtures.
 - `pictlib_benchmark`.
+- Every tool runs from anywhere below the pictlib tree and finds its
+  fixtures itself.
 - CI steps are single commands.

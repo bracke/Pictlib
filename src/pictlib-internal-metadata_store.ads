@@ -27,10 +27,6 @@ package Pictlib.Internal.Metadata_Store is
    --  @param Object Store to inspect.
    --  @return Items retained.
    function Count (Object : Store) return Natural;
-   --  Total bytes.
-   --  @param Object Store to inspect.
-   --  @return Data bytes retained.
-   function Total_Bytes (Object : Store) return Byte_Count;
    --  Info.
    --  @param Object Store to inspect.
    --  @param Index 1-based item position.
