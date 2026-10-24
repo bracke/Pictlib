@@ -1,4 +1,5 @@
 with Interfaces;
+with Pictlib.Fonts;
 with Pictlib.Geometry;
 with Pictlib.Images;
 with Pictlib.Internal.Canvas;
@@ -7,6 +8,7 @@ with Pictlib.Internal.Patterns;
 with Pictlib.Internal.Pixmaps;
 with Pictlib.Internal.Regions;
 with Pictlib.Internal.Sessions;
+with Pictlib.Internal.Text;
 with Pictlib.Internal.Transfer_Modes;
 with Pictlib.Pictures;
 with Pictlib.Results;
@@ -43,6 +45,9 @@ package Pictlib.Internal.Rendering is
       Last_Rect : Geometry.Rect;
       Last_Polygon : Coverage.Point_Vectors.Vector;
       Last_Region : Regions.Region;
+      Text_State : Text.Text_State;
+      Fonts : Pictlib.Fonts.Font_Table;
+      Font_Cache : aliased Text.Font_Cache;
       --  Pixels painted and work done, against Limits.Max_Drawing_Work.
       Work : Pixel_Count := 0;
       Clip_Spans : Regions.Span_Vectors.Vector;
@@ -65,11 +70,13 @@ package Pictlib.Internal.Rendering is
    --  @param View A valid caller view the size of Frame.
    --  @param Frame The picture frame.
    --  @param Background Color the view is filled with first.
+   --  @param Font_Files The TrueType fonts text renders with.
    procedure Start
      (P : in out Painter;
       View : Images.Mutable_Image_View;
       Frame : Geometry.Rect;
-      Background : Images.RGB_Color)
+      Background : Images.RGB_Color;
+      Font_Files : Pictlib.Fonts.Font_Table)
      with Pre => Images.Is_Valid (View);
 
    --  To picture.
@@ -103,6 +110,25 @@ package Pictlib.Internal.Rendering is
       Event : Pictures.Opcode_Event;
       Value : Interfaces.Unsigned_16;
       Kind : out Transfer_Modes.Mode_Kind) return Results.Result;
+
+   --  Clip row.
+   --  @param P Painter whose Row_Spans are narrowed to the clip region's row Y.
+   --  @param S Session whose drawing budget applies.
+   --  @param Y Picture row.
+   --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
+   function Clip_Row (P : in out Painter; S : Sessions.Session; Y : Integer) return Results.Result;
+   --  Get.
+   --  @param P Painter.
+   --  @param X Picture column inside the canvas.
+   --  @param Y Picture row inside the canvas.
+   --  @return The pixel there.
+   function Get (P : Painter; X, Y : Integer) return Images.RGB_Color;
+   --  Put.
+   --  @param P Painter.
+   --  @param X Picture column inside the canvas.
+   --  @param Y Picture row inside the canvas.
+   --  @param Color New pixel.
+   procedure Put (P : in out Painter; X, Y : Integer; Color : Images.RGB_Color);
 
    --  Fill.
    --  @param P Painter.

@@ -1,6 +1,6 @@
 # pictlib — Implementation Plan
 
-**Status:** M0–M3 implemented; M4 is next  
+**Status:** M0–M4 implemented; M5 is next  
 **Contract:** [SPECIFICATION.md](SPECIFICATION.md) (authoritative)  
 **Reference:** https://github.com/bracke/jpeglib
 
@@ -100,10 +100,18 @@ real QuickDraw rendering is added to task 26. Task 19a stays open.
 
 ## M4 — Text
 
-20. `Fonts.Glyph_Source` interface; built-in public-domain bitmap face with recorded provenance.
-21. Text state and the four text opcodes, Mac Roman mapping, face synthesis, custom glyph source.
+**Completed (2026-10-24):** Tasks 20–21 and Gate M4. Text draws with TrueType
+fonts through `textrender`; the caller's `Fonts.Font_Table` resolves families by
+`fontName`, ID, classic name and default. The text state, the four text opcodes,
+Mac Roman, face synthesis, text modes and spacing render exactly as textrender's
+glyphs placed by the specification's layout rules (88 tests, with DejaVu test
+fonts committed under their license).
 
-**Gate M4:** text fixtures match the built-in face's reference rasters; custom source is honored.
+20. `Fonts.Font_Table` of caller-supplied TrueType files; `textrender` as the glyph rasterizer.
+21. Text state and the four text opcodes, Mac Roman mapping, face synthesis.
+
+**Gate M4:** text fixtures match textrender's glyphs placed by the specification's layout rules;
+font resolution and missing fonts behave as specified.
 
 ## M5 — QuickTime JPEG
 

@@ -36,5 +36,10 @@ Available since Gate M2:
   `Descriptor_Is_Valid`, `Is_Valid`.
 - `Pictlib.Decoding.Render` and `Options.Background`.
 
-Vector and text rendering, QuickTime JPEG and encoding arrive with Gates
-M3–M6.
+Available since Gate M4:
+
+- `Pictlib.Fonts` — `Font_ID`, `Font_Table` (`Add` by family or ID,
+  `Set_Default`, `Resolve`), `Classic_Name`; `Decoding.Options.Fonts`.
+- `Errors.Font_Unavailable`.
+
+QuickTime JPEG and encoding arrive with Gates M5–M6.

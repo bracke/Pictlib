@@ -1,4 +1,5 @@
 with Pictlib.Errors;
+with Pictlib.Fonts;
 with Pictlib.Images;
 with Pictlib.Internal.Container;
 with Pictlib.Internal.Sessions;
@@ -29,6 +30,8 @@ package Pictlib.Decoding is
       Require_End_Of_Input : Boolean := False;
       --  The color Render fills the view with before drawing.
       Background : Images.RGB_Color := Images.White;
+      --  The TrueType fonts text renders with.
+      Fonts : Pictlib.Fonts.Font_Table := Pictlib.Fonts.Empty;
    end record;
 
    type Visit_Action is (Continue, Stop);

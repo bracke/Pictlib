@@ -6,9 +6,11 @@ incomplete task and its acceptance gate.
 
 Use `../jpeglib` (https://github.com/bracke/jpeglib) as the architectural reference for source/destination
 interfaces, structured errors and results, resource budgets, package organization, tests and Alire conventions.
-`jpeglib` is also the one production dependency: it decodes JPEG images embedded through QuickTime opcodes
-(`16#8200#`, `16#8201#`), and only through its public API. Do not copy JPEG-only abstractions, and do not
-introduce any other production dependency or any binding to a C library.
+`jpeglib` is a production dependency: it decodes JPEG images embedded through QuickTime opcodes (`16#8200#`,
+`16#8201#`), and only through its public API. `../textrender` is the other one: it rasterizes the TrueType fonts
+text is drawn with, through its public API. Do not copy JPEG-only abstractions, and do not introduce any other
+production dependency or any binding to a C library. pictlib ships no fonts; tests use the committed DejaVu
+fixtures.
 
 This crate pins its GNAT toolchain via Alire (`gnat_native = "^15"`). Build and test with `alr`, not system
 GNAT / GPRBuild / GNATprove / GNATdoc tools on `PATH` — `alr exec -- gnatls --version` must report the pinned GNAT.

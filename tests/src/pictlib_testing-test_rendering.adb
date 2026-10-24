@@ -148,9 +148,8 @@ package body Pictlib_Testing.Test_Rendering is
    Truncated_Pixels : aliased constant Bytes :=
      V2_Prefix (0, 0, 2, 8) & Copy (16#98#, 2, Rect (0, 0, 2, 8), Rect (0, 0, 2, 8), Rect (0, 0, 2, 8))
      & B (16#A5#) & B (0) & B (16#0F#);
-   --  LongText at (0, 0), one character; text renders from M4.
-   With_Text : aliased constant Bytes :=
-     V2_Picture (0, 0, 2, 8, W (16#28#) & W (0) & W (0) & B (1) & Text ("a") & Bitmap_2x8);
+   --  An empty CompressedQuickTime image; QuickTime renders from M5.
+   With_QuickTime : aliased constant Bytes := V2_Picture (0, 0, 2, 8, W (16#8200#) & L (0) & Bitmap_2x8);
    Dither_Copy : aliased constant Bytes := V2_Picture (0, 0, 2, 8, Bitmap_2x8 (Mode => 16#40#));
    Default_Colors : aliased constant Bytes :=
      V2_Picture (0, 0, 2, 8, W (16#1A#) & W (0) & W (0) & W (0) & W (16#1B#) & W (16#FFFF#) & W (16#FFFF#)
@@ -387,8 +386,9 @@ package body Pictlib_Testing.Test_Rendering is
    procedure Unsupported_Drawing (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
    begin
-      Expect_Render_Failure (With_Text, 8, 2, Pictlib.Errors.Unsupported_Feature, "LongText", 16#28#);
-      Expect_Lenient (With_Text, 8, 2, Bitmap_2x8_Raster, Pictlib.Errors.Approximated_Rendering, "LongText");
+      Expect_Render_Failure (With_QuickTime, 8, 2, Pictlib.Errors.Unsupported_Feature, "CompressedQuickTime", 16#8200#);
+      Expect_Lenient (With_QuickTime, 8, 2, Bitmap_2x8_Raster, Pictlib.Errors.Approximated_Rendering,
+                      "CompressedQuickTime");
       Expect_Render_Failure (Unknown_Planar, 8, 2, Pictlib.Errors.Unsupported_Feature, "unknown planar color", 16#0E#);
       Expect_Render_Failure (Unknown_Mode, 8, 2, Pictlib.Errors.Transfer_Mode_Invalid, "transfer mode 20", 16#98#);
       Expect_Lenient (Unknown_Mode, 8, 2, Bitmap_2x8_Raster, Pictlib.Errors.Recovery_Applied, "transfer mode 20");
@@ -461,7 +461,7 @@ package body Pictlib_Testing.Test_Rendering is
       Outcome := Decoding.Render (Decoder, Output);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Operation_Cancelled, "a cancelled decoder rendered");
 
-      Canvases.Render (With_Text, Decoder, Output, Outcome);
+      Canvases.Render (With_QuickTime, Decoder, Output, Outcome);
       Assert (Decoding.State (Decoder) = Decoding.Failed
               and then Decoding.Last_Error (Decoder).Code = Pictlib.Errors.Unsupported_Feature,
               "an unsupported opcode did not fail the decoder");

@@ -1,5 +1,6 @@
 with Interfaces;
 with Pictlib.Errors;
+with Pictlib.Fonts;
 with Pictlib.Geometry;
 with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Drawing;
@@ -133,7 +134,8 @@ package body Pictlib.Internal.Opcode_Reader is
    function Consume_Font_Name
      (S : in out Session;
       Event : Pictures.Opcode_Event;
-      Length : Byte_Count) return Results.Result
+      Length : Byte_Count;
+      Paint : access Rendering.Painter) return Results.Result
    is
       Data : Streams.Byte_Array_Access;
       Keep : Boolean;
@@ -157,7 +159,21 @@ package body Pictlib.Internal.Opcode_Reader is
          Font : constant Interfaces.Unsigned_16 :=
            Interfaces.Shift_Left (Interfaces.Unsigned_16 (Data (1)), 8) or Interfaces.Unsigned_16 (Data (2));
       begin
-         Outcome := Sessions.Admit_Item (S, Byte_Count (Name_Length), Keep);
+         if Paint /= null then
+            declare
+               Name : String (1 .. Name_Length);
+            begin
+               for Index in Name'Range loop
+                  Name (Index) := Character'Val (Data (3 + Index));
+               end loop;
+               Paint.Text_State.Names.Include (Fonts.Font_ID (Font), Name);
+            end;
+         end if;
+         if S.Retention.Font_Names then
+            Outcome := Sessions.Admit_Item (S, Byte_Count (Name_Length), Keep);
+         else
+            Keep := False;
+         end if;
          if Results.Succeeded (Outcome) and then Keep then
             Metadata_Store.Append
               (S.Store, (Item_For (Metadata.Font_Name, Event) with delta Font_ID => Font), Data (4 .. 3 + Name_Length));
@@ -170,14 +186,15 @@ package body Pictlib.Internal.Opcode_Reader is
    function Consume_Length_Prefixed
      (S : in out Session;
       Event : Pictures.Opcode_Event;
-      Length : Byte_Count) return Results.Result
+      Length : Byte_Count;
+      Paint : access Rendering.Painter) return Results.Result
    is
       Outcome : constant Results.Result := Sessions.Admit_Data (S, Length);
    begin
       if not Results.Succeeded (Outcome) then
          return Outcome;
-      elsif Event.Op = Opcodes.Font_Name and then S.Retention.Font_Names then
-         return Consume_Font_Name (S, Event, Length);
+      elsif Event.Op = Opcodes.Font_Name and then (S.Retention.Font_Names or else Paint /= null) then
+         return Consume_Font_Name (S, Event, Length, Paint);
       elsif Event.Op in Opcodes.Compressed_QuickTime | Opcodes.Uncompressed_QuickTime
         and then S.Retention.QuickTime_Payloads
       then
@@ -221,7 +238,7 @@ package body Pictlib.Internal.Opcode_Reader is
             begin
                Outcome := Sessions.Read_Word (S, Length);
                if Results.Succeeded (Outcome) then
-                  Outcome := Consume_Length_Prefixed (S, Event, Byte_Count (Length));
+                  Outcome := Consume_Length_Prefixed (S, Event, Byte_Count (Length), Paint);
                end if;
                return Outcome;
             end;
@@ -231,7 +248,7 @@ package body Pictlib.Internal.Opcode_Reader is
             begin
                Outcome := Sessions.Read_Long (S, Length);
                if Results.Succeeded (Outcome) then
-                  Outcome := Consume_Length_Prefixed (S, Event, Byte_Count (Length));
+                  Outcome := Consume_Length_Prefixed (S, Event, Byte_Count (Length), Paint);
                end if;
                return Outcome;
             end;
@@ -254,9 +271,9 @@ package body Pictlib.Internal.Opcode_Reader is
       end case;
    end Consume_Data;
 
-   --  Opcodes that draw but that this renderer does not draw yet: text and QuickTime images.
+   --  Opcodes that draw but that this renderer does not draw yet: QuickTime images.
    function Draws_Unsupported (Event : Pictures.Opcode_Event) return Boolean is
-     (Event.Op in 16#0028# .. 16#002B# | Opcodes.Compressed_QuickTime);
+     (Event.Op = Opcodes.Compressed_QuickTime);
 
    function Next
      (S : in out Session;

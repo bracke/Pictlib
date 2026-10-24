@@ -2,6 +2,16 @@
 
 ## 0.1.0-dev
 
+- Gate M4: text renders with TrueType fonts through `textrender`, a new
+  production dependency. `Pictlib.Fonts.Font_Table`, in the decode options,
+  maps Macintosh families and font IDs to font files; a picture's `fontName`,
+  the ID, the classic Macintosh name of the ID and a default are tried in
+  turn, and a missing font is `Font_Unavailable` strictly. `LongText`,
+  `DHText`, `DVText` and `DHDVText` draw Mac Roman text from the text origin
+  in the port's font, face (bold, italic, underline, condense, extend), size,
+  mode and colors, with `SpExtra` and `ChExtra`, without antialiasing.
+  DejaVu fonts are committed as test fixtures under their license. 88 AUnit
+  tests.
 - Gate M3: the renderer draws QuickDraw's vector opcodes. Port state — origin,
   clip, pen size, mode and location, bit patterns, color and dither pixel
   patterns, planar and RGB foreground and background, OpColor, highlight,

@@ -1,4 +1,5 @@
 with "../pictlib.gpr";
+with "textrender";
 with "aunit";
 with "project_tools";
 

@@ -8,7 +8,8 @@ package body Pictlib.Internal.Rendering is
      (P : in out Painter;
       View : Images.Mutable_Image_View;
       Frame : Geometry.Rect;
-      Background : Images.RGB_Color) is
+      Background : Images.RGB_Color;
+      Font_Files : Pictlib.Fonts.Font_Table) is
    begin
       Canvas.Bind (P.Target, View);
       Canvas.Fill (P.Target, Background);
@@ -32,6 +33,9 @@ package body Pictlib.Internal.Rendering is
       P.Last_Rect := (others => 0);
       P.Last_Polygon.Clear;
       P.Last_Region := Regions.Rectangle ((others => 0));
+      P.Text_State := (others => <>);
+      P.Fonts := Font_Files;
+      Text.Clear (P.Font_Cache);
       P.Work := 0;
    end Start;
 
@@ -75,7 +79,6 @@ package body Pictlib.Internal.Rendering is
       return Results.Success;
    end Mode;
 
-   --  Narrow P.Row_Spans to the clip region's row Y.
    function Clip_Row (P : in out Painter; S : Sessions.Session; Y : Integer) return Results.Result is
       Work : Natural;
    begin

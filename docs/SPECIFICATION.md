@@ -20,6 +20,7 @@ Normative words: **shall** is a requirement, **should** is a recommendation, **m
   and other non-pixel content as bounded metadata.
 - **Decode embedded JPEG** carried by the QuickTime compressed-image opcode (`16#8200#`) through
   the public API of `jpeglib`.
+- **Draw text** with TrueType fonts the caller supplies, through the public API of `textrender`.
 - **Encode** raster PICT version 2 (extended header) from caller pixel views.
 
 Out of scope: rendering the QuickDraw GX or QuickDraw 3D payloads that pictures may carry in
@@ -191,15 +192,35 @@ are retained, never interpreted.
 
 ### 3.4 Text
 
-- Text opcodes `LongText`, `DHText`, `DVText`, `DHDVText` (`16#0028#..16#002B#`) render through
-  the `Pictlib.Fonts.Glyph_Source` interface. The library ships one built-in bitmap face (from a
-  public-domain source, provenance recorded in `docs/`) used for every font ID, scaled by integer
-  replication to the nearest size; text face bits bold/italic/underline are synthesized.
-  Callers may supply their own `Glyph_Source` for higher fidelity.
-- Mac Roman text bytes are mapped to Unicode code points before glyph lookup. Font names
-  (`16#002C#`) and IDs are retained as metadata.
-- Exact Macintosh glyph fidelity is not a requirement; tests compare text placement, advance and
-  coverage against the built-in face's own reference rasters.
+- Text opcodes `LongText`, `DHText`, `DVText`, `DHDVText` (`16#0028#..16#002B#`) draw with
+  TrueType fonts through `textrender` (`../textrender`). pictlib ships no fonts: the caller's
+  `Options.Fonts` (`Pictlib.Fonts.Font_Table`) maps Macintosh family names and font IDs to font
+  files. The font for the current `TxFont` ID is, in order, the file for the family this picture
+  named that ID (`fontName`, compared without regard to case), the file for the ID, the file for the
+  family the classic Macintosh system gave the ID (`Fonts.Classic_Name`: 0 Chicago, 1 and 3 Geneva,
+  2 New York, 4 Monaco, 20 Times, 21 Helvetica, 22 Courier, 23 Symbol, …), then the table's
+  default. No file, or one that does not load, is `Font_Unavailable` in `Strict`; otherwise the text
+  is skipped with an `Approximated_Rendering` warning.
+- `LongText` sets the text origin to its point; `DHText`, `DVText` and `DHDVText` move the previous
+  text origin by their unsigned offsets. Characters are drawn from the origin's baseline. Text state:
+  `TxFont`, `TxFace`, `TxMode` (default `srcOr`), `TxSize` (0 is 12; points are pixels at 72 dpi;
+  above 512 is unsupported), `SpExtra` (Fixed, added after each space), `ChExtra` (added after each
+  character) and `TxRatio` (only 1:1 is supported).
+- Characters are Mac Roman, mapped to Unicode; bytes below 16#20# draw nothing. A character the
+  font lacks advances half the size and records one `Data_Loss` warning per opcode.
+- Layout, per character: the glyph's left edge is `round (pen + bearing)`, its top is the baseline
+  less its bearing, and the pen advances by the glyph's advance plus `ChExtra`, the face's width
+  change and, after a space, `SpExtra`. There is no kerning and no antialiasing: coverage of 128 or
+  more is ink. The character's cell — from its left edge or the pen, whichever is less, to its
+  right edge or the advanced pen, and from the font's ascent above the baseline to its descent
+  below — is drawn through the text mode with ink as a black source and the rest as a white one, so
+  `srcOr` changes only ink and `srcCopy` paints the cell in the background color.
+- Faces: bold smears ink one pixel right and widens the advance by one; italic is textrender's
+  synthetic oblique; underline draws the row below the baseline under the whole string; condense and
+  extend narrow and widen the advance by one. Outline and shadow are `Unsupported_Feature` in
+  `Strict` and drawn plain with a warning otherwise.
+- A font's renderer and atlas (a square of `max (256, 8 × size + 8)` pixels) count against
+  `Max_Allocation_Bytes`; up to eight fonts stay loaded during one `Render`.
 
 ### 3.5 Comments and QuickTime
 
@@ -232,7 +253,7 @@ Pictlib.Images                 -- RGB/RGBA views and stride checks
 Pictlib.Pictures               -- header info and opcode events
 Pictlib.Opcodes                -- opcode names, classification and length rules
 Pictlib.Metadata               -- comments, font names, QuickTime payloads, retention
-Pictlib.Fonts                  -- Glyph_Source interface and the built-in face
+Pictlib.Fonts                  -- the caller's TrueType font table, classic font IDs
 Pictlib.Decoding               -- forward-only decoder: header, enumerate, render
 Pictlib.Encoding               -- forward-only raster PICT 2 encoder
 Pictlib.Internal.Bytes             -- checked big-endian readers and writers
@@ -254,7 +275,8 @@ Pictlib.Internal.Drawing           -- port state and shape opcodes
 Pictlib.Internal.Coverage          -- shapes as per-row spans
 Pictlib.Internal.Rasterizer        -- shapes, pen, clipping
 Pictlib.Internal.Transfer_Modes
-Pictlib.Internal.Text
+Pictlib.Internal.Text              -- text state, Mac Roman, loaded fonts
+Pictlib.Internal.Typesetting       -- drawing text opcodes
 Pictlib.Internal.QuickTime         -- 8200/8201 parsing, jpeglib bridge
 Pictlib.Internal.Writers           -- opcode and pixmap emission
 Pictlib.Internal.Ownership         -- allocation/budget accounting
@@ -384,8 +406,8 @@ pictlib/
   tests/      alire.toml, tests.gpr, src/ (AUnit suites, runner, tools), fixtures/
 ```
 
-Root `alire.toml`: `name = "pictlib"`, `0.1.0-dev`, MIT, `gnat_native = "^15"`, `jpeglib` pinned
-by path `../jpeglib`. Child crate `tests` depends on `pictlib`, `aunit ^26.0.0` and
+Root `alire.toml`: `name = "pictlib"`, `0.1.0-dev`, MIT, `gnat_native = "^15"`, `jpeglib` and
+`textrender` pinned by path (`../jpeglib`, `../textrender`). Child crate `tests` depends on `pictlib`, `aunit ^26.0.0` and
 `project_tools`. Test binaries: `pictlib_tests`, later `pictlib_check`, `pictlib_conformance`,
 `pictlib_fuzz`, `pictlib_benchmark`.
 
@@ -400,7 +422,7 @@ by path `../jpeglib`. Child crate `tests` depends on `pictlib`, `aunit ^26.0.0` 
 | Pixmaps | 1/2/4/8 indexed, 16 and 32 direct, pack types 1–4, `cmpCount` 3/4, device color tables, index out of range |
 | Copy | scaling up/down, clipping, mask regions, every transfer mode |
 | Shapes | each verb × shape, "same" variants, pen sizes, patterns, oval size, arcs at all quadrants |
-| Text | each text opcode, face bits, sizes, custom `Glyph_Source` |
+| Text | each text opcode, origins, font resolution by name, ID, classic name and default, Mac Roman, face bits, sizes, modes, spacing, clipping, missing fonts |
 | QuickTime | JPEG with identity/translated/scaled matrix, matte, mask, non-JPEG codec, corrupt JPEG |
 | I/O | fragmented reads/writes, EOF, zero progress, destination failure |
 | Encoder | each layout, alpha, >256 colors, header on/off, decode by independent decoders |
@@ -430,9 +452,10 @@ text, QuickTime JPEG, raster encode accepted by independent decoders). Library-c
 
 ## 15. Decisions fixed by this specification
 
-- Native Ada 2022, GNAT 15 via Alire; `jpeglib` is the only production dependency.
+- Native Ada 2022, GNAT 15 via Alire; `jpeglib` and `textrender` are the only production
+  dependencies.
 - Full QuickDraw rendering of picture opcodes, without antialiasing.
-- Text through a pluggable glyph source with one built-in public-domain bitmap face.
+- Text through `textrender` with caller-supplied TrueType fonts; no fonts ship with pictlib.
 - QuickTime: JPEG decoded via `jpeglib`; other codecs unsupported.
 - Encoding: raster PICT 2 only.
 - Forward-only streaming; caller-owned output pixels; strict by default.

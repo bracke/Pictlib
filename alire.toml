@@ -16,8 +16,14 @@ gnat_native = "^15"
 [[depends-on]]
 jpeglib = "*"
 
+[[depends-on]]
+textrender = "*"
+
 [[pins]]
 jpeglib = { path = "../jpeglib" }
+
+[[pins]]
+textrender = { path = "../textrender" }
 
 [build-profiles]
 "*" = "development"

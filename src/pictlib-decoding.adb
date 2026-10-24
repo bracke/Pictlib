@@ -212,7 +212,8 @@ package body Pictlib.Decoding is
          Paint : aliased Internal.Rendering.Painter;
          Outcome : Results.Result := Results.Success;
       begin
-         Internal.Rendering.Start (Paint, Output, Object.Info.Frame, Object.Decode_Options.Background);
+         Internal.Rendering.Start
+           (Paint, Output, Object.Info.Frame, Object.Decode_Options.Background, Object.Decode_Options.Fonts);
          loop
             declare
                Event : Pictures.Opcode_Event;

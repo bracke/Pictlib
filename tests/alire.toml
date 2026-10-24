@@ -16,6 +16,9 @@ pictlib = "*"
 aunit = "^26.0.0"
 
 [[depends-on]]
+textrender = "*"
+
+[[depends-on]]
 project_tools = "*"
 
 [[pins]]
@@ -23,6 +26,9 @@ pictlib = { path = ".." }
 
 [[pins]]
 jpeglib = { path = "../../jpeglib" }
+
+[[pins]]
+textrender = { path = "../../textrender" }
 
 [[pins]]
 project_tools = { path = "../../project_tools" }

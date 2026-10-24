@@ -2,6 +2,7 @@
 with "aunit.gpr";
 with "pictlib.gpr";
 with "project_tools.gpr";
+with "textrender.gpr";
 abstract project Tests_Config is
    Crate_Version := "0.1.0-dev";
    Crate_Name := "tests";

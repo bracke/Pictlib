@@ -2,7 +2,6 @@ with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Checked_Arithmetic;
 
 package body Pictlib.Internal.Sessions is
-   use type Interfaces.Unsigned_16;
 
    procedure Clear (S : in out Session) is
    begin

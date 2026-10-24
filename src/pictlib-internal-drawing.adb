@@ -3,13 +3,16 @@ with Pictlib.Errors;
 with Pictlib.Geometry;
 with Pictlib.Images;
 with Pictlib.Internal.Coverage;
+with Pictlib.Internal.Typesetting;
 with Pictlib.Internal.Patterns;
+with Pictlib.Fonts;
 with Pictlib.Internal.Regions;
 with Pictlib.Internal.Transfer_Modes;
 with Pictlib.Streams;
 
 package body Pictlib.Internal.Drawing is
    use type Interfaces.Unsigned_16;
+   use type Interfaces.Unsigned_32;
 
    subtype Area is Regions.Area;
    subtype Point is Coverage.Point;
@@ -275,6 +278,55 @@ package body Pictlib.Internal.Drawing is
       return Draw_Line (P, S, From, To);
    end Consume_Line;
 
+   --  LongText, DHText, DVText, DHDVText: move the text origin, then draw the characters from it.
+   function Consume_Text
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event) return Results.Result
+   is
+      Outcome : Results.Result := Results.Success;
+      Count : Byte := 0;
+   begin
+      if Event.Op = 16#0028# then
+         declare
+            Origin : Point;
+         begin
+            Outcome := Read_Point (P, S, Origin);
+            P.Text_State.Origin_H := Origin.H;
+            P.Text_State.Origin_V := Origin.V;
+         end;
+      else
+         --  Unsigned offsets from the previous text origin.
+         declare
+            Offset : Byte := 0;
+         begin
+            if Event.Op in 16#0029# | 16#002B# then
+               Outcome := Sessions.Read_Count_Byte (S, Offset);
+               P.Text_State.Origin_H := P.Text_State.Origin_H + Natural (Offset);
+            end if;
+            if Results.Succeeded (Outcome) and then Event.Op in 16#002A# | 16#002B# then
+               Outcome := Sessions.Read_Count_Byte (S, Offset);
+               P.Text_State.Origin_V := P.Text_State.Origin_V + Natural (Offset);
+            end if;
+         end;
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Sessions.Read_Count_Byte (S, Count);
+      end if;
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
+      declare
+         Characters : Streams.Byte_Array (1 .. Natural (Count));
+      begin
+         Outcome := Sessions.Read_Into (S, Characters);
+         if Results.Succeeded (Outcome) then
+            Outcome := Typesetting.Draw (P, S, Event, Characters);
+         end if;
+      end;
+      return Outcome;
+   end Consume_Text;
+
    function Consume
      (P : in out Rendering.Painter;
       S : in out Sessions.Session;
@@ -357,6 +409,52 @@ package body Pictlib.Internal.Drawing is
             P.Colors.Highlight := Images.Black;
          when 16#0020# .. 16#0023# =>
             Outcome := Consume_Line (P, S, Event);
+         when 16#0003# =>
+            declare
+               Value : Interfaces.Unsigned_16;
+            begin
+               Outcome := Sessions.Read_Word (S, Value);
+               P.Text_State.Font := Fonts.Font_ID (Value);
+            end;
+         when 16#0004# =>
+            Outcome := Sessions.Read_Count_Byte (S, P.Text_State.Face);
+         when 16#0005# =>
+            Outcome := Sessions.Read_Word (S, P.Text_State.Mode);
+         when 16#0006# =>
+            declare
+               Value : Interfaces.Unsigned_32;
+            begin
+               Outcome := Sessions.Read_Long (S, Value);
+               P.Text_State.Space_Extra :=
+                 Geometry.Fixed (if Value >= 16#8000_0000# then Long_Long_Integer (Value) - 16#1_0000_0000#
+                                 else Long_Long_Integer (Value));
+            end;
+         when 16#000D# =>
+            declare
+               Value : Interfaces.Unsigned_16;
+            begin
+               Outcome := Sessions.Read_Word (S, Value);
+               P.Text_State.Size := Natural (Value);
+            end;
+         when 16#0010# =>  --  TxRatio: numerator and denominator points
+            declare
+               Numerator_V, Numerator_H, Denominator_V, Denominator_H : Integer;
+            begin
+               Outcome := Read_Size (S, Numerator_V, Numerator_H);
+               if Results.Succeeded (Outcome) then
+                  Outcome := Read_Size (S, Denominator_V, Denominator_H);
+               end if;
+               P.Text_State.Unit_Ratio := Numerator_V = Denominator_V and then Numerator_H = Denominator_H;
+            end;
+         when 16#0016# =>
+            declare
+               Value : Interfaces.Unsigned_16;
+            begin
+               Outcome := Sessions.Read_Word (S, Value);
+               P.Text_State.Char_Extra := Signed (Value);
+            end;
+         when 16#0028# .. 16#002B# =>
+            Outcome := Consume_Text (P, S, Event);
          when 16#0030# .. 16#008F# =>
             if Event.Reserved then
                Handled := False;

@@ -2,6 +2,7 @@ with Pictlib;
 with Pictlib.Capabilities;
 with Pictlib.Decoding;
 with Pictlib.Errors;
+with Pictlib.Fonts;
 with Pictlib.Geometry;
 with Pictlib.Images;
 with Pictlib.Limits;
@@ -32,6 +33,8 @@ package Pictlib_API_Consumer is
    End_Opcode : constant Pictlib.Opcode := Pictlib.Opcodes.End_Picture;
    Default_Background : constant Pictlib.Images.RGB_Color := Default_Decode_Options.Background;
    subtype Output_View is Pictlib.Images.Mutable_Image_View;
+   No_Fonts : constant Pictlib.Fonts.Font_Table := Pictlib.Fonts.Empty;
+   subtype Font_ID is Pictlib.Fonts.Font_ID;
    function Render (Object : in out Decoder; Output : Output_View) return Pictlib.Results.Result
      renames Pictlib.Decoding.Render;
 end Pictlib_API_Consumer;

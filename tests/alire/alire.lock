@@ -131,4 +131,13 @@ versions = "*"
 [solution.state.link]
 lockfiled = true
 path = "../../project_tools"
+[[solution.state]]
+crate = "textrender"
+fulfilment = "linked"
+pinned = false
+transitivity = "direct"
+versions = "*"
+[solution.state.link]
+lockfiled = true
+path = "../../textrender"
 

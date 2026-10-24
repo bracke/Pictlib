@@ -24,6 +24,7 @@ package Pictlib.Errors is
       Pattern_Invalid,
       Transfer_Mode_Invalid,
       Embedded_Image_Failed,
+      Font_Unavailable,
       Too_Many_Colors,
       Missing_End_Opcode,
       Trailing_Data,

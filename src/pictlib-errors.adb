@@ -20,6 +20,7 @@ package body Pictlib.Errors is
          when Pattern_Invalid           => return "pict.pattern.invalid";
          when Transfer_Mode_Invalid     => return "pict.transfer_mode.invalid";
          when Embedded_Image_Failed     => return "pict.embedded_image.failed";
+         when Font_Unavailable          => return "pict.font.unavailable";
          when Too_Many_Colors           => return "pict.encoder.too_many_colors";
          when Missing_End_Opcode        => return "pict.opcode.missing_end";
          when Trailing_Data             => return "pict.trailing_data";

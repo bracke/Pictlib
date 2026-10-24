@@ -80,7 +80,7 @@ package body Pictlib_Testing.Test_Foundation is
       Assert (Pictlib.Capabilities.Opcode_Enumeration, "opcode enumeration is implemented");
       Assert (Pictlib.Capabilities.Raster_Decoding, "raster decoding is implemented");
       Assert (Pictlib.Capabilities.Vector_Rendering, "vector rendering is implemented");
-      Assert (not Pictlib.Capabilities.Text_Rendering, "text rendering is not implemented yet");
+      Assert (Pictlib.Capabilities.Text_Rendering, "text rendering is implemented");
       Assert (not Pictlib.Capabilities.QuickTime_JPEG_Decoding, "QuickTime JPEG is not implemented yet");
       Assert (Pictlib.Capabilities.Metadata_Retention, "metadata retention is implemented");
       Assert (not Pictlib.Capabilities.Raster_Encoding, "raster encoding is not implemented yet");

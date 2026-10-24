@@ -58,4 +58,13 @@ versions = "*"
 [solution.state.link]
 lockfiled = true
 path = "../jpeglib"
+[[solution.state]]
+crate = "textrender"
+fulfilment = "linked"
+pinned = false
+transitivity = "direct"
+versions = "*"
+[solution.state.link]
+lockfiled = true
+path = "../textrender"
 

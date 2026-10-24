@@ -12,8 +12,10 @@ font names and other metadata on request. Since Gate M2 it renders a picture's
 bitmaps and pixmaps — every depth and pack type, with scaling, clip regions and
 masks — into a caller-owned RGB or RGBA view, and since Gate M3 its QuickDraw
 lines, rectangles, round rects, ovals, arcs, polygons and regions with
-patterns, colors, transfer modes and clipping. Text and QuickTime images are
-reported as unsupported until their gates pass. `Pictlib.Capabilities` lists what is
+patterns, colors, transfer modes and clipping. Since Gate M4 it draws text
+with TrueType fonts the caller maps to the picture's font names and IDs
+(`Pictlib.Fonts`); pictlib ships no fonts. QuickTime images are reported as
+unsupported until their gate passes. `Pictlib.Capabilities` lists what is
 implemented; everything else is unavailable until its implementation-plan gate
 passes.
 
@@ -23,8 +25,9 @@ passes.
 - [Agent instructions](AGENTS.md)
 
 The reference architecture is [bracke/jpeglib](https://github.com/bracke/jpeglib).
-`jpeglib` is also the only production dependency, used to decode JPEG images
-embedded in pictures. No C library is used by the production crate.
+`jpeglib` decodes JPEG images embedded in pictures and
+[textrender](../textrender) rasterizes TrueType text; they are the only
+production dependencies. No C library is used by the production crate.
 
 ## Build and test
 
