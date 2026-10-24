@@ -28,6 +28,14 @@ package Pictlib.Internal.Rendering is
    --  @return True when Value is within Reach.
    function Within_Reach (Value : Integer) return Boolean is (Value in -Reach .. Reach);
 
+   --  The origin stays a 16-bit coordinate inside Reach, so every point read after it is within reach.
+   Origin_Reach : constant := Reach - 2 ** 15;
+
+   --  Origin within reach.
+   --  @param Value An origin coordinate.
+   --  @return True when Value is within Origin_Reach.
+   function Origin_Within_Reach (Value : Integer) return Boolean is (Value in -Origin_Reach .. Origin_Reach);
+
    type Painter is limited record
       Target : Canvas.Canvas;
       --  The canvas in picture coordinates.
@@ -105,10 +113,10 @@ package Pictlib.Internal.Rendering is
    --  @param Units Units of work about to be done.
    --  @return Success, or Limit_Exceeded when the drawing budget would be crossed.
    function Charge (P : in out Painter; S : Sessions.Session; Units : Natural) return Results.Result;
-   --  Drawing work still allowed, capped to a shape's allowance.
-   function Allowance (P : Painter; S : Sessions.Session) return Natural is
-     (Natural (Pixel_Count'Min
-        (S.Budget.Max_Drawing_Work - Pixel_Count'Min (P.Work, S.Budget.Max_Drawing_Work), Pixel_Count (Natural'Last))));
+   function Charge (P : in out Painter; S : Sessions.Session; Units : Pixel_Count) return Results.Result;
+   --  Drawing work still allowed: what a shape may spend being built.
+   function Allowance (P : Painter; S : Sessions.Session) return Pixel_Count is
+     (S.Budget.Max_Drawing_Work - Pixel_Count'Min (P.Work, S.Budget.Max_Drawing_Work));
 
    --  Unsupported.
    --  @param S Session whose strictness decides.

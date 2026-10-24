@@ -41,8 +41,9 @@ package body Pictlib.Internal.Opcode_Reader is
    end Skip_Polygon;
 
    function Skip_Pixel_Pattern (S : in out Session) return Results.Result is
-      Pattern_Type, Raw_Row_Bytes : Interfaces.Unsigned_16;
-      --  The rows are laid out as rendering decodes them, so both agree where the opcode ends.
+      Pattern_Type : Interfaces.Unsigned_16;
+      Raw_Row_Bytes : Interfaces.Unsigned_16 := 0;
+      --  The rows are laid out, and checked, as rendering decodes them, so both agree where the opcode ends.
       Header : Pixmaps.Bits_Header;
       Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
    begin
@@ -57,18 +58,24 @@ package body Pictlib.Internal.Opcode_Reader is
             Header.Op := Opcodes.Pack_Bits_Rect;
             Header.Is_Pixmap := True;
             Outcome := Sessions.Read_Word (S, Raw_Row_Bytes);
-            Header.Row_Bytes := Natural (Raw_Row_Bytes and 16#3FFF#);
             if Results.Succeeded (Outcome) then
+               Header.Row_Bytes := Natural (Raw_Row_Bytes and 16#3FFF#);
                Outcome := Sessions.Read_Bounds (S, Header.Bounds);
             end if;
             if Results.Succeeded (Outcome) then
                Outcome := Pixmaps.Read_Pixmap_Tail (S, Header.Fields);
+            end if;
+            if Results.Succeeded (Outcome) and then Header.Fields.Pixel_Size > 8 then
+               Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 8, Byte_Count (Header.Fields.Pixel_Size));
             end if;
             if Results.Succeeded (Outcome) then
                Outcome := Pixmaps.Skip_Color_Table (S);
             end if;
             if Results.Succeeded (Outcome) then
                Outcome := Sessions.Extent (S, Header.Bounds, Header.Width, Header.Height);
+            end if;
+            if Results.Succeeded (Outcome) and then (Header.Width = 0 or else Header.Height = 0) then
+               Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 1, 0);
             end if;
             if Results.Succeeded (Outcome) then
                Outcome := Pixmaps.Decide_Layout (S, Header, For_Decoding => False);

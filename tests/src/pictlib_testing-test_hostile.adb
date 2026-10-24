@@ -5,6 +5,7 @@ with Pictlib;
 with Pictlib.Decoding;
 with Pictlib.Errors;
 with Pictlib.Images;
+with Pictlib.Internal.Coverage;
 with Pictlib.Limits;
 with Pictlib.Results;
 with Pictlib.Streams;
@@ -82,8 +83,14 @@ package body Pictlib_Testing.Test_Hostile is
       Runaway_Origin : aliased constant Bytes := Pic (4, 4, Repeat (Origin (32_767, 32_767), 600));
       --  70,000 DHText steps of 255 move the text origin past any picture.
       Runaway_Text : aliased constant Bytes := Pic (4, 4, Repeat (W (16#29#) & B (255) & B (0), 70_000));
+      --  511 steps of -32768 put the origin at its bound; any 16-bit point is still within reach after it.
+      Origin_At_Bound : aliased constant Bytes :=
+        Pic (4, 4, Repeat (Origin (-32_768, 0), 511) & W (16#20#) & W (0) & W (-32_768) & W (0) & W (32_767));
+      Origin_Past_Bound : aliased constant Bytes := Pic (4, 4, Repeat (Origin (-32_768, 0), 512));
       Started : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
    begin
+      Canvases.Expect_Raster (Origin_At_Bound, 4, 4, "WWWW/WWWW/WWWW/WWWW", "a line after the origin at its bound");
+      Canvases.Expect_Failure (Origin_Past_Bound, 4, 4, Errors.Opcode_Invalid, "origin past its bound", 16#0C#);
       Canvases.Expect_Raster (Extreme_Line, 4, 4, "BWWW/WBWW/WWBW/WWWB", "line from -32768 to 32767");
       Canvases.Expect_Failure (Runaway_Origin, 4, 4, Errors.Opcode_Invalid, "origin moved 600 times", 16#0C#);
       Canvases.Expect_Failure (Runaway_Text, 4, 4, Errors.Opcode_Invalid, "text origin moved 70,000 times", 16#29#,
@@ -113,10 +120,40 @@ package body Pictlib_Testing.Test_Hostile is
         Pic (8, 2, W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 8) & Rect (0, 0, 2, 8)
                    & Pixmap_Tail (1, 8, 1, 8) & Table_Header (16#8000#, 2) & Table_Entry (0, 16#FFFF#, 0, 0)
                    & Table_Entry (1, 0, 0, 16#FFFF#) & Repeat (B (0) & B (1), 8) & Op_Rect (16#34#, 0, 0, 2, 8));
+      --  A PixPat deeper than 8 bits, and one with empty bounds: rendering rejects both, so enumeration does.
+      Deep_Tile : aliased constant Bytes :=
+        Pic (8, 2, W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 32) & Rect (0, 0, 2, 8)
+                   & Pixmap_Tail (4, 32, 3, 8) & Table_Header (16#8000#, 1) & Table_Entry (0, 0, 0, 0)
+                   & B (0) & B (0) & Op_Rect (16#34#, 0, 0, 2, 8));
+      Empty_Tile : aliased constant Bytes :=
+        Pic (8, 2, W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 8) & Rect (0, 0, 0, 8)
+                   & Pixmap_Tail (0, 8, 1, 8) & Table_Header (16#8000#, 1) & Table_Entry (0, 0, 0, 0)
+                   & Op_Rect (16#34#, 0, 0, 2, 8));
+      --  A PixPat cut off right after its type.
+      Cut_Tile : aliased constant Bytes := V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & Zeros (8);
+      --  An 18000 x 18000 PixPat, under the allocation budget, whose rows never come: nothing is set aside
+      --  for them up front.
+      Huge_Tile : aliased constant Bytes :=
+        V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 2_250) & Rect (0, 0, 18_000, 18_000)
+        & Pixmap_Tail (0, 1, 1, 1) & Table_Header (16#8000#, 2) & Table_Entry (0, 0, 0, 0)
+        & Table_Entry (1, 0, 0, 0) & B (0);
       Decoder : Pictlib.Decoding.Decoder;
       Events : Recorders.Recorder;
       Outcome : Pictlib.Results.Result;
+      Started : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
+
+      procedure Both (Input : aliased Bytes; Code : Errors.Error_Code; Label : String) is
+      begin
+         Recorders.Decode (Input, Decoder, Events, Outcome);
+         Assert (Outcome.First_Error.Code = Code, Label & ": enumerated with " & Outcome.First_Error.Code'Image);
+         Canvases.Expect_Failure (Input, 8, 2, Code, Label, 16#14#);
+      end Both;
    begin
+      Both (Deep_Tile, Errors.Pattern_Invalid, "32-bit PixPat");
+      Both (Empty_Tile, Errors.Pattern_Invalid, "empty PixPat");
+      Both (Cut_Tile, Errors.Source_Unexpected_End, "PixPat cut after its type");
+      Canvases.Expect_Failure (Huge_Tile, 8, 2, Errors.Source_Unexpected_End, "18000 x 18000 PixPat", 16#14#);
+      Check_Time (Started, "pixel patterns");
       Recorders.Decode (Planar_Count, Decoder, Events, Outcome);
       Assert (Outcome.First_Error.Code = Errors.Pixmap_Invalid,
               "cmpCount 16#FFFF# enumerated with " & Outcome.First_Error.Code'Image);
@@ -174,6 +211,24 @@ package body Pictlib_Testing.Test_Hostile is
       Canvases.Render (Polygon, Decoder, Canvases.View (Storage'Access, 200, 200), Outcome, Budget => Small);
       Assert (Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit, "zig-zag polygon: wrong limit");
       Canvases.Expect_Raster (Moving_Clip, 4, 4, "BBBB/WWWW/BBBB/WWWW", "clip kept while the origin moves");
+      --  A shape that runs out of its allowance part-way covers nothing, whoever asks.
+      declare
+         package Coverage renames Pictlib.Internal.Coverage;
+         Partial, Whole : Coverage.Shape;
+         Window : constant Coverage.Area := (Top => 0, Left => 0, Bottom => 10, Right => 10);
+      begin
+         Coverage.Start (Partial, Window, Allowance => 3);
+         Coverage.Rectangle (Partial, Window);
+         Assert (Coverage.Exhausted (Partial), "a rectangle of 10 rows fit an allowance of 3");
+         for Y in 0 .. 9 loop
+            Assert (Coverage.Row (Partial, Y).Is_Empty, "an exhausted shape covers row" & Y'Image);
+         end loop;
+         --  Above Natural'Last: only the budget bounds a shape.
+         Coverage.Start (Whole, Window, Allowance => Pictlib.Pixel_Count'Succ (Pictlib.Pixel_Count (Natural'Last)));
+         Coverage.Rectangle (Whole, Window);
+         Assert (not Coverage.Exhausted (Whole) and then not Coverage.Row (Whole, 9).Is_Empty,
+                 "a wide allowance cut the rectangle short");
+      end;
       Check_Time (Started, "shape work");
    end Shape_Work;
 
@@ -191,6 +246,10 @@ package body Pictlib_Testing.Test_Hostile is
       Wide : aliased constant Bytes :=
         Pic (16, 1, W (16#98#) & W (2) & Rect (0, 0, 1, 16) & Rect (0, 0, 1, 16) & Rect (0, 0, 1, 16) & W (0)
                     & Zeros (2));
+      --  20 one-row copies, all outside the frame: each row is still charged.
+      Missing : aliased constant Bytes :=
+        Pic (16, 1, Repeat (W (16#98#) & W (2) & Rect (0, 0, 1, 16) & Rect (0, 0, 1, 16) & Rect (100, 100, 101, 116)
+                            & W (0) & Zeros (2), 20));
       Started : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
    begin
       Canvases.Expect_Failure (Empty_Rows, 64, 1_000, Errors.PackBits_Invalid, "empty packed rows", 16#98#,
@@ -204,6 +263,8 @@ package body Pictlib_Testing.Test_Hostile is
       --  Rows are charged as they are converted, drawn or not.
       Small.Max_Drawing_Work := 10;
       Canvases.Expect_Failure (Wide, 16, 1, Errors.Limit_Exceeded, "row conversion over budget", 16#98#,
+                               Budget => Small);
+      Canvases.Expect_Failure (Missing, 16, 1, Errors.Limit_Exceeded, "skipped rows over budget", 16#98#,
                                Budget => Small);
       Check_Time (Started, "pixel work");
    end Pixel_Work;

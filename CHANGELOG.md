@@ -2,6 +2,15 @@
 
 ## 0.1.0-dev
 
+- Fixes from reviewing the library fixes. The origin is bounded to
+  ±(2^24 − 2^15), so no ordinary line after an accepted origin is out of
+  reach. Shape work is counted in 63 bits, so only `Max_Drawing_Work` bounds a
+  shape; a shape starts once its data is read and charged; and a shape that
+  runs out of budget stops and covers nothing. Rows a copy skips (a QuickTime
+  placeholder, a copy outside the frame) cost a unit each. A PixPat's tile is
+  no longer reserved before its rows arrive. Enumeration rejects PixPats
+  deeper than 8 bits or with empty bounds, as rendering does, and reads a
+  PixPat's rowBytes only once it has been read.
 - Library fixes from code review, each with a reproducer in the new
   `hostile` AUnit tests. A line from (-32768, -32768) to (32767, 32767) no
   longer raises `Constraint_Error`. The origin, line ends and text origin are

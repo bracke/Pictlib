@@ -92,8 +92,9 @@ are retained, never interpreted.
 - Coordinates read from the picture are local. `Origin` (`dh`, `dv`) moves the local system and
   accumulates; a local point `p` is picture point `p − origin`. The clip region keeps its local
   coordinates when the origin moves, as `SetOrigin` leaves `clipRgn` alone. Pen location is kept
-  in picture coordinates. The origin, line ends and the text origin stay within ±2^24: an opcode
-  that would move one further fails with `Opcode_Invalid`, so no coordinate arithmetic overflows.
+  in picture coordinates. Line ends and the text origin stay within ±2^24, and the origin within
+  ±(2^24 − 2^15), so that every 16-bit point read after it is within ±2^24: an opcode that would
+  move one further fails with `Opcode_Invalid`, so no coordinate arithmetic overflows.
 - Pixel model: pixel `(x, y)` is the unit square from `(x, y)` to `(x + 1, y + 1)`; a rectangle
   covers columns `left .. right − 1` and rows `top .. bottom − 1`. The pen is `pnSize`
   (`v`, `h` = height, width) and hangs below and right of its location. A zero or negative pen
@@ -422,9 +423,10 @@ opcode, region bytes, polygon points, total picture bytes, total drawing work (p
 counting every shape and scaled copy), retained metadata, allocation, output bytes, embedded image
 bytes and pixels, warnings. Every input-derived size is checked with `Checked_Arithmetic` before
 allocation, indexing or a loop bound. Drawing work is the guard against tiny pictures with huge
-repeated fills. It counts every pixel row a copy converts, drawn or not, and the work of building
-each shape, which stops as soon as it would exceed what is left of the budget (at most 2^31 − 1
-units for one shape); only the path rows a line's pen can bring into the frame are held.
+repeated fills. It counts every pixel row a copy converts, drawn or not, a unit for every row a copy skips,
+and the work of building each shape, which stops as soon as it would exceed what is left of the
+budget; a shape that stops covers nothing. Only the path rows a line's pen can bring into the
+frame are held.
 
 ## 10. Errors and diagnostics
 

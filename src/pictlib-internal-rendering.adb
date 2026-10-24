@@ -42,12 +42,16 @@ package body Pictlib.Internal.Rendering is
    end Start;
 
    function Charge (P : in out Painter; S : Sessions.Session; Units : Natural) return Results.Result is
+     (Charge (P, S, Pixel_Count (Units)));
+
+   function Charge (P : in out Painter; S : Sessions.Session; Units : Pixel_Count) return Results.Result is
    begin
-      if Pixel_Count (Units) > S.Budget.Max_Drawing_Work - Pixel_Count'Min (P.Work, S.Budget.Max_Drawing_Work) then
+      if Units > Allowance (P, S) then
          return Sessions.Over_Limit
-           (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work), Byte_Count (P.Work) + Byte_Count (Units));
+           (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
+            (if Units > Pixel_Count'Last - P.Work then Byte_Count'Last else Byte_Count (P.Work + Units)));
       end if;
-      P.Work := P.Work + Pixel_Count (Units);
+      P.Work := P.Work + Units;
       return Results.Success;
    end Charge;
 
@@ -111,13 +115,8 @@ package body Pictlib.Internal.Rendering is
       Shape : Coverage.Shape;
       How : Paint) return Results.Result
    is
-      --  A shape that spent its allowance, the budget left or at most Natural'Last, is over the limit.
-      Outcome : Results.Result :=
-        (if Coverage.Exhausted (Shape)
-         then Sessions.Over_Limit
-                (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
-                 Byte_Count (P.Work) + Byte_Count (Coverage.Work (Shape)))
-         else Charge (P, S, Coverage.Work (Shape)));
+      --  A shape that spent its allowance, the budget left, has more work than the budget admits.
+      Outcome : Results.Result := Charge (P, S, Coverage.Work (Shape));
       Colorize : constant Boolean := Patterns.Kind (How.Source) = Patterns.Bit_Pattern;
       Kind : constant Transfer_Modes.Mode_Kind :=
         (if P.Hilite_Next then Transfer_Modes.Hilite else How.Mode);
@@ -277,6 +276,18 @@ package body Pictlib.Internal.Rendering is
       return Results.Success;
    end Source_Rect;
 
+   --  Rows a copy skips undrawn cost a unit each, as their framing is still read.
+   function Skip_Rows (P : in out Painter; S : in out Sessions.Session; Header : Pixmaps.Bits_Header)
+     return Results.Result
+   is
+      Outcome : constant Results.Result := Charge (P, S, Header.Height);
+   begin
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
+      return Pixmaps.Skip_Pixels (S, Header);
+   end Skip_Rows;
+
    function Copy_Bits
      (P : in out Painter;
       S : in out Sessions.Session;
@@ -292,7 +303,7 @@ package body Pictlib.Internal.Rendering is
    begin
       if P.Skip_Next_Bits then
          P.Skip_Next_Bits := False;
-         return Pixmaps.Skip_Pixels (S, Header);
+         return Skip_Rows (P, S, Header);
       end if;
       Outcome := Mode (S, Event, Header.Mode, Kind);
       if P.Hilite_Next then
@@ -306,7 +317,7 @@ package body Pictlib.Internal.Rendering is
          return Outcome;
       end if;
       if Geometry.Is_Empty (Source) or else Regions.Is_Empty (Destination) then
-         return Pixmaps.Skip_Pixels (S, Header);
+         return Skip_Rows (P, S, Header);
       end if;
       if Header.Masked then
          Regions.Translate (Mask, -P.Origin_H, -P.Origin_V);

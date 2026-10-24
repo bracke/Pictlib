@@ -60,7 +60,7 @@ package body Pictlib.Internal.Coverage is
    function Height_Of (Item : Shape) return Natural is
      (Natural'Max (0, Item.Window.Bottom - Item.Window.Top));
 
-   procedure Start (Item : out Shape; Window : Area; Allowance : Natural := Natural'Last) is
+   procedure Start (Item : out Shape; Window : Area; Allowance : Pixel_Count := Pixel_Count'Last) is
    begin
       Item.Window := Window;
       Item.Units := 0;
@@ -73,19 +73,21 @@ package body Pictlib.Internal.Coverage is
    function Window_Of (Item : Shape) return Area is (Item.Window);
 
    function Row (Item : Shape; Y : Integer) return Span_List is
-     (if Y in Item.Window.Top .. Item.Window.Bottom - 1 then Item.Rows (Y - Item.Window.Top)
+     (if not Item.Spent and then Y in Item.Window.Top .. Item.Window.Bottom - 1 then Item.Rows (Y - Item.Window.Top)
       else Regions.Span_Vectors.Empty_Vector);
 
-   function Work (Item : Shape) return Natural is (Item.Units);
+   function Work (Item : Shape) return Pixel_Count is (Item.Units);
 
    function Exhausted (Item : Shape) return Boolean is (Item.Spent);
 
-   function Remaining (Item : Shape) return Natural is
+   function Remaining (Item : Shape) return Pixel_Count is
      (if Item.Units >= Item.Allowance then 0 else Item.Allowance - Item.Units);
 
    procedure Charge (Item : in out Shape; Units : Natural) is
    begin
-      Item.Units := (if Natural'Last - Item.Units < Units then Natural'Last else Item.Units + Units);
+      Item.Units :=
+        (if Pixel_Count'Last - Item.Units < Pixel_Count (Units) then Pixel_Count'Last
+         else Item.Units + Pixel_Count (Units));
       if Item.Units > Item.Allowance then
          Item.Spent := True;
       end if;
@@ -503,10 +505,13 @@ package body Pictlib.Internal.Coverage is
                if Y - Pen_Height >= Box.Top and then Y + Pen_Height <= Box.Bottom - 1 then
                   Eroded := Narrowed (Y - Pen_Height - Low);
                   for R in Y - Pen_Height + 1 .. Y + Pen_Height loop
-                     exit when Item.Spent;
                      Regions.Intersect (Eroded, Narrowed (R - Low), Scratch);
                      Eroded := Scratch;
                      Charge (Item, Natural (Eroded.Length) + 1);
+                     --  A part-eroded row is never used.
+                     if Item.Spent then
+                        return;
+                     end if;
                   end loop;
                end if;
                --  The frame is the row less its eroded part.
@@ -544,8 +549,12 @@ package body Pictlib.Internal.Coverage is
    procedure Subtract (Item : in out Shape; Other : Shape) is
    begin
       --  Taking away an incomplete shape leaves an incomplete one.
-      Charge (Item, Other.Units);
-      Item.Spent := Item.Spent or else Other.Spent;
+      Item.Units :=
+        (if Pixel_Count'Last - Item.Units < Other.Units then Pixel_Count'Last else Item.Units + Other.Units);
+      Item.Spent := Item.Spent or else Other.Spent or else Item.Units > Item.Allowance;
+      if Item.Spent then
+         return;
+      end if;
       for Index in 0 .. Height_Of (Item) - 1 loop
          exit when Item.Spent;
          declare

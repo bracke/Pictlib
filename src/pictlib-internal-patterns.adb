@@ -103,7 +103,6 @@ package body Pictlib.Internal.Patterns is
       Item.Width := Header.Width;
       Item.Height := Header.Height;
       Item.Tile.Clear;
-      Item.Tile.Reserve_Capacity (Ada.Containers.Count_Type (Header.Width * Header.Height));
       for Row in 0 .. Header.Height - 1 loop
          Outcome := Pixmaps.Read_Row (S, Decoder, Row);
          exit when not Results.Succeeded (Outcome);

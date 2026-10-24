@@ -182,7 +182,7 @@ package body Pictlib.Internal.Drawing is
       Shape : Coverage.Shape;
       Outcome : Results.Result := Results.Success;
    begin
-      Coverage.Start (Shape, P.Window, Rendering.Allowance (P, S));
+      --  Each shape starts once its data is read and charged, so its allowance is what the budget has left.
       case Group is
          when 3 .. 6 =>
             declare
@@ -197,6 +197,7 @@ package body Pictlib.Internal.Drawing is
                if not Results.Succeeded (Outcome) then
                   return Outcome;
                end if;
+               Coverage.Start (Shape, P.Window, Rendering.Allowance (P, S));
                Rect_Like (P, Group, Verb, Rendering.To_Picture (P, P.Last_Rect), Start_Angle, Arc_Angle, Shape);
             end;
          when 7 =>
@@ -209,6 +210,7 @@ package body Pictlib.Internal.Drawing is
             declare
                Points : Coverage.Point_Vectors.Vector;
             begin
+               Coverage.Start (Shape, P.Window, Rendering.Allowance (P, S));
                for Item of P.Last_Polygon loop
                   Points.Append (Point'(H => Item.H - P.Origin_H, V => Item.V - P.Origin_V));
                end loop;
@@ -228,14 +230,15 @@ package body Pictlib.Internal.Drawing is
                   return Outcome;
                end if;
             end if;
+            --  Copying and moving the region is work like drawing it.
+            Outcome := Rendering.Charge (P, S, Regions.Size (P.Last_Region));
+            if not Results.Succeeded (Outcome) then
+               return Outcome;
+            end if;
             declare
                Region : Regions.Region := P.Last_Region;
             begin
-               --  Copying and moving the region is work like drawing it.
-               Outcome := Rendering.Charge (P, S, Regions.Size (Region));
-               if not Results.Succeeded (Outcome) then
-                  return Outcome;
-               end if;
+               Coverage.Start (Shape, P.Window, Rendering.Allowance (P, S));
                Regions.Translate (Region, -P.Origin_H, -P.Origin_V);
                if Verb = 0 then
                   Coverage.Region_Frame (Shape, Region, P.Pen_Width, P.Pen_Height);
@@ -401,9 +404,9 @@ package body Pictlib.Internal.Drawing is
                Outcome := Read_Size (S, Dh, Dv);
                --  Origin's data is dh, then dv.
                if Results.Succeeded (Outcome) then
-                  if not Rendering.Within_Reach (P.Origin_H + Dh) then
+                  if not Rendering.Origin_Within_Reach (P.Origin_H + Dh) then
                      return Out_Of_Reach (Event, P.Origin_H + Dh);
-                  elsif not Rendering.Within_Reach (P.Origin_V + Dv) then
+                  elsif not Rendering.Origin_Within_Reach (P.Origin_V + Dv) then
                      return Out_Of_Reach (Event, P.Origin_V + Dv);
                   end if;
                   P.Origin_H := P.Origin_H + Dh;

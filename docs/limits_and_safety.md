@@ -18,7 +18,7 @@ bounds a read, a skip, an allocation or a loop.
 
 | `Max_Canvas_Pixels` | the frame, when `Render` starts | `Limit_Exceeded` |
 | `Max_Output_Bytes` | the view's accessible bytes, when `Render` starts | `Limit_Exceeded` |
-| `Max_Drawing_Work` | every pixel painted, every pixel converted from a copied row, every unit of region, polygon, line and shape-building work, checked while a shape is built | `Limit_Exceeded` |
+| `Max_Drawing_Work` | every pixel painted, every pixel converted from a copied row, every row a copy skips, every unit of region, polygon, line and shape-building work, checked while a shape is built | `Limit_Exceeded` |
 | `Max_Polygon_Points` | each polygon, also while rendering | `Limit_Exceeded` |
 | `Max_Allocation_Bytes` | each opcode's row buffers, each font's glyph atlas | `Limit_Exceeded` |
 
@@ -26,9 +26,10 @@ bounds a read, a skip, an allocation or a loop.
 | `Max_Embedded_Image_Pixels` | a QuickTime image's width × height, before decoding, and jpeglib's pixel limit | `Limit_Exceeded` |
 | `Max_Allocation_Bytes` | a QuickTime image's RGB buffer, which is also never above 2^31 − 1 bytes | `Limit_Exceeded` |
 
-Coordinates are bounded rather than budgeted: the origin, line ends and the
-text origin stay within ±2^24, and an opcode that moves one further fails with
-`Opcode_Invalid`. Moving the origin costs nothing, since the clip region stays
+Coordinates are bounded rather than budgeted: line ends and the text origin
+stay within ±2^24, the origin within ±(2^24 − 2^15) so that any 16-bit point
+after it is still within ±2^24, and an opcode that moves one further fails
+with `Opcode_Invalid`. Moving the origin costs nothing, since the clip region stays
 in local coordinates; copying a region for a "same" opcode is charged as
 drawing work.
 

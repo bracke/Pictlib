@@ -22,7 +22,7 @@ package Pictlib.Internal.Coverage is
    --  @param Window Rows and columns outside it are not kept.
    --  @param Allowance Units of work building it may take; once they are spent, building stops and Work reports
    --  more than Allowance.
-   procedure Start (Item : out Shape; Window : Area; Allowance : Natural := Natural'Last);
+   procedure Start (Item : out Shape; Window : Area; Allowance : Pixel_Count := Pixel_Count'Last);
    --  Window of.
    --  @param Item Shape.
    --  @return Its window.
@@ -30,20 +30,21 @@ package Pictlib.Internal.Coverage is
    --  Row.
    --  @param Item Shape.
    --  @param Y Row within the window.
-   --  @return The row's spans, sorted and disjoint.
+   --  @return The row's spans, sorted and disjoint; none once the shape is exhausted, so an incomplete shape
+   --  never paints.
    function Row (Item : Shape; Y : Integer) return Span_List;
    --  Work.
    --  @param Item Shape.
    --  @return Units of work building it took, for the drawing budget.
-   function Work (Item : Shape) return Natural;
+   function Work (Item : Shape) return Pixel_Count;
    --  Exhausted.
    --  @param Item Shape.
-   --  @return True when building it spent its allowance and it is incomplete.
+   --  @return True when building it spent its allowance; it then covers nothing.
    function Exhausted (Item : Shape) return Boolean;
    --  Remaining.
    --  @param Item Shape.
    --  @return The allowance building it has not spent.
-   function Remaining (Item : Shape) return Natural;
+   function Remaining (Item : Shape) return Pixel_Count;
 
    --  Rectangle: rows Top .. Bottom - 1, columns Left .. Right - 1.
    procedure Rectangle (Item : in out Shape; Bounds : Area);
@@ -72,8 +73,8 @@ private
    type Shape is record
       Window : Area;
       Rows : Row_Vectors.Vector;
-      Units : Natural := 0;
-      Allowance : Natural := Natural'Last;
+      Units : Pixel_Count := 0;
+      Allowance : Pixel_Count := Pixel_Count'Last;
       Spent : Boolean := False;
    end record;
 end Pictlib.Internal.Coverage;
