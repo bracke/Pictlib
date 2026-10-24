@@ -6,7 +6,7 @@ with Pictlib.Results;
 --  While a picture renders, every opcode that changes the port state or draws goes through here: the opcode
 --  reader frames each opcode and, rendering, hands it to Consume before skipping or retaining what is left.
 package Pictlib.Internal.Drawing is
-   --  Consume.
+   --  Consume: the drawing side of one opcode, which changes the port state or draws.
    --  @param P Painter.
    --  @param S Session positioned at the opcode's data.
    --  @param Event The opcode.

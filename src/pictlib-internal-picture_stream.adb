@@ -88,7 +88,6 @@ package body Pictlib.Internal.Picture_Stream is
 
    function Picture_Offset (Object : Reader) return Byte_Count is (Object.Consumed - Object.Picture_Origin);
 
-
    overriding function Read (Object : in out Reader; Buffer : out Streams.Byte_Array) return Streams.Source_Result is
    begin
       Buffer := [others => 0];

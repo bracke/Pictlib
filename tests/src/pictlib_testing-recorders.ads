@@ -18,6 +18,13 @@ package Pictlib_Testing.Recorders is
    overriding function Visit
      (Object : in out Recorder; Event : Pictlib.Pictures.Opcode_Event) return Pictlib.Decoding.Visit_Action;
 
+   --  Visits every opcode and keeps nothing.
+   type Null_Visitor is new Pictlib.Decoding.Opcode_Visitor with null record;
+
+   overriding function Visit
+     (Object : in out Null_Visitor; Event : Pictlib.Pictures.Opcode_Event) return Pictlib.Decoding.Visit_Action
+   is (Pictlib.Decoding.Continue);
+
    --  Bind Input to Decoder through the shared memory source and initialize it.
    procedure Start
      (Input : aliased Pictlib.Streams.Byte_Array;
@@ -39,4 +46,24 @@ package Pictlib_Testing.Recorders is
    --  Has warning.
    --  @return True when Decoder recorded a warning with Code.
    function Has_Warning (Decoder : Pictlib.Decoding.Decoder; Code : Pictlib.Errors.Warning_Code) return Boolean;
+   --  Count warnings.
+   --  @return How many warnings with Code Decoder recorded.
+   function Count_Warnings (Decoder : Pictlib.Decoding.Decoder; Code : Pictlib.Errors.Warning_Code) return Natural;
+   --  Warning with.
+   --  @return The first warning with Code Decoder recorded.
+   function Warning_With (Decoder : Pictlib.Decoding.Decoder; Code : Pictlib.Errors.Warning_Code)
+     return Pictlib.Errors.Warning
+     with Pre => Has_Warning (Decoder, Code);
+
+   --  Expect failure: enumerating Input with a fresh decoder fails with Code, leaves the decoder Failed with
+   --  Code as its last error, and names Op, Limit and Ordinal when they are given.
+   procedure Expect_Failure
+     (Input : aliased Pictlib.Streams.Byte_Array;
+      Code : Pictlib.Errors.Error_Code;
+      Label : String;
+      Op : Pictlib.Opcode := 0;
+      Options : Pictlib.Decoding.Options := (others => <>);
+      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+      Limit : Pictlib.Limit_Kind := Pictlib.No_Limit;
+      Ordinal : Integer := -1);
 end Pictlib_Testing.Recorders;

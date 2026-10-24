@@ -4,7 +4,6 @@
 --  fixtures/real_world/expected.txt; --update rewrites that file. Runs from anywhere below the pictlib tree.
 with Pictlib_Testing.Fonts;
 with Pictlib_Testing.Tools;
-with Ada.Command_Line;
 with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Directories;
 with Ada.Exceptions;
@@ -172,6 +171,7 @@ begin
    if not Pictlib_Testing.Tools.Enter_Tests_Directory then
       return;
    end if;
+   Pictlib_Testing.Tools.Start_Report ("pictlib_real_world");
    Visit (Root);
    if Ada.Directories.Exists (Expected_File) then
       declare
@@ -225,9 +225,13 @@ begin
          Ada.Text_IO.Close (File);
       end;
       Ada.Text_IO.Put_Line ("updated " & Expected_File);
-   elsif Mismatches > 0 or else Defects > 0 then
-      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+   elsif Mismatches > 0 then
+      Pictlib_Testing.Tools.Fail (Mismatches'Image & " pictures differ from " & Expected_File);
+   end if;
+   if Defects > 0 then
+      Pictlib_Testing.Tools.Fail (Defects'Image & " pictures raised an exception");
    end if;
    Ada.Text_IO.Put_Line (Natural'Image (Natural (Results_Now.Length)) & " pictures," & Defects'Image & " defects,"
                          & Mismatches'Image & " mismatches");
+   Pictlib_Testing.Tools.Finish_Report;
 end Pictlib_Real_World;

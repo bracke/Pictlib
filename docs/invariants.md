@@ -13,14 +13,14 @@
 | STREAM-004 | End of input between opcodes is a missing end opcode (strict failure, lenient warning); inside an opcode it is always a failure carrying the opcode, ordinal and row. | `Pictlib.Internal.Opcode_Reader`, `Pictlib.Decoding` | `enumeration.malformed.truncation_and_end` | Runtime checked |
 | META-001 | Retained metadata never exceeds the item and byte budgets: a strict decoder fails, a lenient one drops the item with a Data_Loss warning. | `Pictlib.Internal.Metadata_Store`, `Pictlib.Internal.Opcode_Reader` | `enumeration.metadata.*`, `container.file_header.retention` | Runtime checked |
 | DIAG-001 | The warning log never holds more than Max_Warning_Records entries; overflow is reported in its last slot. | `Pictlib.Internal.Diagnostics` | `enumeration.warnings.reserved_and_cap` | Runtime checked |
-| STATE-001 | Decoder operations in the wrong state fail with Invalid_State (Operation_Cancelled after Cancel) and change neither state nor last error; Failed, Finished and Stopped are terminal until Reset or Initialize; Finalize is idempotent. | `Pictlib.Decoding` | `decoder.state.*` | Runtime checked |
-| IMAGE-001 | A view is written only when its storage is present, its stride holds a row, the last row ends within Accessible_Bytes without 63-bit overflow, and its storage holds Accessible_Bytes; Render also requires the frame's size. | `Pictlib.Images`, `Pictlib.Decoding.Render` | `images.*`, `rendering.views_and_limits`, `rendering.output_formats` | Descriptor arithmetic proved (`pictlib_prove`); views runtime checked |
+| STATE-001 | Decoder operations in the wrong state fail with Invalid_State (Operation_Cancelled after Cancel) and change neither state nor last error; Failed, Finished and Stopped are terminal until Reset or Initialize; Finalize is idempotent. | `Pictlib.Decoding` | `decoder.state.*`, `rendering.states`, `encoding.states` | Runtime checked |
+| IMAGE-001 | A view is written only when its storage is present, its stride holds a row, the last row ends within Accessible_Bytes without 63-bit overflow, and its storage holds Accessible_Bytes; Render also requires the frame's size. | `Pictlib.Images`, `Pictlib.Decoding.Render` | `images.*`, `rendering.views_and_limits`, `rendering.output_formats`, `geometry.rect` | Descriptor arithmetic proved (`pictlib_prove`); views runtime checked |
 | PACKBITS-001 | PackBits unpacking never writes past its output and classifies every row as exact, overrun, underrun or truncated; packing stays within Worst_Case and round-trips. | `Pictlib.Internal.PackBits` | `packbits.*` | `Unpack` proved, its output bound included (`pictlib_prove`); `Pack` runtime checked |
 | REGION-001 | Region scanlines are accepted only with strictly increasing y and x inside the box, an even number of inversion points per scanline and exact termination; row walking holds only the current inversion set and charges its work. | `Pictlib.Internal.Regions` | `rendering.clip_and_mask` | Runtime checked |
 | PIXMAP-001 | Pixel depth, pack type, component count and row length agree before any row is decoded; every stored row is unpacked to exactly its length in every mode; enumeration and rendering agree on every layout; color indexes outside the table fail strictly. | `Pictlib.Internal.Pixmaps` | `rendering.bitmaps`, `rendering.indexed_pixmaps`, `rendering.direct_pixmaps`, `rendering.malformed_pixels`, `hostile.pixel_layouts`, `external.*` | Runtime checked |
 | RENDER-001 | Copies map destination pixels to source pixels by nearest neighbor within srcRect, clipped by the frame, the clip region and the mask, and every painted pixel counts against the drawing budget. | `Pictlib.Internal.Rendering` | `rendering.scaling_and_placement`, `rendering.clip_and_mask`, `rendering.views_and_limits` | Runtime checked |
 | RENDER-002 | Drawing a release cannot render yet (non-JPEG QuickTime codecs, mattes and skewing matrices, unknown planar colors, outline and shadow text, text ratios, PixPat tiles of more than 2^31 − 1 pixels) is never silent: strictly it fails with Unsupported_Feature, leniently it warns. | `Pictlib.Internal.Opcode_Reader`, `Pictlib.Internal.Rendering` | `rendering.unsupported_drawing` | Runtime checked |
-| SHAPE-001 | Every shape is computed as sorted, disjoint spans per canvas row with integer arithmetic only (128-bit where products need it), so the same picture renders the same pixels on every platform; building and painting a shape count against the drawing budget, and building stops once it would exceed it. | `Pictlib.Internal.Coverage`, `Pictlib.Internal.Rendering` | `shapes.*`, `hostile.shape_work` | Runtime checked |
+| SHAPE-001 | Every shape is computed as sorted, disjoint spans per canvas row with integer arithmetic only (128-bit where products need it), so the same picture renders the same pixels on every platform; building and painting a shape count against the drawing budget, and building stops once it would exceed it. | `Pictlib.Internal.Coverage`, `Pictlib.Internal.Rendering` | `shapes.*`, `hostile.shape_work`, `coverage.span_operations` | Runtime checked |
 | PORT-001 | Port state follows the opcodes: origin, clip, pen, patterns, colors, oval size, highlight and the last shapes for the "same" opcodes; unknown transfer modes fail strictly; the origin, line ends and text origin stay within ±2^24. | `Pictlib.Internal.Drawing` | `shapes.origin`, `shapes.patterns_and_modes`, `shapes.colors`, `shapes.clipping_and_limits`, `hostile.coordinates`, `hostile.pen_steps` | Runtime checked |
 | MODE-001 | Transfer modes reproduce QuickDraw's black-and-white arithmetic with a black foreground and white background, and colorize linearly otherwise; copies and patterns share one definition. | `Pictlib.Internal.Transfer_Modes` | `shapes.copy_modes`, `shapes.patterns_and_modes`, `rendering.*` | Runtime checked |
 | TEXT-001 | A text opcode draws only with a font the caller's table resolves (fontName, ID, classic name, default); without one it fails strictly or is skipped with a warning; glyph ink is coverage of at least 128, placed by the specification's layout rules and drawn through the text mode inside the clip. | `Pictlib.Fonts`, `Pictlib.Internal.Typesetting` | `text.*` | Runtime checked |
@@ -31,3 +31,21 @@
 | WORK-001 | All rendering work, drawn or not (copies, shapes, regions, patterns, glyphs, embedded JPEG decoding), is charged to one per-render drawing-work counter in the session before it is done, and a charge past Max_Drawing_Work fails or stops the drawing. | `Pictlib.Internal.Sessions` | `hostile.pixel_work`, `hostile.shape_work`, `rendering.views_and_limits`, `quicktime.limits` | Runtime checked |
 | ALLOC-001 | Every allocation sized by input is admitted against Max_Allocation_Bytes before it is made, and, when Max_Total_Allocation_Bytes is set, against a monotonic session total that Reset and Initialize clear. | `Pictlib.Internal.Sessions` | `hostile.pixel_work`, `quicktime.limits`, `text.*`, `stress.limit_matrix` | Runtime checked |
 | LIMIT-001 | Every limit kind is enforced and reported as itself. | `Pictlib.Limits` users | `stress.limit_matrix` | Runtime checked |
+
+## Capabilities
+
+Each `Pictlib.Capabilities` constant is `True` only while the tests below exercise its feature;
+`pictlib_check` fails when a constant has no row here or a row names a test that is not registered.
+
+| Capability | Coverage |
+| --- | --- |
+| `Foundation_API` | `foundation.*`, `images.*`, `geometry.rect` |
+| `Memory_Streams` | `streams.*` |
+| `Container_Decoding` | `container.*` |
+| `Opcode_Enumeration` | `enumeration.*`, `opcodes.*` |
+| `Raster_Decoding` | `rendering.*`, `packbits.*`, `external.*` |
+| `Vector_Rendering` | `shapes.*`, `coverage.span_operations` |
+| `Text_Rendering` | `text.*` |
+| `QuickTime_JPEG_Decoding` | `quicktime.*` |
+| `Metadata_Retention` | `enumeration.metadata.*`, `container.file_header.retention` |
+| `Raster_Encoding` | `encoding.*`, `pictlib_conformance` |

@@ -106,34 +106,6 @@ package body Pictlib_Testing.Test_Enumeration is
    --  picture offset 40.
    function V2_Body (Body_Bytes : Bytes) return Bytes is (V2_Prefix (0, 0, 4, 8) & Body_Bytes);
 
-   procedure Expect_Failure
-     (Input : aliased Bytes;
-      Code : Pictlib.Errors.Error_Code;
-      Label : String;
-      Op : Pictlib.Opcode := 0;
-      Options : Decoding.Options := (others => <>);
-      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
-      Limit : Pictlib.Limit_Kind := Pictlib.No_Limit)
-   is
-      Decoder : Decoding.Decoder;
-      Events : Recorders.Recorder;
-      Outcome : Pictlib.Results.Result;
-   begin
-      Recorders.Decode (Input, Decoder, Events, Outcome, Options, Budget);
-      Assert (Outcome.First_Error.Code = Code,
-              Label & ": expected " & Code'Image & ", got " & Outcome.First_Error.Code'Image);
-      Assert (Decoding.State (Decoder) = Decoding.Failed, Label & ": the decoder did not fail");
-      Assert (Decoding.Last_Error (Decoder).Code = Code, Label & ": the last error is wrong");
-      if Op /= 0 then
-         Assert (Outcome.First_Error.Context.Has_Opcode and then Outcome.First_Error.Context.Op = Op,
-                 Label & ": the failing opcode was not recorded");
-      end if;
-      if Limit /= Pictlib.No_Limit then
-         Assert (Outcome.First_Error.Context.Limit = Limit, Label & ": wrong limit " &
-                 Outcome.First_Error.Context.Limit'Image);
-      end if;
-   end Expect_Failure;
-
    procedure Version_1_Stream (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Version_2_Stream (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Short_Reads (T : in out AUnit.Test_Cases.Test_Case'Class);
@@ -310,9 +282,9 @@ package body Pictlib_Testing.Test_Enumeration is
         (Pictlib.Limits.Default_Limits with delta Max_Metadata_Items => 1);
       Bad_Font_Name : aliased constant Bytes := V2_Body (W (16#002C#) & W (3) & W (1) & B (5) & B (0) & W (16#00FF#));
    begin
-      Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "metadata bytes", 16#00A1#,
+      Recorders.Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "metadata bytes", 16#00A1#,
                       Budget => Two_Bytes, Limit => Pictlib.Retained_Metadata_Byte_Limit);
-      Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "metadata items", 16#002C#,
+      Recorders.Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "metadata items", 16#002C#,
                       Budget => One_Item, Limit => Pictlib.Metadata_Item_Limit);
 
       Recorders.Decode (V2_Picture, Decoder, Events, Outcome, (Strictness => Pictlib.Compatible, others => <>),
@@ -322,7 +294,7 @@ package body Pictlib_Testing.Test_Enumeration is
       Assert (Recorders.Has_Warning (Decoder, Pictlib.Errors.Data_Loss), "dropped metadata was not reported");
       Check_Events (Events, V2_Expected, "v2, dropped metadata");
 
-      Expect_Failure (Bad_Font_Name, Pictlib.Errors.Opcode_Length_Invalid, "bad font name", 16#002C#);
+      Recorders.Expect_Failure (Bad_Font_Name, Pictlib.Errors.Opcode_Length_Invalid, "bad font name", 16#002C#);
       Events := (others => <>);
       Recorders.Decode (Bad_Font_Name, Decoder, Events, Outcome, (Strictness => Pictlib.Compatible, others => <>));
       Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.Metadata_Count (Decoder) = 0
@@ -338,16 +310,12 @@ package body Pictlib_Testing.Test_Enumeration is
       Reserved : Natural := 0;
    begin
       Recorders.Decode (V2_Picture, Decoder, Events, Outcome);
-      for Index in 1 .. Decoding.Warning_Count (Decoder) loop
-         declare
-            Item : constant Pictlib.Errors.Warning := Decoding.Warning_At (Decoder, Index);
-         begin
-            Assert (Item.Code = Pictlib.Errors.Reserved_Opcode_Skipped, "unexpected warning " & Item.Code'Image);
-            Assert (Item.Context.Has_Opcode, "a reserved opcode warning lost its opcode");
-            Reserved := Reserved + 1;
-         end;
-      end loop;
-      Assert (Reserved = 4, "expected four reserved opcode warnings, got" & Reserved'Image);
+      Reserved := Recorders.Count_Warnings (Decoder, Pictlib.Errors.Reserved_Opcode_Skipped);
+      Assert (Reserved = 4 and then Decoding.Warning_Count (Decoder) = 4,
+              "expected four reserved opcode warnings and nothing else, got" & Reserved'Image & " of"
+              & Decoding.Warning_Count (Decoder)'Image);
+      Assert ((for all Index in 1 .. 4 => Decoding.Warning_At (Decoder, Index).Context.Has_Opcode),
+              "a reserved opcode warning lost its opcode");
       Assert (Decoding.Warning_At (Decoder, 1).Context.Op = 16#0024#
               and then Decoding.Warning_At (Decoder, 1).Context.Source = 598,
               "the first reserved opcode warning is misplaced");
@@ -466,17 +434,17 @@ package body Pictlib_Testing.Test_Enumeration is
         V2_Body (W (16#0091#) & W (2) & Rect (0, 0, 1, 16) & Rect (0, 0, 1, 16) & Rect (0, 0, 1, 16) & W (0)
                  & W (2) & W (16#00FF#));
    begin
-      Expect_Failure (Short_Region, Pictlib.Errors.Region_Invalid, "short region", 16#0001#);
-      Expect_Failure (Odd_Polygon, Pictlib.Errors.Polygon_Invalid, "odd polygon", 16#0070#);
-      Expect_Failure (Huge_Table, Pictlib.Errors.Color_Table_Invalid, "huge color table", 16#0098#);
-      Expect_Failure (Odd_Depth, Pictlib.Errors.Pixmap_Invalid, "3-bit pixels", 16#0098#);
-      Expect_Failure (Bad_Pack, Pictlib.Errors.Pixmap_Invalid, "pack type 5", 16#009A#);
-      Expect_Failure (Indexed_Direct, Pictlib.Errors.Pixmap_Invalid, "8-bit direct pixels", 16#009A#);
-      Expect_Failure (Pad_Dropped_16, Pictlib.Errors.Pixmap_Invalid, "pack type 2 at 16 bits", 16#009A#);
-      Expect_Failure (Inverted_Bounds, Pictlib.Errors.Pixmap_Invalid, "inverted bounds", 16#0098#);
-      Expect_Failure (Bad_Pattern, Pictlib.Errors.Pattern_Invalid, "pattern type 3", 16#0012#);
-      Expect_Failure (Bad_Mask, Pictlib.Errors.Region_Invalid, "short mask region", 16#0091#);
-      Expect_Failure (Short_Region, Pictlib.Errors.Region_Invalid, "short region, lenient", 16#0001#,
+      Recorders.Expect_Failure (Short_Region, Pictlib.Errors.Region_Invalid, "short region", 16#0001#);
+      Recorders.Expect_Failure (Odd_Polygon, Pictlib.Errors.Polygon_Invalid, "odd polygon", 16#0070#);
+      Recorders.Expect_Failure (Huge_Table, Pictlib.Errors.Color_Table_Invalid, "huge color table", 16#0098#);
+      Recorders.Expect_Failure (Odd_Depth, Pictlib.Errors.Pixmap_Invalid, "3-bit pixels", 16#0098#);
+      Recorders.Expect_Failure (Bad_Pack, Pictlib.Errors.Pixmap_Invalid, "pack type 5", 16#009A#);
+      Recorders.Expect_Failure (Indexed_Direct, Pictlib.Errors.Pixmap_Invalid, "8-bit direct pixels", 16#009A#);
+      Recorders.Expect_Failure (Pad_Dropped_16, Pictlib.Errors.Pixmap_Invalid, "pack type 2 at 16 bits", 16#009A#);
+      Recorders.Expect_Failure (Inverted_Bounds, Pictlib.Errors.Pixmap_Invalid, "inverted bounds", 16#0098#);
+      Recorders.Expect_Failure (Bad_Pattern, Pictlib.Errors.Pattern_Invalid, "pattern type 3", 16#0012#);
+      Recorders.Expect_Failure (Bad_Mask, Pictlib.Errors.Region_Invalid, "short mask region", 16#0091#);
+      Recorders.Expect_Failure (Short_Region, Pictlib.Errors.Region_Invalid, "short region, lenient", 16#0001#,
                       Options => (Strictness => Pictlib.Recover_When_Safe, others => <>));
    end Malformed_Structures;
 
@@ -505,18 +473,19 @@ package body Pictlib_Testing.Test_Enumeration is
                  "a missing end opcode was not reported");
       end Accept_Missing_End;
    begin
-      Expect_Failure (Truncated, Pictlib.Errors.Source_Unexpected_End, "truncated rect", 16#0030#);
+      Recorders.Expect_Failure (Truncated, Pictlib.Errors.Source_Unexpected_End, "truncated rect", 16#0030#);
       Recorders.Decode (Truncated, Decoder, Events, Outcome);
       Assert (Outcome.First_Error.Context.Ordinal = 2, "a truncated opcode lost its ordinal");
-      Expect_Failure (Half_Opcode, Pictlib.Errors.Source_Unexpected_End, "half an opcode",
+      Recorders.Expect_Failure (Half_Opcode, Pictlib.Errors.Source_Unexpected_End, "half an opcode",
                       Options => (Strictness => Pictlib.Compatible, others => <>));
-      Expect_Failure (Truncated_Rows, Pictlib.Errors.Source_Unexpected_End, "truncated rows", 16#0098#);
+      Recorders.Expect_Failure (Truncated_Rows, Pictlib.Errors.Source_Unexpected_End, "truncated rows", 16#0098#);
       Recorders.Decode (Truncated_Rows, Decoder, Events, Outcome);
       Assert (Outcome.First_Error.Context.Row = 1, "a truncated row was not identified");
 
-      Expect_Failure (Missing_End, Pictlib.Errors.Missing_End_Opcode, "missing end");
-      Expect_Failure (Missing_End_After_Pad, Pictlib.Errors.Missing_End_Opcode, "missing end after a pad byte");
-      Expect_Failure (V1_Missing_End, Pictlib.Errors.Missing_End_Opcode, "v1 missing end");
+      Recorders.Expect_Failure
+        (Missing_End_After_Pad, Pictlib.Errors.Missing_End_Opcode, "missing end after a pad byte");
+      Recorders.Expect_Failure (Missing_End, Pictlib.Errors.Missing_End_Opcode, "missing end");
+      Recorders.Expect_Failure (V1_Missing_End, Pictlib.Errors.Missing_End_Opcode, "v1 missing end");
       Accept_Missing_End (Missing_End);
       Accept_Missing_End (Missing_End_After_Pad);
       Accept_Missing_End (V1_Missing_End);
@@ -532,7 +501,7 @@ package body Pictlib_Testing.Test_Enumeration is
    begin
       Recorders.Decode (Trailing, Decoder, Events, Outcome);
       Assert (Pictlib.Results.Succeeded (Outcome), "trailing bytes are not read by default");
-      Expect_Failure (Trailing, Pictlib.Errors.Trailing_Data, "trailing data", Options => Require);
+      Recorders.Expect_Failure (Trailing, Pictlib.Errors.Trailing_Data, "trailing data", Options => Require);
       Events := (others => <>);
       Recorders.Decode (Trailing, Decoder, Events, Outcome, (Require with delta Strictness => Pictlib.Compatible));
       Assert (Pictlib.Results.Succeeded (Outcome)
@@ -548,21 +517,21 @@ package body Pictlib_Testing.Test_Enumeration is
       Defaults : constant Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
       Huge_Long : aliased constant Bytes := V2_Body (W (16#00D0#) & L (16#7FFF_FFFF#) & W (16#00FF#));
    begin
-      Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "opcode count",
+      Recorders.Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "opcode count",
                       Budget => (Defaults with delta Max_Opcodes => 5), Limit => Pictlib.Opcode_Count_Limit);
-      Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "header opcode count",
+      Recorders.Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "header opcode count",
                       Budget => (Defaults with delta Max_Opcodes => 1), Limit => Pictlib.Opcode_Count_Limit);
-      Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "opcode bytes", 16#0098#,
+      Recorders.Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "opcode bytes", 16#0098#,
                       Budget => (Defaults with delta Max_Opcode_Bytes => 31), Limit => Pictlib.Opcode_Byte_Limit);
-      Expect_Failure (Huge_Long, Pictlib.Errors.Limit_Exceeded, "a 2 GB reserved opcode", 16#00D0#,
+      Recorders.Expect_Failure (Huge_Long, Pictlib.Errors.Limit_Exceeded, "a 2 GB reserved opcode", 16#00D0#,
                       Limit => Pictlib.Opcode_Byte_Limit);
-      Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "region bytes", 16#0001#,
+      Recorders.Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "region bytes", 16#0001#,
                       Budget => (Defaults with delta Max_Region_Bytes => 9), Limit => Pictlib.Region_Byte_Limit);
-      Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "polygon points", 16#0071#,
+      Recorders.Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "polygon points", 16#0071#,
                       Budget => (Defaults with delta Max_Polygon_Points => 0), Limit => Pictlib.Polygon_Point_Limit);
-      Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "picture bytes",
+      Recorders.Expect_Failure (V2_Picture, Pictlib.Errors.Limit_Exceeded, "picture bytes",
                       Budget => (Defaults with delta Max_Picture_Bytes => 700), Limit => Pictlib.Picture_Byte_Limit);
-      Expect_Failure (V1_Picture, Pictlib.Errors.Limit_Exceeded, "picture bytes inside the look-ahead",
+      Recorders.Expect_Failure (V1_Picture, Pictlib.Errors.Limit_Exceeded, "picture bytes inside the look-ahead",
                       Budget => (Defaults with delta Max_Picture_Bytes => 30), Limit => Pictlib.Picture_Byte_Limit);
    end Stream_Limits;
 end Pictlib_Testing.Test_Enumeration;

@@ -94,8 +94,8 @@ package Pictlib.Internal.Rendering is
       Mode : Transfer_Modes.Mode_Kind := Transfer_Modes.Copy;
    end record;
 
-   --  Start.
-   --  @param P Painter to prepare; the port state is QuickDraw's default.
+   --  Start: a painter for one render, its canvas the caller's view, its port state QuickDraw's default.
+   --  @param P Painter to prepare.
    --  @param View A valid caller view the size of Frame.
    --  @param Frame The picture frame.
    --  @param Background Color the view is filled with first.
@@ -115,7 +115,7 @@ package Pictlib.Internal.Rendering is
    function To_Picture (P : Painter; Item : Geometry.Rect) return Area is
      (Regions.To_Area (Item, -P.Origin_H, -P.Origin_V));
 
-   --  Unsupported.
+   --  Unsupported: a construct a release cannot render, reported by the strictness rule.
    --  @param S Session whose strictness decides.
    --  @param Event The opcode that cannot be rendered yet.
    --  @param Expected What a release supports, when a count says why, as the diagnostic's Expected.
@@ -131,7 +131,7 @@ package Pictlib.Internal.Rendering is
    --  @return True when HiliteMode preceded this drawing, which then draws in the hilite mode.
    function Take_Hilite (P : in out Painter) return Boolean;
 
-   --  Mode.
+   --  Mode: a transfer mode word, classified.
    --  @param S Session whose strictness decides.
    --  @param Event The opcode, for diagnostics.
    --  @param Value A transfer mode word.
@@ -176,11 +176,15 @@ package Pictlib.Internal.Rendering is
       Masked : Boolean) return Results.Result;
    --  Paint row: each span of Row_Spans is charged, then each of its pixels becomes Color_At of what is under it;
    --  nothing is painted past the budget.
+   --  @param P Painter whose begun row is painted.
+   --  @param S Session whose drawing budget applies.
+   --  @param Y Picture row.
+   --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
    generic
       with function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color;
    function Paint_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result;
 
-   --  Fill.
+   --  Fill: a shape painted row by row, clipped, through How.
    --  @param P Painter.
    --  @param S Session whose drawing budget applies.
    --  @param Shape Pixels to change, in picture coordinates; clipped by the clip region and the canvas.

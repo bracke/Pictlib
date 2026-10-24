@@ -84,4 +84,9 @@ All tooling is Ada, in the `tests` crate:
 - `pictlib_benchmark`.
 - Every tool runs from anywhere below the pictlib tree and finds its
   fixtures itself.
+- `pictlib_check` keeps `docs/invariants.md` true to the suite: every
+  coverage name it cites must be a registered test or a tool, and its
+  capability table must list every `Pictlib.Capabilities` constant.
+- Every tool reports failures the same way, as `tool: message` on standard
+  error with a failing exit status.
 - CI steps are single commands.

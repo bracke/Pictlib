@@ -2,7 +2,6 @@
 --  (library build, source policy, AUnit suite), the real-world corpus, a fuzzing run, the SPARK proof profile and
 --  encoder conformance against ImageMagick and LibreOffice. --without-conformance leaves out the last, for hosts
 --  without those readers. Runs from anywhere below the pictlib tree after `alr build`.
-with Ada.Command_Line;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Pictlib_Testing.Tools;
@@ -29,11 +28,12 @@ procedure Pictlib_Complete is
 
    Without_Conformance : constant Boolean := Processes.Has_Argument ("--without-conformance");
    Suffix : constant String := Pictlib_Testing.Tools.Executable_Suffix;
-   Failed, Ran : Natural := 0;
+   Ran : Natural := 0;
 begin
    if not Pictlib_Testing.Tools.Enter_Tests_Directory then
       return;
    end if;
+   Pictlib_Testing.Tools.Start_Report ("pictlib_complete");
    for Item of Steps loop
       declare
          Name : constant String := To_String (Item.Program);
@@ -45,14 +45,11 @@ begin
             if Processes.Run_Status (Name, ".", "./bin/" & Name & Suffix, Item.Arguments, Quiet => True) = 0 then
                Ada.Text_IO.Put_Line ("PASS " & Name);
             else
-               Failed := Failed + 1;
-               Ada.Text_IO.Put_Line ("FAIL " & Name);
+               Pictlib_Testing.Tools.Fail ("FAIL " & Name);
             end if;
          end if;
       end;
    end loop;
-   Ada.Text_IO.Put_Line (Ran'Image & " gates," & Failed'Image & " failed");
-   if Failed > 0 then
-      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-   end if;
+   Ada.Text_IO.Put_Line (Ran'Image & " gates," & Pictlib_Testing.Tools.Failures'Image & " failed");
+   Pictlib_Testing.Tools.Finish_Report;
 end Pictlib_Complete;

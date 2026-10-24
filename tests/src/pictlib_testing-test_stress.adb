@@ -7,11 +7,13 @@ with Pictlib.Errors;
 with Pictlib.Fonts;
 with Pictlib.Images;
 with Pictlib.Limits;
-with Pictlib.Pictures;
 with Pictlib.Results;
 with Pictlib.Streams;
 with Pictlib_Testing.Builders;
+with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Files;
+with Pictlib_Testing.Fonts;
+with Pictlib_Testing.Recorders;
 with Pictlib_Testing.Samples;
 
 package body Pictlib_Testing.Test_Stress is
@@ -25,16 +27,9 @@ package body Pictlib_Testing.Test_Stress is
 
    package Decoding renames Pictlib.Decoding;
 
-   type Null_Visitor is new Decoding.Opcode_Visitor with null record;
-   overriding function Visit (Object : in out Null_Visitor; Event : Pictlib.Pictures.Opcode_Event)
-     return Decoding.Visit_Action is (Decoding.Continue);
+   subtype Null_Visitor is Recorders.Null_Visitor;
 
-   function Fonts return Pictlib.Fonts.Font_Table is
-      Table : Pictlib.Fonts.Font_Table := Pictlib.Fonts.Empty;
-   begin
-      Pictlib.Fonts.Set_Default (Table, "fixtures/fonts/DejaVuSans.ttf");
-      return Table;
-   end Fonts;
+   function Fonts return Pictlib.Fonts.Font_Table renames Pictlib_Testing.Fonts.Test_Table;
 
    --  A picture that exercises every renderer path: a copy, shapes, a pattern, text and a QuickTime JPEG.
    function Everything return Bytes is
@@ -43,15 +38,15 @@ package body Pictlib_Testing.Test_Stress is
          W (16#01#) & Region (0, 0, 24, 48)
          & W (16#1A#) & W (16#FFFF#) & W (0) & W (0) & W (16#51#) & Rect (2, 2, 20, 30)
          & W (16#1A#) & W (0) & W (0) & W (0)
-         & W (16#0A#) & [16#AA#, 16#55#, 16#AA#, 16#55#, 16#AA#, 16#55#, 16#AA#, 16#55#]
+         & W (16#0A#) & Checker
          & W (16#34#) & Rect (4, 30, 20, 46)
-         & W (16#98#) & W (2) & Rect (0, 0, 2, 8) & Rect (0, 0, 2, 8) & Rect (22, 0, 24, 8) & W (0)
-         & B (16#A5#) & B (0) & B (16#0F#) & B (0)
+         & Bitmap_2x8 (Destination => Rect (22, 0, 24, 8))
          & W (16#28#) & W (18) & W (4) & B (2) & Text ("Hi") & B (0)
          & QuickTime ("jpeg", 8, 6, Files.Load ("external/small.jpg").all, Move_H => 36 * 16#1_0000#,
                       Move_V => 16#1_0000#)));
 
-   --  Render Input with a fresh decoder of its own, returning the RGB pixels.
+   --  Render Input with a fresh decoder and source of its own, so tasks can render at once, returning the RGB
+   --  pixels.
    function Render (Input : Bytes; Width, Height : Positive) return Bytes is
       Data : aliased constant Bytes := Input;
       Source : aliased Pictlib.Streams.Memory_Source;
@@ -63,12 +58,7 @@ package body Pictlib_Testing.Test_Stress is
       Decoding.Initialize (Decoder, Source'Access, (Fonts => Fonts, others => <>));
       Outcome := Decoding.Read_Header (Decoder);
       if Pictlib.Results.Succeeded (Outcome) then
-         Outcome := Decoding.Render
-           (Decoder,
-            (Descriptor => (Width => Pictlib.Image_Width (Width), Height => Pictlib.Image_Height (Height),
-                            Format => Pictlib.RGB_24, Stride => Pictlib.Row_Stride (3 * Width),
-                            Accessible_Bytes => Pictlib.Byte_Count (3 * Width * Height)),
-             Storage => Storage'Unchecked_Access));
+         Outcome := Decoding.Render (Decoder, Canvases.View (Storage'Access, Width, Height));
       end if;
       Assert (Pictlib.Results.Succeeded (Outcome), "render failed with " & Outcome.First_Error.Code'Image);
       return Storage;
@@ -103,9 +93,7 @@ package body Pictlib_Testing.Test_Stress is
       Source : aliased Pictlib.Streams.Memory_Source;
       Decoder : Decoding.Decoder;
       Storage : aliased Bytes := [1 .. 3 * 48 * 24 => 0];
-      View : constant Pictlib.Images.Mutable_Image_View :=
-        (Descriptor => (Width => 48, Height => 24, Format => Pictlib.RGB_24, Stride => 144, Accessible_Bytes => 3456),
-         Storage => Storage'Unchecked_Access);
+      View : constant Pictlib.Images.Mutable_Image_View := Canvases.View (Storage'Access, 48, 24);
       Visitor : Null_Visitor;
       Outcome : Pictlib.Results.Result;
    begin
@@ -198,12 +186,7 @@ package body Pictlib_Testing.Test_Stress is
          Outcome := Decoding.Read_Header (Decoder);
          if Pictlib.Results.Succeeded (Outcome) then
             Outcome :=
-              (if Render_It then
-                  Decoding.Render
-                    (Decoder,
-                     (Descriptor => (Width => 48, Height => 24, Format => Pictlib.RGB_24, Stride => 144,
-                                     Accessible_Bytes => 3456),
-                      Storage => Storage'Unchecked_Access))
+              (if Render_It then Decoding.Render (Decoder, Canvases.View (Storage'Access, 48, 24))
                else Decoding.Enumerate (Decoder, Visitor));
          end if;
          if Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded then
@@ -292,10 +275,7 @@ package body Pictlib_Testing.Test_Stress is
       Decoding.Initialize (Decoder, Source'Access);
       Outcome := Decoding.Read_Header (Decoder);
       Assert (Pictlib.Results.Succeeded (Outcome), "the largest default frame was refused");
-      Outcome := Decoding.Render
-        (Decoder,
-         (Descriptor => (Width => 1, Height => 1, Format => Pictlib.RGB_24, Stride => 3, Accessible_Bytes => 3),
-          Storage => Small'Unchecked_Access));
+      Outcome := Decoding.Render (Decoder, Canvases.View (Small'Access, 1, 1));
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_Argument, "a view of the wrong size was drawn into");
       Outcome := Decoding.Render
         (Decoder, (Descriptor => (Width => 16_384, Height => 16_384, Format => Pictlib.RGB_24, Stride => 3 * 16_384,

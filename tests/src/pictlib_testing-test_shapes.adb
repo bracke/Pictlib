@@ -20,14 +20,10 @@ package body Pictlib_Testing.Test_Shapes is
 
    --  Expected rasters follow the rules of the specification, section 3.2, worked out by hand.
 
-
-   Checker : constant Bytes := [16#AA#, 16#55#, 16#AA#, 16#55#, 16#AA#, 16#55#, 16#AA#, 16#55#];
    Red_Foreground : constant Bytes := RGB (16#1A#, 16#FFFF#, 0, 0);
    Black_Foreground : constant Bytes := RGB (16#1A#, 0, 0, 0);
-   --  10100101 / 00001111 as a BitMap copied with Mode.
    function Bitmap (Mode : Natural; Destination : Bytes := Rect (0, 0, 2, 8)) return Bytes is
-     (W (16#98#) & W (2) & Rect (0, 0, 2, 8) & Rect (0, 0, 2, 8) & Destination & W (Mode)
-      & B (16#A5#) & B (0) & B (16#0F#) & B (0));
+     (Bitmap_2x8 (Mode, Destination => Destination));
    Red_Under : constant Bytes := Red_Foreground & Op_Rect (16#31#, 0, 0, 2, 8) & Black_Foreground;
    Black_Under : constant Bytes := Op_Rect (16#31#, 0, 0, 2, 8);
 

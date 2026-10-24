@@ -153,7 +153,7 @@ passes.
 
 **Completed (2026-10-24):** Tasks 26–29 and the library-complete gate, with the
 open items below. `pictlib_complete` runs every gate: the source policy
-(`pictlib_check`), the AUnit suite the real-world corpus
+(`pictlib_check`), the AUnit suite, the real-world corpus
 (`pictlib_real_world`: LibreOffice's PICT filter test files at a pinned commit,
 pass and fail, CVE reproductions among them), mutation fuzzing (`pictlib_fuzz`;
 300 000 inputs found no defect), the SPARK proof profile (`pictlib_prove`) and

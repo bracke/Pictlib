@@ -12,16 +12,20 @@ package body Pictlib_Testing.Tools is
    Tool_Name : Ada.Strings.Unbounded.Unbounded_String;
    Failed : Natural := 0;
 
+   function Root return String is
+     (Project_Tools.Files.Find_Root_Upward (Ada.Directories.Current_Directory, "pictlib.gpr"));
+
+   function Alr return String is (Project_Tools.Processes.Locate_Command ("alr"));
+
    function Enter_Tests_Directory return Boolean is
-      Root : constant String :=
-        Project_Tools.Files.Find_Root_Upward (Ada.Directories.Current_Directory, "pictlib.gpr");
+      Tree : constant String := Root;
    begin
-      if Root'Length = 0 then
+      if Tree'Length = 0 then
          Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "run below a pictlib tree");
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
          return False;
       end if;
-      Ada.Directories.Set_Directory (Root & "/tests");
+      Ada.Directories.Set_Directory (Tree & "/tests");
       return True;
    end Enter_Tests_Directory;
 

@@ -98,11 +98,12 @@ package body Pictlib.Internal.Container is
       return Results.Success;
    end Check_Frame;
 
-   --  The 24 bytes of HeaderOp data. Version -1 (a long) carries fixed-point bounds; version -2 (a word)
-   --  carries the resolution and an integer source rectangle.
    --  Where HeaderOp's own diagnostics point.
    Header_Op_Context : constant Errors.Diagnostic_Context :=
      (Op => Opcodes.Header_Op, Has_Opcode => True, others => <>);
+
+   --  The 24 bytes of HeaderOp data. Version -1 (a long) carries fixed-point bounds; version -2 (a word)
+   --  carries the resolution and an integer source rectangle.
 
    function Read_Header_Op_Data
      (S : in out Sessions.Session;

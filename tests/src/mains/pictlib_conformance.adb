@@ -7,7 +7,6 @@
 --    is the decoded bitmap at its own size; ImageMagick only turns that PNG into a PPM.
 --  A decoder that is not installed is reported as skipped; --require fails the run unless every decoder ran.
 --  Runs from anywhere below the pictlib tree.
-with Ada.Command_Line;
 with Ada.Directories;
 with Ada.Streams.Stream_IO;
 with Ada.Strings.Unbounded;
@@ -17,6 +16,7 @@ with Pictlib.Encoding;
 with Pictlib.Images;
 with Pictlib.Results;
 with Pictlib.Streams;
+with Pictlib_Testing.Files;
 with Pictlib_Testing.Samples;
 with Pictlib_Testing.Tools;
 with Project_Tools.Processes;
@@ -28,7 +28,9 @@ procedure Pictlib_Conformance is
 
    package Encoding renames Pictlib.Encoding;
    package Processes renames Project_Tools.Processes;
+   package Files renames Pictlib_Testing.Files;
    package Samples renames Pictlib_Testing.Samples;
+   procedure Fail (Message : String) renames Pictlib_Testing.Tools.Fail;
 
    Directory : constant String := "artifacts/conformance";
 
@@ -72,67 +74,26 @@ procedure Pictlib_Conformance is
       Close (File);
    end Write;
 
-   function Expected (Item : Sample_Case; X, Y : Natural) return Pictlib.Images.RGB_Color is
-      Color : constant Pictlib.Images.RGB_Color := Samples.Color (Item.Item, X, Y);
-   begin
-      if Item.Settings.Layout = Encoding.Mono_1 then
-         return (if (299 * Natural (Color.Red) + 587 * Natural (Color.Green) + 114 * Natural (Color.Blue)) / 1000
-                    < Natural (Item.Settings.Mono_Threshold)
-                 then Pictlib.Images.Black else Pictlib.Images.White);
-      end if;
-      return Color;
-   end Expected;
-
    --  Pixels of a binary PPM that differ from the case's expected raster; Natural'Last when unreadable.
    function Differences (Item : Sample_Case; File_Name : String) return Natural is
-      use Ada.Streams.Stream_IO;
-      File : File_Type;
+      Result : Files.Raster;
+      Wrong : Natural := 0;
    begin
-      if not Ada.Directories.Exists (File_Name) then
+      if not Files.Read_Raster (File_Name, Result) or else Result.Kind /= '6' or else Result.Width /= Item.Width
+        or else Result.Height /= Item.Height
+      then
          return Natural'Last;
       end if;
-      declare
-         Size : constant Natural := Natural (Ada.Directories.Size (File_Name));
-         Data : Pictlib.Streams.Byte_Array (1 .. Size);
-         Position : Positive := 3;
-         Fields : array (1 .. 3) of Natural := [others => 0];
-         Wrong : Natural := 0;
-      begin
-         Open (File, In_File, File_Name);
-         Pictlib.Streams.Byte_Array'Read (Stream (File), Data);
-         Close (File);
-         if Size < 2 or else Character'Val (Data (1)) /= 'P' or else Character'Val (Data (2)) /= '6' then
-            return Natural'Last;
-         end if;
-         for Field in Fields'Range loop
-            while Position <= Size and then Character'Val (Data (Position)) not in '0' .. '9' loop
-               Position := Position + 1;
-            end loop;
-            while Position <= Size and then Character'Val (Data (Position)) in '0' .. '9' loop
-               Fields (Field) := Fields (Field) * 10 + Character'Pos (Character'Val (Data (Position))) - 48;
-               Position := Position + 1;
-            end loop;
+      for Y in 0 .. Item.Height - 1 loop
+         for X in 0 .. Item.Width - 1 loop
+            if Files.Pixel (Result, X, Y)
+              /= Samples.Expected_Color (Item.Item, X, Y, Item.Settings.Layout, Item.Settings.Mono_Threshold)
+            then
+               Wrong := Wrong + 1;
+            end if;
          end loop;
-         if Fields (1) /= Item.Width or else Fields (2) /= Item.Height or else Fields (3) /= 255
-           or else Size < Position + 3 * Item.Width * Item.Height
-         then
-            return Natural'Last;
-         end if;
-         for Y in 0 .. Item.Height - 1 loop
-            for X in 0 .. Item.Width - 1 loop
-               declare
-                  At_Pixel : constant Positive := Position + 1 + 3 * (Y * Item.Width + X);
-               begin
-                  if Pictlib.Images.RGB_Color'(Data (At_Pixel), Data (At_Pixel + 1), Data (At_Pixel + 2))
-                    /= Expected (Item, X, Y)
-                  then
-                     Wrong := Wrong + 1;
-                  end if;
-               end;
-            end loop;
-         end loop;
-         return Wrong;
-      end;
+      end loop;
+      return Wrong;
    end Differences;
 
    --  The first PNG embedded in an SVG file, as a data URI, written to Target.
@@ -206,29 +167,19 @@ procedure Pictlib_Conformance is
          when others => ((Item.Width + 7) / 8 + 1) / 2 * 2);
 
    function Encode (Item : Sample_Case) return Boolean is
-      Source : constant Samples.Bytes_Access := Samples.Make (Item.Item, Item.Width, Item.Height, Item.Format);
-      Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. 4_000_000);
-      Output : aliased Pictlib.Streams.Fixed_Buffer_Destination;
-      Encoder : Encoding.Encoder;
-      Outcome : Pictlib.Results.Result;
+      Picture : constant Samples.Encoded :=
+        Samples.Encode (Item.Item, Item.Width, Item.Height, Item.Settings, Item.Format);
    begin
-      Pictlib.Streams.Open (Output, Storage);
-      Encoding.Initialize (Encoder, Output'Access, Item.Settings);
-      Outcome := Encoding.Encode (Encoder, Samples.View (Source, Item.Width, Item.Height, Item.Format));
-      if Pictlib.Results.Succeeded (Outcome) then
-         Outcome := Encoding.Finish (Encoder);
-      end if;
-      if not Pictlib.Results.Succeeded (Outcome) then
-         Ada.Text_IO.Put_Line ("FAIL " & To_String (Item.Name) & ": encode " & Outcome.First_Error.Code'Image);
+      if not Pictlib.Results.Succeeded (Picture.Outcome) then
+         Fail (To_String (Item.Name) & ": encode " & Picture.Outcome.First_Error.Code'Image);
          return False;
       end if;
-      Write (Path (To_String (Item.Name), "pict"), Storage (1 .. Natural (Output.Offset)));
+      Write (Path (To_String (Item.Name), "pict"), Picture.Data.all);
       return True;
    end Encode;
 
    Magick : constant String := Pictlib_Testing.Tools.ImageMagick;
    Office : constant String := Processes.Locate_Command ("soffice");
-   Failures : Natural := 0;
    Skipped : Natural := 0;
 
    Not_Applicable : Natural := 0;
@@ -239,10 +190,8 @@ procedure Pictlib_Conformance is
       if Wrong = 0 then
          Ada.Text_IO.Put_Line ("PASS " & To_String (Item.Name) & " " & Oracle);
       else
-         Failures := Failures + 1;
-         Ada.Text_IO.Put_Line
-           ("FAIL " & To_String (Item.Name) & " " & Oracle & ": "
-            & (if Wrong = Natural'Last then "no readable result" else Wrong'Image & " pixels differ"));
+         Fail (To_String (Item.Name) & " " & Oracle & ": "
+               & (if Wrong = Natural'Last then "no readable result" else Wrong'Image & " pixels differ"));
       end if;
    end Report;
    --  Every result a case reads is made in this run: what an earlier run left is removed first, so a tool
@@ -257,6 +206,7 @@ begin
    if not Pictlib_Testing.Tools.Enter_Tests_Directory then
       return;
    end if;
+   Pictlib_Testing.Tools.Start_Report ("pictlib_conformance");
    Ada.Directories.Create_Path (Directory);
    if Magick'Length = 0 then
       Ada.Text_IO.Put_Line ("SKIP ImageMagick: neither magick nor ImageMagick 6's convert is installed");
@@ -267,9 +217,7 @@ begin
       Skipped := Skipped + 1;
    end if;
    for Item of Cases loop
-      if not Encode (Item) then
-         Failures := Failures + 1;
-      else
+      if Encode (Item) then
          declare
             Name : constant String := To_String (Item.Name);
          begin
@@ -323,9 +271,10 @@ begin
       end if;
    end loop;
    Ada.Text_IO.Put_Line
-     (Natural'Image (Cases'Length) & " pictures," & Failures'Image & " failures," & Not_Applicable'Image
-      & " not applicable," & Skipped'Image & " decoders skipped");
-   if Failures > 0 or else (Processes.Has_Argument ("--require") and then Skipped > 0) then
-      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+     (Natural'Image (Cases'Length) & " pictures," & Pictlib_Testing.Tools.Failures'Image & " failures,"
+      & Not_Applicable'Image & " not applicable," & Skipped'Image & " decoders skipped");
+   if Processes.Has_Argument ("--require") and then Skipped > 0 then
+      Fail ("--require: a decoder was skipped");
    end if;
+   Pictlib_Testing.Tools.Finish_Report;
 end Pictlib_Conformance;

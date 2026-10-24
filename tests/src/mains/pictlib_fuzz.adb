@@ -7,7 +7,9 @@
 --  [--fail-stuck]; seeds are taken in file-name order, so a pair is deterministic everywhere. With --replay
 --  FILE..., each saved input is run through the same checks instead, and its time printed.
 --  Runs from anywhere below the pictlib tree.
+with Pictlib_Testing.Files;
 with Pictlib_Testing.Fonts;
+with Pictlib_Testing.Recorders;
 with Pictlib_Testing.Tools;
 with Ada.Calendar;
 with Ada.Command_Line;
@@ -24,12 +26,12 @@ with Pictlib.Errors;
 with Pictlib.Fonts;
 with Pictlib.Geometry;
 with Pictlib.Limits;
-with Pictlib.Pictures;
 with Pictlib.Results;
 with Pictlib.Streams;
 with Pictlib_Testing.Samples;
 
 procedure Pictlib_Fuzz is
+   procedure Fail (Message : String) renames Pictlib_Testing.Tools.Fail;
    use type Ada.Calendar.Time;
    use type Interfaces.Unsigned_64;
    use type Pictlib.Byte;
@@ -74,9 +76,7 @@ procedure Pictlib_Fuzz is
         Max_Opcodes => 100_000);
    Canvas : constant Pictlib.Streams.Byte_Array_Access := new Bytes (1 .. 4 * 1024 * 1024);
 
-   type Null_Visitor is new Pictlib.Decoding.Opcode_Visitor with null record;
-   overriding function Visit (Object : in out Null_Visitor; Event : Pictlib.Pictures.Opcode_Event)
-     return Pictlib.Decoding.Visit_Action is (Pictlib.Decoding.Continue);
+   subtype Null_Visitor is Pictlib_Testing.Recorders.Null_Visitor;
 
    Seeds : Byte_Vectors.Vector;
    --  How far inputs got: past the header, rendered completely, rendered as a partial picture.
@@ -105,33 +105,18 @@ procedure Pictlib_Fuzz is
       --  The search order depends on the file system; the seeds' order must not.
       Name_Sorting.Sort (Names);
       for Name of Names loop
-         declare
-            use Ada.Streams.Stream_IO;
-            File : File_Type;
-            Data : Bytes (1 .. Natural (Ada.Directories.Size (Name)));
-         begin
-            Open (File, In_File, Name);
-            Bytes'Read (Stream (File), Data);
-            Close (File);
-            if Data'Length <= 256 * 1024 then
-               Seeds.Append (Data);
-            end if;
-         end;
+         if Ada.Directories.Size (Name) <= 256 * 1024 then
+            Seeds.Append (Pictlib_Testing.Files.Load_Path (Name).all);
+         end if;
       end loop;
    end Add_Files;
 
    procedure Add_Encoded (Item : Pictlib_Testing.Samples.Kind; Layout : Pictlib.Encoding.Layout_Kind) is
-      Source : constant Pictlib_Testing.Samples.Bytes_Access := Pictlib_Testing.Samples.Make (Item, 23, 9);
-      Storage : constant Pictlib.Streams.Byte_Array_Access := new Bytes (1 .. 100_000);
-      Output : aliased Pictlib.Streams.Fixed_Buffer_Destination;
-      Encoder : Pictlib.Encoding.Encoder;
+      Picture : constant Pictlib_Testing.Samples.Encoded :=
+        Pictlib_Testing.Samples.Encode (Item, 23, 9, (Layout => Layout, others => <>));
    begin
-      Pictlib.Streams.Open (Output, Storage);
-      Pictlib.Encoding.Initialize (Encoder, Output'Access, (Layout => Layout, others => <>));
-      if Pictlib.Results.Succeeded
-        (Pictlib.Encoding.Encode (Encoder, Pictlib_Testing.Samples.View (Source, 23, 9)))
-      then
-         Seeds.Append (Storage (1 .. Natural (Output.Offset)));
+      if Pictlib.Results.Succeeded (Picture.Outcome) then
+         Seeds.Append (Picture.Data.all);
       end if;
    end Add_Encoded;
 
@@ -322,23 +307,17 @@ procedure Pictlib_Fuzz is
    begin
       for Index in 2 .. Ada.Command_Line.Argument_Count loop
          declare
-            use Ada.Streams.Stream_IO;
             Name : constant String := Ada.Command_Line.Argument (Index);
-            File : File_Type;
-            Data : constant Pictlib.Streams.Byte_Array_Access :=
-              new Bytes (1 .. Natural (Ada.Directories.Size (Name)));
+            Data : constant Pictlib_Testing.Files.Bytes_Access := Pictlib_Testing.Files.Load_Path (Name);
             Started : Ada.Calendar.Time;
          begin
-            Open (File, In_File, Name);
-            Bytes'Read (Stream (File), Data.all);
-            Close (File);
             Started := Ada.Calendar.Clock;
             Exercise (Data.all);
             Ada.Text_IO.Put_Line (Name & Duration'Image (Ada.Calendar.Clock - Started) & " s");
          exception
             when Error : others =>
                Defects := Defects + 1;
-               Ada.Text_IO.Put_Line ("DEFECT " & Name & ": " & Ada.Exceptions.Exception_Information (Error));
+               Fail ("DEFECT " & Name & ": " & Ada.Exceptions.Exception_Information (Error));
          end;
       end loop;
    end Replay_Inputs;
@@ -346,11 +325,10 @@ begin
    if not Pictlib_Testing.Tools.Enter_Tests_Directory then
       return;
    end if;
+   Pictlib_Testing.Tools.Start_Report ("pictlib_fuzz");
    if Replay then
       Replay_Inputs;
-      if Defects > 0 then
-         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-      end if;
+      Pictlib_Testing.Tools.Finish_Report;
       return;
    end if;
    Add_Files ("fixtures/external");
@@ -376,14 +354,14 @@ begin
          when Error : others =>
             Defects := Defects + 1;
             Save ("defect-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
-            Ada.Text_IO.Put_Line ("DEFECT at iteration" & Iteration'Image & ": "
-                                  & Ada.Exceptions.Exception_Information (Error));
+            Fail ("DEFECT at iteration" & Iteration'Image & ": " & Ada.Exceptions.Exception_Information (Error));
       end;
    end loop;
    Ada.Text_IO.Put_Line (Iterations'Image & " inputs:" & Headers_Read'Image & " past the header," & Rendered'Image
                          & " rendered," & Partial'Image & " partial;" & Defects'Image & " defects," & Stuck'Image
                          & " stuck," & Slow'Image & " slow");
-   if Defects > 0 or else (Stuck > 0 and then Fail_Stuck) then
-      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+   if Stuck > 0 and then Fail_Stuck then
+      Fail ("--fail-stuck:" & Stuck'Image & " stuck inputs");
    end if;
+   Pictlib_Testing.Tools.Finish_Report;
 end Pictlib_Fuzz;

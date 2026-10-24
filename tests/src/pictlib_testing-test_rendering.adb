@@ -32,10 +32,6 @@ package body Pictlib_Testing.Test_Rendering is
    function Copy (Op : Natural; Row_Bytes : Natural; Bounds, Source, Destination : Bytes; Mode : Natural := 0)
      return Bytes is (W (Op) & W (Row_Bytes) & Bounds & Source & Destination & W (Mode));
 
-   --  A 1-bit BitMap, rowBytes 2 < 8 so unpacked: 10100101 and 00001111.
-   function Bitmap_2x8 (Mode : Natural := 0; Source : Bytes := Rect (0, 0, 2, 8)) return Bytes is
-     (Copy (16#98#, 2, Rect (0, 0, 2, 8), Source, Rect (0, 0, 2, 8), Mode)
-      & B (16#A5#) & B (0) & B (16#0F#) & B (0));
    Bitmap_2x8_Raster : constant String := "BWBWWBWB/WWWWBBBB";
 
    Unpacked_Bitmap : aliased constant Bytes := V2_Picture (0, 0, 2, 8, Bitmap_2x8);

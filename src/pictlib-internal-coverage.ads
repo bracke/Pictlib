@@ -56,24 +56,51 @@ package Pictlib.Internal.Coverage is
    function Remaining (Item : Shape) return Pixel_Count;
 
    --  Rectangle: rows Top .. Bottom - 1, columns Left .. Right - 1.
+   --  @param Item Started shape; the rectangle is added to it.
+   --  @param Bounds Rectangle.
    procedure Rectangle (Item : in out Shape; Bounds : Area);
    --  Oval: the pixels whose centers lie inside the ellipse inscribed in Bounds.
+   --  @param Item Started shape; the oval is added to it.
+   --  @param Bounds The oval's bounding rectangle.
    procedure Oval (Item : in out Shape; Bounds : Area);
    --  Round rect: Bounds with each corner cut by a quarter of an Oval_Width x Oval_Height oval.
+   --  @param Item Started shape; the round rect is added to it.
+   --  @param Bounds Rectangle.
+   --  @param Oval_Width Width of the corner oval.
+   --  @param Oval_Height Height of the corner oval.
    procedure Round_Rect (Item : in out Shape; Bounds : Area; Oval_Width, Oval_Height : Integer);
    --  Wedge: the pixels of Item whose centers lie in the arc from Start_Angle through Arc_Angle degrees, 0 at
    --  12 o'clock, clockwise, with the angles stretched so that 45 degrees passes through the corner of Bounds.
+   --  @param Item Shape narrowed to the wedge.
+   --  @param Bounds The arc's oval's bounding rectangle.
+   --  @param Start_Angle First angle, in degrees.
+   --  @param Arc_Angle Extent, in degrees; negative counterclockwise.
    procedure Wedge (Item : in out Shape; Bounds : Area; Start_Angle, Arc_Angle : Integer);
    --  Polygon: the pixels whose centers lie inside the closed polygon, even-odd.
+   --  @param Item Started shape; the polygon is added to it.
+   --  @param Points Its vertices, in picture coordinates.
    procedure Polygon (Item : in out Shape; Points : Point_Vectors.Vector);
    --  Line: the pen rectangle Pen_Width x Pen_Height hanging below and right of each point of the Bresenham line
    --  from From to To, both included; added to what Item covers.
+   --  @param Item Started shape.
+   --  @param From First point.
+   --  @param To Last point.
+   --  @param Pen_Width Pen width.
+   --  @param Pen_Height Pen height.
    procedure Line (Item : in out Shape; From, To : Point; Pen_Width, Pen_Height : Integer);
    --  From region: the region's pixels.
+   --  @param Item Started shape; the region is added to it.
+   --  @param Source Region in picture coordinates; its row cursor moves.
    procedure From_Region (Item : in out Shape; Source : in out Regions.Region);
    --  Region frame: the region's pixels less the region inset by Pen_Width horizontally and Pen_Height vertically.
+   --  @param Item Started shape; the frame is added to it.
+   --  @param Source Region in picture coordinates; its row cursor moves.
+   --  @param Pen_Width Pen width.
+   --  @param Pen_Height Pen height.
    procedure Region_Frame (Item : in out Shape; Source : in out Regions.Region; Pen_Width, Pen_Height : Integer);
    --  Subtract: remove Other's pixels from Item; both have the same window.
+   --  @param Item Shape to cut.
+   --  @param Other Pixels to remove.
    procedure Subtract (Item : in out Shape; Other : Shape);
 
    --  Floor divide.

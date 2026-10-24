@@ -50,24 +50,13 @@ package body Pictlib_Testing.Test_Encoding is
       Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last;
       Room : Natural := Capacity) return Encoded
    is
-      Source : constant Samples.Bytes_Access := Samples.Make (Item, Width, Height, Format);
-      Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Room);
-      Output : aliased Pictlib.Streams.Fixed_Buffer_Destination;
-      Encoder : Encoding.Encoder;
-      Result : Encoded;
+      Picture : constant Samples.Encoded :=
+        Samples.Encode (Item, Width, Height, Settings, Format, Budget, Max_Transfer, Room);
    begin
-      Pictlib.Streams.Open (Output, Storage, Max_Transfer);
-      Encoding.Initialize (Encoder, Output'Access, Settings, Budget);
-      Result.Outcome := Encoding.Encode (Encoder, Samples.View (Source, Width, Height, Format));
-      if Pictlib.Results.Succeeded (Result.Outcome) then
-         Result.Outcome := Encoding.Finish (Encoder);
-      end if;
-      Result.Length := Natural (Output.Offset);
-      Result.Data := new Pictlib.Streams.Byte_Array'(Storage (1 .. Result.Length));
-      Result.Layout := Encoding.Layout_Used (Encoder);
-      Assert (Encoding.Bytes_Written (Encoder) = Pictlib.Byte_Count (Result.Length)
-              or else not Pictlib.Results.Succeeded (Result.Outcome), "Bytes_Written disagrees with the output");
-      return Result;
+      Assert (Picture.Bytes_Written = Pictlib.Byte_Count (Picture.Data'Length)
+              or else not Pictlib.Results.Succeeded (Picture.Outcome), "Bytes_Written disagrees with the output");
+      return (Data => Picture.Data, Length => Picture.Data'Length, Outcome => Picture.Outcome,
+              Layout => Picture.Layout);
    end Encode;
 
    --  Encode, decode with pictlib, and require every pixel, through Expected_Color.
@@ -92,18 +81,10 @@ package body Pictlib_Testing.Test_Encoding is
       Assert (Pictlib.Results.Succeeded (Outcome), Label & ": decode failed with " & Outcome.First_Error.Code'Image);
       for Y in 0 .. Height - 1 loop
          for X in 0 .. Width - 1 loop
-            declare
-               Want : Pictlib.Images.RGB_Color := Samples.Color (Item, X, Y);
-            begin
-               if Layout = Encoding.Mono_1 then
-                  Want := (if (299 * Natural (Want.Red) + 587 * Natural (Want.Green) + 114 * Natural (Want.Blue))
-                                / 1000 < Natural (Settings.Mono_Threshold)
-                           then Pictlib.Images.Black else Pictlib.Images.White);
-               end if;
-               if Canvases.Pixel (Output, X, Y) /= Want then
-                  Wrong := Wrong + 1;
-               end if;
-            end;
+            if Canvases.Pixel (Output, X, Y) /= Samples.Expected_Color (Item, X, Y, Layout, Settings.Mono_Threshold)
+            then
+               Wrong := Wrong + 1;
+            end if;
          end loop;
       end loop;
       Assert (Wrong = 0, Label & ":" & Wrong'Image & " pixels changed");

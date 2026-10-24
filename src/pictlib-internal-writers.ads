@@ -31,15 +31,29 @@ package Pictlib.Internal.Writers is
    --  @return Success, Limit_Exceeded beyond Max_Bytes, or the destination's failure.
    function Put (Object : in out Writer; Data : Streams.Byte_Array) return Results.Result;
    --  Put byte.
+   --  @param Object Writer.
+   --  @param Value Byte to produce.
+   --  @return As Put.
    function Put_Byte (Object : in out Writer; Value : Natural) return Results.Result with Pre => Value <= 255;
    --  Put word: a big-endian 16-bit value; negative values are two's complement.
+   --  @param Object Writer.
+   --  @param Value Word to produce.
+   --  @return As Put.
    function Put_Word (Object : in out Writer; Value : Integer) return Results.Result
      with Pre => Value in -16#8000# .. 16#FFFF#;
    --  Put long: a big-endian 32-bit value.
+   --  @param Object Writer.
+   --  @param Value Long to produce.
+   --  @return As Put.
    function Put_Long (Object : in out Writer; Value : Interfaces.Unsigned_32) return Results.Result;
    --  Put rect: top, left, bottom, right.
+   --  @param Object Writer.
+   --  @param Value Rectangle to produce.
+   --  @return As Put.
    function Put_Rect (Object : in out Writer; Value : Geometry.Rect) return Results.Result;
    --  Align: a pad byte when the picture offset is odd, so the next version 2 opcode starts even.
+   --  @param Object Writer.
+   --  @return As Put.
    function Align (Object : in out Writer) return Results.Result;
 
 private

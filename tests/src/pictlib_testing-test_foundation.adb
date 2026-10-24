@@ -75,7 +75,8 @@ package body Pictlib_Testing.Test_Foundation is
       pragma Unreferenced (T);
    begin
       Assert (Pictlib.Capabilities.Foundation_API, "foundation capability must be advertised");
-      Assert (Pictlib_API_Consumer.Streams_Available, "memory streams must be advertised");
+      Assert (Pictlib.Capabilities.Memory_Streams and then Pictlib_API_Consumer.Streams_Available,
+              "memory streams must be advertised, to a consumer too");
       Assert (Pictlib.Capabilities.Container_Decoding, "container decoding is implemented");
       Assert (Pictlib.Capabilities.Opcode_Enumeration, "opcode enumeration is implemented");
       Assert (Pictlib.Capabilities.Raster_Decoding, "raster decoding is implemented");
@@ -194,6 +195,7 @@ package body Pictlib_Testing.Test_Foundation is
       Assert (L.Max_Retained_Metadata_Bytes > 0, "metadata byte limit disabled");
       Assert (L.Max_Metadata_Items > 0, "metadata item limit disabled");
       Assert (L.Max_Allocation_Bytes > 0, "allocation limit disabled");
+      Assert (L.Max_Total_Allocation_Bytes = Pictlib.Byte_Count'Last, "the session allocation total is limited");
       Assert (L.Max_Output_Bytes > 0, "output limit disabled");
       Assert (L.Max_Embedded_Image_Bytes > 0, "embedded image byte limit disabled");
       Assert (L.Max_Embedded_Image_Pixels > 0, "embedded image pixel limit disabled");

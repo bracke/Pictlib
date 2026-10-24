@@ -1,7 +1,12 @@
 with Ada.Characters.Handling;
+with Ada.Containers.Indefinite_Ordered_Sets;
+with Ada.Directories;
+with Ada.Exceptions;
+with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Pictlib_Testing.Tools;
+with Project_Tools.Ada_Source;
 
 package body Pictlib_Testing.Source_Policy is
    use Ada.Strings.Unbounded;
@@ -132,4 +137,178 @@ package body Pictlib_Testing.Source_Policy is
          end loop;
       end;
    end Check_Dependencies;
+
+   procedure Check_Line_Lengths (Path : String) is
+      File : Ada.Text_IO.File_Type;
+      Number : Natural := 0;
+   begin
+      Ada.Text_IO.Open (File, Ada.Text_IO.In_File, Path);
+      while not Ada.Text_IO.End_Of_File (File) loop
+         declare
+            Line : constant String := Ada.Text_IO.Get_Line (File);
+         begin
+            Number := Number + 1;
+            if Line'Length > Longest_Line then
+               Fail (Path & ":" & Number'Image & ": line of" & Line'Length'Image & " characters");
+            end if;
+         end;
+      end loop;
+      Ada.Text_IO.Close (File);
+   end Check_Line_Lengths;
+
+   procedure Check_Production_Unit (Path : String) is
+      None : constant Project_Tools.Ada_Source.String_List := [1 .. 0 => Null_Unbounded_String];
+      Name : constant String := Ada.Directories.Simple_Name (Path);
+   begin
+      Check_Dependencies (Path);
+      --  The project_tools checks raise on what they find: a finding, not the end of the gate.
+      begin
+         Project_Tools.Ada_Source.Require_Only_Allowed_With_Clauses
+           (Path, "Jpeglib.",
+            [To_Unbounded_String ("Jpeglib.Decoding"), To_Unbounded_String ("Jpeglib.Errors"),
+             To_Unbounded_String ("Jpeglib.Images"), To_Unbounded_String ("Jpeglib.Limits"),
+             To_Unbounded_String ("Jpeglib.Results"), To_Unbounded_String ("Jpeglib.Streams")]);
+         Project_Tools.Ada_Source.Require_Only_Allowed_With_Clauses (Path, "Jpeglib.Internal", None);
+         Project_Tools.Ada_Source.Require_Only_Allowed_With_Clauses (Path, "AUnit", None);
+         Project_Tools.Ada_Source.Require_Only_Allowed_With_Clauses (Path, "Project_Tools", None);
+         Project_Tools.Ada_Source.Require_Only_Allowed_With_Clauses (Path, "Pictlib_Testing", None);
+         if Ada.Directories.Extension (Name) = "ads" and then Ada.Strings.Fixed.Index (Name, "-internal") = 0 then
+            Project_Tools.Ada_Source.Require_Public_GNATdoc_Tags (Path);
+         end if;
+      exception
+         when Error : others =>
+            Fail (Path & ": " & Ada.Exceptions.Exception_Message (Error));
+      end;
+   end Check_Production_Unit;
+
+   package Name_Sets is new Ada.Containers.Indefinite_Ordered_Sets (String);
+
+   function Read_Whole (Path : String) return String is
+      File : Ada.Text_IO.File_Type;
+      Text : Unbounded_String;
+   begin
+      Ada.Text_IO.Open (File, Ada.Text_IO.In_File, Path);
+      while not Ada.Text_IO.End_Of_File (File) loop
+         Append (Text, Ada.Text_IO.Get_Line (File) & ASCII.LF);
+      end loop;
+      Ada.Text_IO.Close (File);
+      return To_String (Text);
+   end Read_Whole;
+
+   --  Each file of Directory with Extension, in turn.
+   generic
+      with procedure Each (Path : String);
+   procedure For_Files (Directory, Extension : String);
+
+   procedure For_Files (Directory, Extension : String) is
+      use Ada.Directories;
+      Search : Search_Type;
+      Item : Directory_Entry_Type;
+   begin
+      Start_Search (Search, Directory, "*." & Extension, [Ordinary_File => True, others => False]);
+      while More_Entries (Search) loop
+         Get_Next_Entry (Search, Item);
+         Each (Full_Name (Item));
+      end loop;
+      End_Search (Search);
+   end For_Files;
+
+   procedure Check_Registry (Root : String) is
+      Routines, Tools_Found : Name_Sets.Set;
+      Registry : constant String := Root & "/docs/invariants.md";
+
+      --  Every routine name: the first string literal after each Register_Routine.
+      procedure Collect_Routines (Path : String) is
+         Text : constant String := Read_Whole (Path);
+         From : Natural := Text'First;
+      begin
+         loop
+            From := Ada.Strings.Fixed.Index (Text (From .. Text'Last), "Register_Routine");
+            exit when From = 0;
+            declare
+               Open : constant Natural := Ada.Strings.Fixed.Index (Text (From .. Text'Last), """");
+               Close : constant Natural :=
+                 (if Open = 0 then 0 else Ada.Strings.Fixed.Index (Text (Open + 1 .. Text'Last), """"));
+            begin
+               exit when Close = 0;
+               Routines.Include (Text (Open + 1 .. Close - 1));
+               From := Close + 1;
+            end;
+         end loop;
+      end Collect_Routines;
+      procedure Collect_Tool (Path : String) is
+      begin
+         Tools_Found.Include (Ada.Directories.Base_Name (Path));
+      end Collect_Tool;
+      procedure Each_Body is new For_Files (Collect_Routines);
+      procedure Each_Main is new For_Files (Collect_Tool);
+
+      function Covered (Name : String) return Boolean is
+      begin
+         if Name'Length > 2 and then Name (Name'Last - 1 .. Name'Last) = ".*" then
+            for Routine of Routines loop
+               if Routine'Length >= Name'Length - 1
+                 and then Routine (Routine'First .. Routine'First + Name'Length - 2)
+                          = Name (Name'First .. Name'Last - 1)
+               then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end if;
+         return Routines.Contains (Name) or else Tools_Found.Contains (Name);
+      end Covered;
+
+      function Is_Name (Item : String) return Boolean is
+        (Item'Length > 0 and then Item (Item'First) in 'a' .. 'z'
+         and then (for all C of Item => C in 'a' .. 'z' | '0' .. '9' | '_' | '.' | '*')
+         and then (Ada.Strings.Fixed.Index (Item, ".") > 0
+                   or else (Item'Length > 8 and then Item (Item'First .. Item'First + 7) = "pictlib_")));
+
+      Text : constant String := Read_Whole (Registry);
+      Listed : Name_Sets.Set;
+      Position : Natural := Text'First;
+   begin
+      Each_Body (Root & "/tests/src", "adb");
+      Each_Main (Root & "/tests/src/mains", "adb");
+      loop
+         declare
+            Open : constant Natural := Ada.Strings.Fixed.Index (Text (Position .. Text'Last), "`");
+            Close : constant Natural :=
+              (if Open = 0 then 0 else Ada.Strings.Fixed.Index (Text (Open + 1 .. Text'Last), "`"));
+         begin
+            exit when Close = 0;
+            declare
+               Item : constant String := Text (Open + 1 .. Close - 1);
+            begin
+               if Is_Name (Item) and then not Covered (Item) then
+                  Fail (Registry & ": `" & Item & "` is no registered test routine or tool");
+               end if;
+               Listed.Include (Item);
+            end;
+            Position := Close + 1;
+         end;
+      end loop;
+      --  Every capability constant has a row of its own.
+      declare
+         Capabilities : constant String := Read_Whole (Root & "/src/pictlib-capabilities.ads");
+         From : Natural := Capabilities'First;
+      begin
+         loop
+            From := Ada.Strings.Fixed.Index (Capabilities (From .. Capabilities'Last), " : constant Boolean");
+            exit when From = 0;
+            declare
+               Start : Natural := From;
+            begin
+               while Start > Capabilities'First and then Capabilities (Start - 1) /= ' ' loop
+                  Start := Start - 1;
+               end loop;
+               if Ada.Strings.Fixed.Index (Text, "| `" & Capabilities (Start .. From - 1) & "` |") = 0 then
+                  Fail (Registry & ": capability " & Capabilities (Start .. From - 1) & " has no row");
+               end if;
+            end;
+            From := From + 1;
+         end loop;
+      end;
+   end Check_Registry;
 end Pictlib_Testing.Source_Policy;

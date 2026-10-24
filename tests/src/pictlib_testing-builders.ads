@@ -67,4 +67,10 @@ package Pictlib_Testing.Builders is
    function RGB (Op, Red, Green, Blue : Natural) return Bytes;
    --  Item, Count times over.
    function Repeat (Item : Bytes; Count : Natural) return Bytes;
+
+   --  A checkerboard bit pattern: 10101010 / 01010101, four times.
+   Checker : constant Bytes := [16#AA#, 16#55#, 16#AA#, 16#55#, 16#AA#, 16#55#, 16#AA#, 16#55#];
+   --  A 2 x 8 BitMap copied with Mode, rowBytes 2 < 8 so unpacked: 10100101 and 00001111.
+   function Bitmap_2x8
+     (Mode : Natural := 0; Source, Destination : Bytes := Rect (0, 0, 2, 8)) return Bytes;
 end Pictlib_Testing.Builders;

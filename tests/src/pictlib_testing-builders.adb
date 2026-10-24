@@ -94,6 +94,11 @@ package body Pictlib_Testing.Builders is
 
    function RGB (Op, Red, Green, Blue : Natural) return Bytes is (W (Op) & W (Red) & W (Green) & W (Blue));
 
+   function Bitmap_2x8
+     (Mode : Natural := 0; Source, Destination : Bytes := Rect (0, 0, 2, 8)) return Bytes is
+     (W (16#98#) & W (2) & Rect (0, 0, 2, 8) & Source & Destination & W (Mode)
+      & B (16#A5#) & B (0) & B (16#0F#) & B (0));
+
    function Repeat (Item : Bytes; Count : Natural) return Bytes is
       Result : Bytes (1 .. Item'Length * Count);
    begin

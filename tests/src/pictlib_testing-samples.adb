@@ -58,4 +58,57 @@ package body Pictlib_Testing.Samples is
             Accessible_Bytes => Pictlib.Byte_Count (Size * Width * Height)),
          Storage => Storage);
    end View;
+
+   function Expected_Color
+     (Item : Kind;
+      X, Y : Natural;
+      Layout : Pictlib.Encoding.Layout_Kind;
+      Threshold : Pictlib.Byte := Pictlib.Encoding.Default_Mono_Threshold) return Pictlib.Images.RGB_Color
+   is
+      use type Pictlib.Encoding.Layout_Kind;
+      Sample : constant Pictlib.Images.RGB_Color := Color (Item, X, Y);
+   begin
+      if Layout /= Pictlib.Encoding.Mono_1 then
+         return Sample;
+      end if;
+      --  Rec. 601 luma, in integers.
+      return
+        (if (299 * Natural (Sample.Red) + 587 * Natural (Sample.Green) + 114 * Natural (Sample.Blue)) / 1000
+              < Natural (Threshold)
+         then Pictlib.Images.Black else Pictlib.Images.White);
+   end Expected_Color;
+
+   function Encode
+     (Image : Pictlib.Images.Image_View;
+      Settings : Pictlib.Encoding.Options := (others => <>);
+      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+      Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last;
+      Room : Positive := 4_000_000) return Encoded
+   is
+      Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Room);
+      Output : aliased Pictlib.Streams.Fixed_Buffer_Destination;
+      Encoder : Pictlib.Encoding.Encoder;
+      Result : Encoded;
+   begin
+      Pictlib.Streams.Open (Output, Storage, Max_Transfer);
+      Pictlib.Encoding.Initialize (Encoder, Output'Access, Settings, Budget);
+      Result.Outcome := Pictlib.Encoding.Encode (Encoder, Image);
+      if Pictlib.Results.Succeeded (Result.Outcome) then
+         Result.Outcome := Pictlib.Encoding.Finish (Encoder);
+      end if;
+      Result.Data := new Pictlib.Streams.Byte_Array'(Storage (1 .. Natural (Output.Offset)));
+      Result.Layout := Pictlib.Encoding.Layout_Used (Encoder);
+      Result.Bytes_Written := Pictlib.Encoding.Bytes_Written (Encoder);
+      return Result;
+   end Encode;
+
+   function Encode
+     (Item : Kind;
+      Width, Height : Positive;
+      Settings : Pictlib.Encoding.Options := (others => <>);
+      Format : Pictlib.Pixel_Format := Pictlib.RGB_24;
+      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+      Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last;
+      Room : Positive := 4_000_000) return Encoded is
+     (Encode (View (Make (Item, Width, Height, Format), Width, Height, Format), Settings, Budget, Max_Transfer, Room));
 end Pictlib_Testing.Samples;

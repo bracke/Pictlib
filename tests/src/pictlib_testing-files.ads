@@ -19,7 +19,12 @@ package Pictlib_Testing.Files is
       First_Pixel : Positive := 1;
    end record;
 
-   --  Load raster: fixtures/<Name> as a Netpbm raster.
+   --  Read raster: the file at Path as a Netpbm raster whose pixels all lie within it.
+   --  @param Path A file, which may be missing or written by another program.
+   --  @param Item The raster; meaningful only when the result is True.
+   --  @return True when the file is a complete P6 or P4 raster with 8-bit samples.
+   function Read_Raster (Path : String; Item : out Raster) return Boolean;
+   --  Load raster: fixtures/<Name> as a Netpbm raster, which must be one.
    function Load_Raster (Name : String) return Raster;
    --  Pixel of a raster.
    function Pixel (Item : Raster; X, Y : Natural) return Pictlib.Images.RGB_Color;

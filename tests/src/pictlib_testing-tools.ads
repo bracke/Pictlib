@@ -1,5 +1,12 @@
 --  What the tools of the tests crate share: host lookups, where they run, and how they report.
 package Pictlib_Testing.Tools is
+   --  Root.
+   --  @return The pictlib tree the current directory is below, "" when it is below none.
+   function Root return String;
+   --  Alr.
+   --  @return The alr on PATH, "" when there is none.
+   function Alr return String;
+
    --  Enter tests directory: tools read fixtures and write artifacts relative to the tests crate, so each
    --  starts by moving there from wherever below the pictlib tree it was run.
    --  @return False, having said so and set a failing exit status, when the current directory is not below a

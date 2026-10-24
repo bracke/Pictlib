@@ -147,8 +147,7 @@ package body Pictlib_Testing.Test_Hostile is
 
       procedure Both (Input : aliased Bytes; Code : Errors.Error_Code; Label : String) is
       begin
-         Recorders.Decode (Input, Decoder, Events, Outcome);
-         Assert (Outcome.First_Error.Code = Code, Label & ": enumerated with " & Outcome.First_Error.Code'Image);
+         Recorders.Expect_Failure (Input, Code, Label & ", enumerated");
          Canvases.Expect_Failure (Input, 8, 2, Code, Label, 16#14#);
       end Both;
    begin
@@ -190,17 +189,13 @@ package body Pictlib_Testing.Test_Hostile is
                    (Decoder, Errors.Approximated_Rendering),
                  "65535 x 32769 PixPat with its rows: " & Outcome.First_Error.Code'Image);
          --  The warning says why: the bound and the tile's pixels, at the opcode.
-         for Index in 1 .. Pictlib.Decoding.Warning_Count (Decoder) loop
-            declare
-               Item : constant Errors.Warning := Pictlib.Decoding.Warning_At (Decoder, Index);
-            begin
-               if Item.Code = Errors.Approximated_Rendering then
-                  Assert (Item.Context.Op = 16#14# and then Item.Context.Expected = 2 ** 31 - 1
-                          and then Item.Context.Actual = 65_535 * Rows,
-                          "65535 x 32769 PixPat: the warning does not say why");
-               end if;
-            end;
-         end loop;
+         declare
+            Item : constant Errors.Warning := Recorders.Warning_With (Decoder, Errors.Approximated_Rendering);
+         begin
+            Assert (Item.Context.Op = 16#14# and then Item.Context.Expected = 2 ** 31 - 1
+                    and then Item.Context.Actual = 65_535 * Rows,
+                    "65535 x 32769 PixPat: the warning does not say why");
+         end;
          Assert (Canvases.Picture_Of (Canvases.View (Storage'Access, 8, 2)) = "BBBBBBBB/BBBBBBBB",
                  "65535 x 32769 PixPat: pat1Data did not stand in, drew "
                  & Canvases.Picture_Of (Canvases.View (Storage'Access, 8, 2)));
@@ -225,9 +220,7 @@ package body Pictlib_Testing.Test_Hostile is
                  "65535 x 32769 PixPat, strictly on no budget: " & Outcome.First_Error.Code'Image);
       end;
       --  Limits apply only to rendering: enumeration reads on, to the rows this picture does not have.
-      Recorders.Decode (Unindexable_Tile, Decoder, Events, Outcome);
-      Assert (Outcome.First_Error.Code = Errors.Source_Unexpected_End,
-              "65535 x 65535 PixPat enumerated with " & Outcome.First_Error.Code'Image);
+      Recorders.Expect_Failure (Unindexable_Tile, Errors.Source_Unexpected_End, "65535 x 65535 PixPat, enumerated");
       Tight := Pictlib.Limits.Default_Limits;
       Tight.Max_Allocation_Bytes := 120_880;
       Over (Grown_Tile, Tight, Pictlib.Allocation_Byte_Limit, "a tile and its row buffers over the budget");
@@ -256,9 +249,7 @@ package body Pictlib_Testing.Test_Hostile is
          Canvases.Expect_Failure (Pack_3_At_32, 1, 1, Errors.Pixmap_Invalid, "pack type 3 at 32 bits", 16#9A#);
          Canvases.Expect_Failure (Seven_Components, 1, 1, Errors.Pixmap_Invalid, "cmpCount 7, unpacked", 16#9A#);
       end;
-      Recorders.Decode (Planar_Count, Decoder, Events, Outcome);
-      Assert (Outcome.First_Error.Code = Errors.Pixmap_Invalid,
-              "cmpCount 16#FFFF# enumerated with " & Outcome.First_Error.Code'Image);
+      Recorders.Expect_Failure (Planar_Count, Errors.Pixmap_Invalid, "cmpCount 16#FFFF#, enumerated");
       Canvases.Expect_Failure (Planar_Count, 4, 1, Errors.Pixmap_Invalid, "cmpCount 16#FFFF#", 16#9A#);
 
       Recorders.Decode (Unpacked_Tile, Decoder, Events, Outcome);

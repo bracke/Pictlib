@@ -502,8 +502,9 @@ pictlib/
 ```
 
 Root `alire.toml`: `name = "pictlib"`, `0.1.0-dev`, MIT, `gnat_native = "^15"`, `jpeglib` and
-`textrender` pinned by path (`../jpeglib`, `../textrender`). Child crate `tests` depends on `pictlib`, `aunit ^26.0.0` and
-`project_tools`. Test binaries: `pictlib_tests` (AUnit), `pictlib_check` (source policy), `pictlib_real_world`
+`textrender` pinned by path (`../jpeglib`, `../textrender`). Child crate `tests` depends on `pictlib`,
+`aunit ^26.0.0`, `project_tools` and `textrender` (its text oracle). Test binaries: `pictlib_tests` (AUnit),
+`pictlib_check` (the library build, the source policy and the AUnit suite), `pictlib_real_world`
 (the real-world corpus against its recorded outcomes), `pictlib_fuzz` (mutation fuzzing),
 `pictlib_prove` (the SPARK proof profile), `pictlib_conformance` (encoder output read by ImageMagick
 and by LibreOffice's own PICT import, exact), `pictlib_benchmark` (throughput, informational) and

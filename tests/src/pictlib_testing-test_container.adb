@@ -322,11 +322,9 @@ package body Pictlib_Testing.Test_Container is
       Outcome : Pictlib.Results.Result;
       Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
    begin
-      Recorders.Decode (Version_Only, Decoder, Events, Outcome);
-      Assert (Outcome.First_Error.Code = Pictlib.Errors.Header_Invalid
-              and then Outcome.First_Error.Context.Op = 16#0C00#
-              and then Outcome.First_Error.Context.Ordinal = 1,
-              "a version 2 picture ending after its version, strictly: " & Outcome.First_Error.Code'Image);
+      Recorders.Expect_Failure
+        (Version_Only, Pictlib.Errors.Header_Invalid, "a version 2 picture ending after its version, strictly",
+         16#0C00#, Ordinal => 1);
       Recorders.Decode (Version_Only, Decoder, Events, Outcome, (Strictness => Pictlib.Compatible, others => <>));
       Assert (Pictlib.Results.Succeeded (Outcome)
               and then Recorders.Has_Warning (Decoder, Pictlib.Errors.Compatibility_Issue),
@@ -337,9 +335,9 @@ package body Pictlib_Testing.Test_Container is
               "a wrong picSize was checked or not retained");
 
       Budget.Max_Picture_Bytes := V1_Bare'Length;
-      Recorders.Decode (Trailing, Decoder, Events, Outcome, (Require_End_Of_Input => True, others => <>), Budget);
-      Assert (Outcome.First_Error.Code = Pictlib.Errors.Trailing_Data,
-              "a trailing byte after a picture that used its whole byte budget: " & Outcome.First_Error.Code'Image);
+      Recorders.Expect_Failure
+        (Trailing, Pictlib.Errors.Trailing_Data, "a trailing byte after a picture that used its whole byte budget",
+         Options => (Require_End_Of_Input => True, others => <>), Budget => Budget);
 
       --  A byte budget too small to see the version past a file header is the limit, not a bad version.
       Budget.Max_Picture_Bytes := 520;
@@ -367,16 +365,13 @@ package body Pictlib_Testing.Test_Container is
          Drop : Decoding.Options;
       begin
          Drop.Retention.Font_Names := False;
-         Recorders.Decode (Short_Name, Decoder, Events, Outcome, Drop);
-         Assert (Outcome.First_Error.Code = Pictlib.Errors.Opcode_Length_Invalid,
-                 "a short fontName passed when font names are not retained: " & Outcome.First_Error.Code'Image);
+         Recorders.Expect_Failure
+           (Short_Name, Pictlib.Errors.Opcode_Length_Invalid, "a short fontName when font names are not retained",
+            Options => Drop);
       end;
 
       --  A HeaderOp cut short names HeaderOp and its ordinal.
-      Recorders.Decode (Truncated_Header_Op, Decoder, Events, Outcome);
-      Assert (Outcome.First_Error.Code = Pictlib.Errors.Source_Unexpected_End
-              and then Outcome.First_Error.Context.Has_Opcode and then Outcome.First_Error.Context.Op = 16#0C00#
-              and then Outcome.First_Error.Context.Ordinal = 1,
-              "a HeaderOp cut short is not attributed to it");
+      Recorders.Expect_Failure
+        (Truncated_Header_Op, Pictlib.Errors.Source_Unexpected_End, "a HeaderOp cut short", 16#0C00#, Ordinal => 1);
    end Header_Edges;
 end Pictlib_Testing.Test_Container;

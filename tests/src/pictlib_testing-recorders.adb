@@ -1,3 +1,5 @@
+with AUnit.Assertions;
+
 package body Pictlib_Testing.Recorders is
    use type Pictlib.Errors.Warning_Code;
 
@@ -53,4 +55,64 @@ package body Pictlib_Testing.Recorders is
       end loop;
       return False;
    end Has_Warning;
+
+   function Count_Warnings (Decoder : Pictlib.Decoding.Decoder; Code : Pictlib.Errors.Warning_Code) return Natural is
+      Count : Natural := 0;
+   begin
+      for Index in 1 .. Pictlib.Decoding.Warning_Count (Decoder) loop
+         if Pictlib.Decoding.Warning_At (Decoder, Index).Code = Code then
+            Count := Count + 1;
+         end if;
+      end loop;
+      return Count;
+   end Count_Warnings;
+
+   function Warning_With (Decoder : Pictlib.Decoding.Decoder; Code : Pictlib.Errors.Warning_Code)
+     return Pictlib.Errors.Warning is
+   begin
+      for Index in 1 .. Pictlib.Decoding.Warning_Count (Decoder) loop
+         if Pictlib.Decoding.Warning_At (Decoder, Index).Code = Code then
+            return Pictlib.Decoding.Warning_At (Decoder, Index);
+         end if;
+      end loop;
+      raise Program_Error with "no warning " & Code'Image;
+   end Warning_With;
+
+   procedure Expect_Failure
+     (Input : aliased Pictlib.Streams.Byte_Array;
+      Code : Pictlib.Errors.Error_Code;
+      Label : String;
+      Op : Pictlib.Opcode := 0;
+      Options : Pictlib.Decoding.Options := (others => <>);
+      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+      Limit : Pictlib.Limit_Kind := Pictlib.No_Limit;
+      Ordinal : Integer := -1)
+   is
+      use AUnit.Assertions;
+      use type Pictlib.Errors.Error_Code;
+      use type Pictlib.Limit_Kind;
+      use type Pictlib.Opcode;
+      use type Pictlib.Decoding.Decoder_State;
+      Decoder : Pictlib.Decoding.Decoder;
+      Events : Recorder;
+      Outcome : Pictlib.Results.Result;
+   begin
+      Decode (Input, Decoder, Events, Outcome, Options, Budget);
+      Assert (Outcome.First_Error.Code = Code,
+              Label & ": expected " & Code'Image & ", got " & Outcome.First_Error.Code'Image);
+      Assert (Pictlib.Decoding.State (Decoder) = Pictlib.Decoding.Failed, Label & ": the decoder did not fail");
+      Assert (Pictlib.Decoding.Last_Error (Decoder).Code = Code, Label & ": the last error is wrong");
+      if Op /= 0 then
+         Assert (Outcome.First_Error.Context.Has_Opcode and then Outcome.First_Error.Context.Op = Op,
+                 Label & ": the failing opcode was not recorded");
+      end if;
+      if Limit /= Pictlib.No_Limit then
+         Assert (Outcome.First_Error.Context.Limit = Limit,
+                 Label & ": wrong limit " & Outcome.First_Error.Context.Limit'Image);
+      end if;
+      if Ordinal >= 0 then
+         Assert (Long_Long_Integer (Outcome.First_Error.Context.Ordinal) = Long_Long_Integer (Ordinal),
+                 Label & ": wrong ordinal" & Outcome.First_Error.Context.Ordinal'Image);
+      end if;
+   end Expect_Failure;
 end Pictlib_Testing.Recorders;

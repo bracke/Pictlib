@@ -2,11 +2,9 @@
 --  proof/pictlib_proof.gpr. The gnatprove is the one `alr install gnatprove` put under the Alire home, which matches
 --  the pinned toolchain; one on PATH only when there is none. Fails on an unproved check, a severity diagnostic,
 --  or a declared SPARK body that was skipped. Run from anywhere below the pictlib tree.
-with Ada.Directories;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Pictlib_Testing.Tools;
-with Project_Tools.Files;
 with Project_Tools.Processes;
 with Project_Tools.Text;
 
@@ -22,12 +20,12 @@ procedure Pictlib_Prove is
       To_Unbounded_String ("pictlib-opcodes.adb"),
       To_Unbounded_String ("pictlib-internal-packbits.adb")];
 
-   Root : constant String := Project_Tools.Files.Find_Root_Upward (Ada.Directories.Current_Directory, "pictlib.gpr");
+   Root : constant String := Pictlib_Testing.Tools.Root;
 
    Prover : constant String := Pictlib_Testing.Tools.Gnatprove;
 
    procedure Prove (Unit : String) is
-      Alr : constant String := Project_Tools.Processes.Locate_Command ("alr");
+      Alr : constant String := Pictlib_Testing.Tools.Alr;
       Output : Unbounded_String;
       Status : Integer;
    begin

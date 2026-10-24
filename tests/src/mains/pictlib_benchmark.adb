@@ -3,7 +3,6 @@
 with Pictlib_Testing.Tools;
 with Ada.Calendar;
 with Ada.Directories;
-with Ada.Streams.Stream_IO;
 with Ada.Text_IO;
 with Pictlib;
 with Pictlib.Decoding;
@@ -11,6 +10,7 @@ with Pictlib.Encoding;
 with Pictlib.Geometry;
 with Pictlib.Results;
 with Pictlib.Streams;
+with Pictlib_Testing.Files;
 with Pictlib_Testing.Samples;
 
 procedure Pictlib_Benchmark is
@@ -53,25 +53,22 @@ procedure Pictlib_Benchmark is
 
    procedure Layout (Item : Pictlib_Testing.Samples.Kind; Kind : Pictlib.Encoding.Layout_Kind) is
       Source : constant Pictlib_Testing.Samples.Bytes_Access := Pictlib_Testing.Samples.Make (Item, Width, Height);
-      Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. 8 * Width * Height);
-      Output : aliased Pictlib.Streams.Fixed_Buffer_Destination;
-      Encoder : Pictlib.Encoding.Encoder;
       Started : Ada.Calendar.Time;
+      Picture : Pictlib_Testing.Samples.Encoded;
       Encoded : Pictlib.Streams.Byte_Array_Access;
    begin
       Started := Ada.Calendar.Clock;
       for Round in 1 .. Rounds loop
-         Pictlib.Streams.Open (Output, Storage);
-         Pictlib.Encoding.Initialize (Encoder, Output'Access, (Layout => Kind, others => <>));
-         if not Pictlib.Results.Succeeded
-           (Pictlib.Encoding.Encode (Encoder, Pictlib_Testing.Samples.View (Source, Width, Height)))
-         then
+         Picture := Pictlib_Testing.Samples.Encode
+           (Pictlib_Testing.Samples.View (Source, Width, Height), (Layout => Kind, others => <>),
+            Room => 8 * Width * Height);
+         if not Pictlib.Results.Succeeded (Picture.Outcome) then
             Ada.Text_IO.Put_Line (Kind'Image & ": encode failed");
             return;
          end if;
       end loop;
       Report (Kind'Image & " encode", Rounds * Width * Height, Ada.Calendar.Clock - Started);
-      Encoded := new Pictlib.Streams.Byte_Array'(Storage (1 .. Natural (Output.Offset)));
+      Encoded := Pictlib.Streams.Byte_Array_Access (Picture.Data);
       Started := Ada.Calendar.Clock;
       for Round in 1 .. Rounds loop
          if not Render (Encoded, Width, Height) then
@@ -83,17 +80,11 @@ procedure Pictlib_Benchmark is
    end Layout;
 
    procedure Vector_Picture (Path : String) is
-      use Ada.Streams.Stream_IO;
-      File : File_Type;
-      Data : constant Pictlib.Streams.Byte_Array_Access :=
-        new Pictlib.Streams.Byte_Array (1 .. Natural (Ada.Directories.Size (Path)));
+      Data : constant Pictlib_Testing.Files.Bytes_Access := Pictlib_Testing.Files.Load_Path (Path);
       Started : Ada.Calendar.Time;
       Source : aliased Pictlib.Streams.Memory_Source;
       Decoder : Pictlib.Decoding.Decoder;
    begin
-      Open (File, In_File, Path);
-      Pictlib.Streams.Byte_Array'Read (Stream (File), Data.all);
-      Close (File);
       Pictlib.Streams.Open (Source, Pictlib.Streams.Const_Byte_Array_Access (Data));
       Pictlib.Decoding.Initialize (Decoder, Source'Access);
       if not Pictlib.Results.Succeeded (Pictlib.Decoding.Read_Header (Decoder)) then
@@ -105,7 +96,7 @@ procedure Pictlib_Benchmark is
          Frame_Height : constant Positive := Pictlib.Geometry.Height (Frame);
       begin
          Started := Ada.Calendar.Clock;
-         if Render (Data, Frame_Width, Frame_Height) then
+         if Render (Pictlib.Streams.Byte_Array_Access (Data), Frame_Width, Frame_Height) then
             Report (Ada.Directories.Simple_Name (Path) & " render", Frame_Width * Frame_Height,
                     Ada.Calendar.Clock - Started);
          end if;

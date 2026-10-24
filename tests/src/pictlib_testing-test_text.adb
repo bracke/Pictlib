@@ -347,11 +347,7 @@ package body Pictlib_Testing.Test_Text is
          Canvases.Render (Missing_Glyph, Decoder, Output, Outcome, With_Fonts);
          Assert (Pictlib.Results.Succeeded (Outcome), "a missing glyph failed: " & Outcome.First_Error.Code'Image);
          Assert (Canvases.Picture_Of (Output) = Image (Holes), "a missing glyph: wrong advance");
-         for Index in 1 .. Pictlib.Decoding.Warning_Count (Decoder) loop
-            if Pictlib.Decoding.Warning_At (Decoder, Index).Code = Pictlib.Errors.Data_Loss then
-               Losses := Losses + 1;
-            end if;
-         end loop;
+         Losses := Recorders.Count_Warnings (Decoder, Pictlib.Errors.Data_Loss);
          Assert (Losses = 1, "two missing glyphs in one opcode warned" & Losses'Image & " times");
       end;
       --  A size 100 font's atlas is 808 x 808 bytes: over a smaller allocation budget, it is never loaded.
