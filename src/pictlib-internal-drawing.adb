@@ -385,10 +385,16 @@ package body Pictlib.Internal.Drawing is
             declare
                Slot : constant Rendering.Pattern_Slot := Slot_Of (Event.Op);
                Work : Pixel_Count := 1;
+               Too_Large : Boolean := False;
             begin
                if Event.Op in 16#0012# .. 16#0014# then
                   --  Decoded straight into the port's pattern, whose old tile goes first: a tile is held once.
-                  Outcome := Patterns.Read_Pixel_Pattern (S, P.Pattern_Set (Slot), Rendering.Allowance (P, S), Work);
+                  Outcome :=
+                    Patterns.Read_Pixel_Pattern (S, P.Pattern_Set (Slot), Rendering.Allowance (P, S), Work, Too_Large);
+                  --  A tile too large to index: unsupported, its 1-bit pattern standing in when lenient.
+                  if Results.Succeeded (Outcome) and then Too_Large then
+                     Outcome := Rendering.Unsupported (S, Event);
+                  end if;
                else
                   Outcome := Patterns.Read_Bit_Pattern (S, P.Pattern_Set (Slot));
                end if;

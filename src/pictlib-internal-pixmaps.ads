@@ -108,6 +108,13 @@ package Pictlib.Internal.Pixmaps is
    --  Row decoder: holds the heap buffers one opcode's rows are decoded through.
    type Row_Decoder is limited private;
 
+   --  Admit.
+   --  @param S Session whose allocation budget applies.
+   --  @param Header The opcode's header, its layout decided.
+   --  @param Extra Bytes the opcode allocates besides the row buffers, counted with them.
+   --  @return Success when Start may allocate the row buffers and Extra, or Limit_Exceeded; allocates nothing.
+   function Admit (S : Sessions.Session; Header : Bits_Header; Extra : Byte_Count := 0) return Results.Result;
+
    --  Start.
    --  @param S Session whose allocation budget applies.
    --  @param Decoder Decoder to prepare.

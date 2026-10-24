@@ -123,10 +123,13 @@ are retained, never interpreted.
   0 bits the background; a color `PixPat` (type 1) is drawn with its own colors and is not
   colorized; a dither `PixPat` (type 2) is drawn as its RGB color. Pattern opcodes are read, then
   charged, like every other opcode: a unit of drawing work for every pattern, and for a color
-  `PixPat` a unit per pixel and per row of its tile. A color `PixPat` is decoded only once the
-  drawing budget admits that work and then the allocation budget its tile and row buffers; a tile
-  of more than 2^31 − 1 pixels, which no budget admits, is then `Unsupported_Feature` in `Strict`
-  and skipped with an `Approximated_Rendering` warning otherwise, its 1-bit pattern standing in.
+  `PixPat` a unit per pixel and per row of the tile it decodes. A color `PixPat` is decoded only
+  once the drawing budget admits that work and then the allocation budget its tile and row
+  buffers. A tile of more than 2^31 − 1 pixels, which no budget admits, has its rows skipped
+  undecoded, at no cost beyond the pattern's unit, and is then `Unsupported_Feature` in `Strict`
+  and an `Approximated_Rendering` warning otherwise, its 1-bit pattern standing in. A pattern
+  opcode that fails, in reading or in its charge, leaves that pattern QuickDraw's default (white
+  background, black pen and fill); since a failure ends rendering, nothing draws with it.
   Limits apply only to rendering, so enumeration accepts such a picture; format errors are
   reported by both.
 - Transfer modes act on 8-bit components. For the boolean modes, each source component `s` (a

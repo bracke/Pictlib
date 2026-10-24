@@ -200,13 +200,53 @@ package body Pictlib_Testing.Test_Hostile is
             "65535 x 65535 PixPat on the default budgets");
       Tight := Pictlib.Limits.Default_Limits;
       Tight.Max_Allocation_Bytes := Pictlib.Byte_Count'Last;
-      Canvases.Expect_Failure (Unindexable_Tile, 8, 2, Errors.Unsupported_Feature, "65535 x 65535 PixPat",
-                               Options => (Strictness => Pictlib.Strict, others => <>), Budget => Tight);
-      Canvases.Render (Unindexable_Tile, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Compatible,
-                       Budget => Tight);
-      Assert (Recorders.Has_Warning (Decoder, Errors.Approximated_Rendering)
-              and then Outcome.First_Error.Code = Errors.Source_Unexpected_End,
-              "65535 x 65535 PixPat was not skipped leniently: " & Outcome.First_Error.Code'Image);
+      --  Its rows are skipped before anything else is decided, so this one, which has none, is cut short.
+      Canvases.Expect_Failure (Unindexable_Tile, 8, 2, Errors.Source_Unexpected_End, "65535 x 65535 PixPat",
+                               Options => Compatible, Budget => Tight);
+      --  The same skip with every row present: drawing goes on, with the black pat1Data in the tile's place.
+      declare
+         Rows : constant := 32_769;
+         --  A row of 8192 zero bytes: its word count, then 64 runs of 128.
+         Row : constant Bytes := W (128) & Repeat (B (16#81#) & B (0), 64);
+         Head : constant Bytes :=
+           V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & [1 .. 8 => 16#FF#] & W (16#8000# + 8_192)
+           & Rect (-32_768, -32_768, Rows - 32_768, 32_767) & Pixmap_Tail (0, 1, 1, 1)
+           & Table_Header (16#8000#, 2) & Table_Entry (0, 0, 0, 0) & Table_Entry (1, 0, 0, 0);
+         Tail : constant Bytes := Op_Rect (16#34#, 0, 0, 2, 8) & W (16#FF#);
+         Whole : constant Pictlib.Streams.Byte_Array_Access :=
+           new Bytes (1 .. Head'Length + Rows * Row'Length + Tail'Length);
+      begin
+         Whole (1 .. Head'Length) := Head;
+         for Index in 0 .. Rows - 1 loop
+            Whole (Head'Length + 1 + Index * Row'Length .. Head'Length + (Index + 1) * Row'Length) := Row;
+         end loop;
+         Whole (Whole'Last - Tail'Length + 1 .. Whole'Last) := Tail;
+         Canvases.Render (Whole.all, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Compatible,
+                          Budget => Tight);
+         Assert (Pictlib.Results.Succeeded (Outcome) and then Recorders.Has_Warning
+                   (Decoder, Errors.Approximated_Rendering),
+                 "65535 x 32769 PixPat with its rows: " & Outcome.First_Error.Code'Image);
+         Assert (Canvases.Picture_Of (Canvases.View (Storage'Access, 8, 2)) = "BBBBBBBB/BBBBBBBB",
+                 "65535 x 32769 PixPat: pat1Data did not stand in, drew "
+                 & Canvases.Picture_Of (Canvases.View (Storage'Access, 8, 2)));
+         --  The skip costs only the pattern's unit: a budget just above the tile's decoding check leaves the
+         --  rest of the picture plenty, which charging the skipped decoding would not.
+         declare
+            use type Pictlib.Pixel_Count;
+            Close : Pictlib.Limits.Limit_Set := Tight;
+         begin
+            Close.Max_Drawing_Work := 65_536 * Pictlib.Pixel_Count (Rows) + 3;
+            Canvases.Render (Whole.all, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Compatible,
+                             Budget => Close);
+            Assert (Pictlib.Results.Succeeded (Outcome),
+                    "the skipped tile was charged its decoding: " & Outcome.First_Error.Code'Image);
+         end;
+         Canvases.Render (Whole.all, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome,
+                          (Strictness => Pictlib.Strict, others => <>), Budget => Tight);
+         Assert (Outcome.First_Error.Code = Errors.Unsupported_Feature
+                 and then Outcome.First_Error.Context.Op = 16#14#,
+                 "65535 x 32769 PixPat, strictly: " & Outcome.First_Error.Code'Image);
+      end;
       --  Limits apply only to rendering: enumeration reads on, to the rows this picture does not have.
       Recorders.Decode (Unindexable_Tile, Decoder, Events, Outcome);
       Assert (Outcome.First_Error.Code = Errors.Source_Unexpected_End,

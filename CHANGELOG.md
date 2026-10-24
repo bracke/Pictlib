@@ -2,6 +2,14 @@
 
 ## 0.1.0-dev
 
+- Fixes from the ninth review. A PixPat tile too large to index is skipped
+  at no cost beyond its pattern's unit, where it was charged its full
+  decoding, and reported through `Rendering.Unsupported` with its opcode.
+  Its allocation is checked (`Pixmaps.Admit`) without allocating the row
+  buffers it will not use. The pattern reader only guarantees no part-read
+  tile; the caller puts the slot's default back, as the specification again
+  says. A 4 MiB test picture with every row present shows the 1-bit pattern
+  standing in, the strict failure and the free skip.
 - Fixes from the eighth review. A PixPat tile is checked against the drawing
   budget, then the allocation budget, then the 2^31 - 1 pixels a tile can
   index; a larger tile is `Unsupported_Feature` strictly and skipped with an

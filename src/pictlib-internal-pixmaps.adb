@@ -274,18 +274,27 @@ package body Pictlib.Internal.Pixmaps is
    function Buffer_Bytes (Header : Bits_Header) return Byte_Count is
      (Byte_Count (Stored_Length (Header)) + Byte_Count (Unpacked_Length (Header)) + 3 * Byte_Count (Header.Width));
 
+   function Admit (S : Sessions.Session; Header : Bits_Header; Extra : Byte_Count := 0) return Results.Result is
+      Buffers : constant Byte_Count := Buffer_Bytes (Header);
+      Total : constant Byte_Count := (if Extra > Byte_Count'Last - Buffers then Byte_Count'Last else Buffers + Extra);
+   begin
+      if Total > S.Budget.Max_Allocation_Bytes then
+         return Sessions.Over_Limit (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Total);
+      end if;
+      return Results.Success;
+   end Admit;
+
    function Start
      (S : Sessions.Session;
       Decoder : in out Row_Decoder;
       Header : Bits_Header;
       Extra : Byte_Count := 0) return Results.Result
    is
-      Buffers : constant Byte_Count := Buffer_Bytes (Header);
-      Total : constant Byte_Count := (if Extra > Byte_Count'Last - Buffers then Byte_Count'Last else Buffers + Extra);
+      Admitted : constant Results.Result := Admit (S, Header, Extra);
    begin
       Finish (Decoder);
-      if Total > S.Budget.Max_Allocation_Bytes then
-         return Sessions.Over_Limit (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Total);
+      if not Results.Succeeded (Admitted) then
+         return Admitted;
       end if;
       Decoder.Header := Header;
       Decoder.Stored := new Streams.Byte_Array (1 .. Stored_Length (Header));
