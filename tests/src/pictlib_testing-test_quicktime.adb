@@ -211,6 +211,31 @@ package body Pictlib_Testing.Test_QuickTime is
                               (Strictness => Pictlib.Compatible, others => <>));
       Canvases.Expect_Raster (Not_Next, 8, 6, "BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB",
                               "only the opcode right after the image is skipped");
+      --  The placeholder costs nothing: at the least budget the image alone needs, both still render.
+      declare
+         Alone : aliased constant Bytes := Image (Plain, 8, 6);
+         Storage : aliased Bytes := [1 .. 3 * 48 => 0];
+         Decoder : Pictlib.Decoding.Decoder;
+         Outcome : Pictlib.Results.Result;
+         Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+         Low : Pictlib.Pixel_Count := 0;
+         High : Pictlib.Pixel_Count := 1_000_000;
+         use type Pictlib.Pixel_Count;
+      begin
+         while Low < High loop
+            Budget.Max_Drawing_Work := (Low + High) / 2;
+            Canvases.Render (Alone, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome, Budget => Budget);
+            if Pictlib.Results.Succeeded (Outcome) then
+               High := Budget.Max_Drawing_Work;
+            else
+               Low := Budget.Max_Drawing_Work + 1;
+            end if;
+         end loop;
+         Budget.Max_Drawing_Work := High;
+         Canvases.Render (After_Image, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome, Budget => Budget);
+         Assert (Pictlib.Results.Succeeded (Outcome), "the placeholder was charged: "
+                 & Outcome.First_Error.Code'Image);
+      end;
       Canvases.Expect_Raster (Drawn_Then_Not, 8, 6, "BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB",
                               "a drawn image does not hide a later placeholder",
                               (Strictness => Pictlib.Compatible, others => <>));

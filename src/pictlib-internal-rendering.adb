@@ -115,8 +115,14 @@ package body Pictlib.Internal.Rendering is
       Shape : Coverage.Shape;
       How : Paint) return Results.Result
    is
-      --  A shape that spent its allowance, the budget left, has more work than the budget admits.
-      Outcome : Results.Result := Charge (P, S, Coverage.Work (Shape));
+      --  A shape that spent its allowance is over the limit whatever its allowance was; the charge reports it
+      --  when the allowance was the budget left, as Allowance gives.
+      Outcome : Results.Result :=
+        (if Coverage.Exhausted (Shape) and then Coverage.Work (Shape) <= Allowance (P, S)
+         then Sessions.Over_Limit
+                (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
+                 Byte_Count (S.Budget.Max_Drawing_Work) + 1)
+         else Charge (P, S, Coverage.Work (Shape)));
       Colorize : constant Boolean := Patterns.Kind (How.Source) = Patterns.Bit_Pattern;
       Kind : constant Transfer_Modes.Mode_Kind :=
         (if P.Hilite_Next then Transfer_Modes.Hilite else How.Mode);
@@ -301,9 +307,10 @@ package body Pictlib.Internal.Rendering is
       Kind : Transfer_Modes.Mode_Kind;
       Outcome : Results.Result;
    begin
+      --  A QuickTime image's placeholder costs nothing: the image it stands for was drawn and charged.
       if P.Skip_Next_Bits then
          P.Skip_Next_Bits := False;
-         return Skip_Rows (P, S, Header);
+         return Pixmaps.Skip_Pixels (S, Header);
       end if;
       Outcome := Mode (S, Event, Header.Mode, Kind);
       if P.Hilite_Next then

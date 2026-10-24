@@ -131,16 +131,39 @@ package body Pictlib_Testing.Test_Hostile is
                    & Op_Rect (16#34#, 0, 0, 2, 8));
       --  A PixPat cut off right after its type.
       Cut_Tile : aliased constant Bytes := V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & Zeros (8);
-      --  An 18000 x 18000 PixPat, under the allocation budget, whose rows never come: nothing is set aside
-      --  for them up front.
+      --  An 18000 x 18000 PixPat: its tile is under the allocation budget, but not while it grows, so it is
+      --  rejected before any row is read.
       Huge_Tile : aliased constant Bytes :=
         V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 2_250) & Rect (0, 0, 18_000, 18_000)
         & Pixmap_Tail (0, 1, 1, 1) & Table_Header (16#8000#, 2) & Table_Entry (0, 0, 0, 0)
         & Table_Entry (1, 0, 0, 0) & B (0);
+      --  A 200 x 200 tile (3 * 40,000 bytes) under a 200,000-byte budget that its growth would pass.
+      Grown_Tile : aliased constant Bytes :=
+        V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 26) & Rect (0, 0, 200, 200)
+        & Pixmap_Tail (0, 1, 1, 1) & Table_Header (16#8000#, 2) & Table_Entry (0, 0, 0, 0)
+        & Table_Entry (1, 0, 0, 0) & B (0);
+      --  An 8 x 20 tile, 9 units of decoding per row, under 100 units of drawing work.
+      Costly_Tile : aliased constant Bytes :=
+        Pic (8, 2, W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 2) & Rect (0, 0, 20, 8)
+                   & Pixmap_Tail (0, 1, 1, 1) & Table_Header (16#8000#, 2) & Table_Entry (0, 0, 0, 0)
+                   & Table_Entry (1, 0, 0, 0) & Zeros (40) & Op_Rect (16#34#, 0, 0, 2, 8));
+      Tight : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
       Decoder : Pictlib.Decoding.Decoder;
       Events : Recorders.Recorder;
       Outcome : Pictlib.Results.Result;
+      Storage : aliased Bytes := [1 .. 3 * 16 => 0];
       Started : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
+
+      procedure Over (Input : aliased Bytes; Budget : Pictlib.Limits.Limit_Set; Limit : Pictlib.Limit_Kind;
+                      Label : String) is
+      begin
+         Canvases.Render (Input, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Budget => Budget);
+         Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded
+                 and then Outcome.First_Error.Context.Limit = Limit
+                 and then Outcome.First_Error.Context.Op = 16#14#,
+                 Label & ": rendered with " & Outcome.First_Error.Code'Image & " "
+                 & Outcome.First_Error.Context.Limit'Image);
+      end Over;
 
       procedure Both (Input : aliased Bytes; Code : Errors.Error_Code; Label : String) is
       begin
@@ -152,7 +175,16 @@ package body Pictlib_Testing.Test_Hostile is
       Both (Deep_Tile, Errors.Pattern_Invalid, "32-bit PixPat");
       Both (Empty_Tile, Errors.Pattern_Invalid, "empty PixPat");
       Both (Cut_Tile, Errors.Source_Unexpected_End, "PixPat cut after its type");
-      Canvases.Expect_Failure (Huge_Tile, 8, 2, Errors.Source_Unexpected_End, "18000 x 18000 PixPat", 16#14#);
+      Over (Huge_Tile, Pictlib.Limits.Default_Limits, Pictlib.Allocation_Byte_Limit, "18000 x 18000 PixPat");
+      Tight.Max_Allocation_Bytes := 200_000;
+      Over (Grown_Tile, Tight, Pictlib.Allocation_Byte_Limit, "a tile whose growth passes the budget");
+      Tight := Pictlib.Limits.Default_Limits;
+      Tight.Max_Drawing_Work := 100;
+      Over (Costly_Tile, Tight, Pictlib.Drawing_Work_Limit, "a tile that costs more than the budget");
+      Tight.Max_Drawing_Work := 10_000;
+      Canvases.Render (Costly_Tile, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Budget => Tight);
+      Assert (Pictlib.Results.Succeeded (Outcome), "a tile within the budget failed with "
+              & Outcome.First_Error.Code'Image);
       Check_Time (Started, "pixel patterns");
       Recorders.Decode (Planar_Count, Decoder, Events, Outcome);
       Assert (Outcome.First_Error.Code = Errors.Pixmap_Invalid,

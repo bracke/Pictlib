@@ -378,12 +378,23 @@ package body Pictlib.Internal.Drawing is
             Outcome := Patterns.Read_Bit_Pattern (S, P.Pen_Pattern);
          when 16#000A# =>
             Outcome := Patterns.Read_Bit_Pattern (S, P.Fill_Pattern);
-         when 16#0012# =>
-            Outcome := Patterns.Read_Pixel_Pattern (S, P.Back_Pattern);
-         when 16#0013# =>
-            Outcome := Patterns.Read_Pixel_Pattern (S, P.Pen_Pattern);
-         when 16#0014# =>
-            Outcome := Patterns.Read_Pixel_Pattern (S, P.Fill_Pattern);
+         when 16#0012# .. 16#0014# =>
+            declare
+               Item : Patterns.Pattern;
+               Work : Pixel_Count;
+            begin
+               Outcome := Patterns.Read_Pixel_Pattern (S, Item, Rendering.Allowance (P, S), Work);
+               if Results.Succeeded (Outcome) then
+                  Outcome := Rendering.Charge (P, S, Work);
+               end if;
+               if Results.Succeeded (Outcome) then
+                  case Event.Op is
+                     when 16#0012# => P.Back_Pattern := Item;
+                     when 16#0013# => P.Pen_Pattern := Item;
+                     when others => P.Fill_Pattern := Item;
+                  end case;
+               end if;
+            end;
          when 16#0007# =>
             Outcome := Read_Size (S, P.Pen_Height, P.Pen_Width);
          when 16#0008# =>

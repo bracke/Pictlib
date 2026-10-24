@@ -83,14 +83,17 @@ package body Pictlib.Internal.Coverage is
    function Remaining (Item : Shape) return Pixel_Count is
      (if Item.Units >= Item.Allowance then 0 else Item.Allowance - Item.Units);
 
-   procedure Charge (Item : in out Shape; Units : Natural) is
+   procedure Add_Work (Item : in out Shape; Units : Pixel_Count) is
    begin
-      Item.Units :=
-        (if Pixel_Count'Last - Item.Units < Pixel_Count (Units) then Pixel_Count'Last
-         else Item.Units + Pixel_Count (Units));
+      Item.Units := (if Pixel_Count'Last - Item.Units < Units then Pixel_Count'Last else Item.Units + Units);
       if Item.Units > Item.Allowance then
          Item.Spent := True;
       end if;
+   end Add_Work;
+
+   procedure Charge (Item : in out Shape; Units : Natural) is
+   begin
+      Add_Work (Item, Pixel_Count (Units));
    end Charge;
 
    --  Add pixels Left .. Right - 1 of row Y, merging with what the row holds.
@@ -549,9 +552,8 @@ package body Pictlib.Internal.Coverage is
    procedure Subtract (Item : in out Shape; Other : Shape) is
    begin
       --  Taking away an incomplete shape leaves an incomplete one.
-      Item.Units :=
-        (if Pixel_Count'Last - Item.Units < Other.Units then Pixel_Count'Last else Item.Units + Other.Units);
-      Item.Spent := Item.Spent or else Other.Spent or else Item.Units > Item.Allowance;
+      Add_Work (Item, Other.Units);
+      Item.Spent := Item.Spent or else Other.Spent;
       if Item.Spent then
          return;
       end if;

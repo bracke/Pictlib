@@ -2,6 +2,13 @@
 
 ## 0.1.0-dev
 
+- Fixes from the third review. A PixPat's tile grows with the rows that
+  arrive, never past its final size, and is checked against
+  `Max_Allocation_Bytes` at twice that size, which covers its growth; decoding
+  it is drawing work. `Fill` reports a shape that ran out of budget itself
+  again, whatever allowance it was built with. A QuickTime image's
+  placeholder is skipped free, since the image was charged. Coverage charges
+  through one saturating `Add_Work`.
 - Fixes from reviewing the library fixes. The origin is bounded to
   ±(2^24 − 2^15), so no ordinary line after an accepted origin is out of
   reach. Shape work is counted in 63 bits, so only `Max_Drawing_Work` bounds a

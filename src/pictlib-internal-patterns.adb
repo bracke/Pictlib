@@ -56,7 +56,12 @@ package body Pictlib.Internal.Patterns is
 
    --  A type 1 PixPat: rowBytes, bounds, the PixMap tail, a color table, then rows packed as PackBitsRect packs
    --  them.
-   function Read_Color_Tile (S : in out Sessions.Session; Item : in out Pattern) return Results.Result is
+   function Read_Color_Tile
+     (S : in out Sessions.Session;
+      Item : in out Pattern;
+      Allowance : Pixel_Count;
+      Work : in out Pixel_Count) return Results.Result
+   is
       Raw_Row_Bytes : Interfaces.Unsigned_16 := 0;
       Header : Pixmaps.Bits_Header;
       Decoder : Pixmaps.Row_Decoder;
@@ -83,12 +88,14 @@ package body Pictlib.Internal.Patterns is
       if Results.Succeeded (Outcome) and then (Header.Width = 0 or else Header.Height = 0) then
          Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 1, 0);
       end if;
+      --  The tile grows with the rows that arrive, so a short picture holds little; while it grows it can hold
+      --  its old and new storage at once, twice its final size.
       if Results.Succeeded (Outcome)
-        and then 3 * Byte_Count (Header.Width) * Byte_Count (Header.Height) > S.Budget.Max_Allocation_Bytes
+        and then 6 * Byte_Count (Header.Width) * Byte_Count (Header.Height) > S.Budget.Max_Allocation_Bytes
       then
          Outcome := Sessions.Over_Limit
            (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes,
-            3 * Byte_Count (Header.Width) * Byte_Count (Header.Height));
+            6 * Byte_Count (Header.Width) * Byte_Count (Header.Height));
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Pixmaps.Decide_Layout (S, Header, For_Decoding => True);
@@ -104,8 +111,29 @@ package body Pictlib.Internal.Patterns is
       Item.Height := Header.Height;
       Item.Tile.Clear;
       for Row in 0 .. Header.Height - 1 loop
+         --  Decoding a row is drawing work, like converting a copied row.
+         if Pixel_Count (Header.Width + 1) > Allowance - Pixel_Count'Min (Work, Allowance) then
+            Outcome := Sessions.Over_Limit
+              (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
+               Byte_Count (S.Budget.Max_Drawing_Work - Pixel_Count'Min (Allowance, S.Budget.Max_Drawing_Work))
+               + Byte_Count (Work) + Byte_Count (Header.Width + 1));
+            exit;
+         end if;
+         Work := Work + Pixel_Count (Header.Width + 1);
          Outcome := Pixmaps.Read_Row (S, Decoder, Row);
          exit when not Results.Succeeded (Outcome);
+         declare
+            use type Ada.Containers.Count_Type;
+            Length : constant Ada.Containers.Count_Type := Item.Tile.Length;
+            Width : constant Ada.Containers.Count_Type := Ada.Containers.Count_Type (Header.Width);
+         begin
+            if Item.Tile.Capacity < Length + Width then
+               Item.Tile.Reserve_Capacity
+                 (Ada.Containers.Count_Type'Min
+                    (Ada.Containers.Count_Type (Header.Width) * Ada.Containers.Count_Type (Header.Height),
+                     Ada.Containers.Count_Type'Max (2 * Length, Length + Width)));
+            end if;
+         end;
          for Column in 0 .. Header.Width - 1 loop
             Item.Tile.Append (Pixmaps.Pixel (Decoder, Column));
          end loop;
@@ -114,10 +142,16 @@ package body Pictlib.Internal.Patterns is
       return Outcome;
    end Read_Color_Tile;
 
-   function Read_Pixel_Pattern (S : in out Sessions.Session; Item : out Pattern) return Results.Result is
+   function Read_Pixel_Pattern
+     (S : in out Sessions.Session;
+      Item : out Pattern;
+      Allowance : Pixel_Count;
+      Work : out Pixel_Count) return Results.Result
+   is
       Pattern_Type : Interfaces.Unsigned_16 := 0;
       Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
    begin
+      Work := 0;
       Item := (others => <>);
       if Results.Succeeded (Outcome) then
          --  pat1Data, the 1-bit fallback for black-and-white ports.
@@ -128,7 +162,7 @@ package body Pictlib.Internal.Patterns is
       end if;
       case Pattern_Type is
          when 1 =>
-            return Read_Color_Tile (S, Item);
+            return Read_Color_Tile (S, Item, Allowance, Work);
          when 2 =>
             --  A dither pattern: in true color, its RGB color.
             declare
