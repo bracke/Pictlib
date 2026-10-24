@@ -9,13 +9,7 @@ package body Pictlib.Internal.Sessions is
       S.Version := Version_1;
       Metadata_Store.Clear (S.Store);
       Diagnostics.Clear (S.Log);
-      S.Total_Allocation_Bytes := 0;
-      S.Work_Used := 0;
-      S.Next_Ordinal := 0;
-      S.Data_Start := 0;
-      S.Has_Pending := False;
-      S.Pending_Op := 0;
-      S.Pending_Offset := 0;
+      S.Counts := (others => <>);
    end Clear;
 
    procedure Start
@@ -88,36 +82,36 @@ package body Pictlib.Internal.Sessions is
 
    procedure Defer_Opcode (S : in out Session; Op : Opcode; Offset : Source_Offset) is
    begin
-      S.Has_Pending := True;
-      S.Pending_Op := Op;
-      S.Pending_Offset := Offset;
+      S.Counts.Has_Pending := True;
+      S.Counts.Pending_Op := Op;
+      S.Counts.Pending_Offset := Offset;
    end Defer_Opcode;
 
    function Take_Deferred (S : in out Session; Op : out Opcode; Offset : out Source_Offset) return Boolean is
-      Deferred : constant Boolean := S.Has_Pending;
+      Deferred : constant Boolean := S.Counts.Has_Pending;
    begin
-      Op := S.Pending_Op;
-      Offset := S.Pending_Offset;
-      S.Has_Pending := False;
+      Op := S.Counts.Pending_Op;
+      Offset := S.Counts.Pending_Offset;
+      S.Counts.Has_Pending := False;
       return Deferred;
    end Take_Deferred;
 
    procedure Start_Drawing (S : in out Session) is
    begin
-      S.Work_Used := 0;
+      S.Counts.Work_Used := 0;
    end Start_Drawing;
 
    function Over_Work (S : Session; Units : Pixel_Count) return Results.Result is
      (Over_Limit
         (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
-         Byte_Count (Checked_Arithmetic.Saturating_Add (S.Work_Used, Units))));
+         Byte_Count (Checked_Arithmetic.Saturating_Add (S.Counts.Work_Used, Units))));
 
    function Charge_Work (S : in out Session; Units : Pixel_Count) return Results.Result is
    begin
       if Units > Work_Left (S) then
          return Over_Work (S, Units);
       end if;
-      S.Work_Used := S.Work_Used + Units;
+      S.Counts.Work_Used := S.Counts.Work_Used + Units;
       return Results.Success;
    end Charge_Work;
 
@@ -133,19 +127,19 @@ package body Pictlib.Internal.Sessions is
    end Admit_Allocation;
 
    function Admit_Aggregate (S : in out Session; Length : Byte_Count) return Results.Result is
-      Total : constant Byte_Count := Checked_Arithmetic.Saturating_Add (S.Total_Allocation_Bytes, Length);
+      Total : constant Byte_Count := Checked_Arithmetic.Saturating_Add (S.Counts.Total_Allocation_Bytes, Length);
    begin
       if Total > S.Budget.Max_Total_Allocation_Bytes then
          return Over_Limit (S, Total_Allocation_Byte_Limit, S.Budget.Max_Total_Allocation_Bytes, Total);
       end if;
-      S.Total_Allocation_Bytes := Total;
+      S.Counts.Total_Allocation_Bytes := Total;
       return Results.Success;
    end Admit_Aggregate;
 
    function Allocation_Units_Left (S : Session; Bytes_Per_Unit : Positive) return Pixel_Count is
      (Pixel_Count
         ((S.Budget.Max_Total_Allocation_Bytes
-          - Byte_Count'Min (S.Total_Allocation_Bytes, S.Budget.Max_Total_Allocation_Bytes))
+          - Byte_Count'Min (S.Counts.Total_Allocation_Bytes, S.Budget.Max_Total_Allocation_Bytes))
          / Byte_Count (Bytes_Per_Unit)));
 
    function Shape_Work_Left (S : Session) return Pixel_Count is
@@ -153,18 +147,26 @@ package body Pictlib.Internal.Sessions is
 
    function Claim_Ordinal (S : in out Session; Ordinal : out Opcode_Ordinal) return Results.Result is
    begin
-      Ordinal := S.Next_Ordinal;
-      if S.Next_Ordinal >= S.Budget.Max_Opcodes then
+      Ordinal := S.Counts.Next_Ordinal;
+      if S.Counts.Next_Ordinal >= S.Budget.Max_Opcodes then
          return Over_Limit
-           (S, Opcode_Count_Limit, Byte_Count (S.Budget.Max_Opcodes), Byte_Count (S.Next_Ordinal) + 1);
+           (S, Opcode_Count_Limit, Byte_Count (S.Budget.Max_Opcodes), Byte_Count (S.Counts.Next_Ordinal) + 1);
       end if;
-      S.Next_Ordinal := S.Next_Ordinal + 1;
+      S.Counts.Next_Ordinal := S.Counts.Next_Ordinal + 1;
       return Results.Success;
    end Claim_Ordinal;
 
+   procedure Begin_Opcode_Data (S : in out Session) is
+   begin
+      S.Counts.Data_Start := Picture_Stream.Picture_Offset (S.Stream);
+   end Begin_Opcode_Data;
+
+   function Opcode_Data_Length (S : Session) return Byte_Count is
+     (Picture_Stream.Picture_Offset (S.Stream) - S.Counts.Data_Start);
+
    --  Admit More bytes of the current opcode's data against the per-opcode budget.
    function Admit_Data (S : Session; More : Byte_Count) return Results.Result is
-      Used : constant Byte_Count := Picture_Stream.Picture_Offset (S.Stream) - S.Data_Start;
+      Used : constant Byte_Count := Opcode_Data_Length (S);
       Sum : constant Byte_Count := Checked_Arithmetic.Saturating_Add (Used, More);
    begin
       if Sum > S.Budget.Max_Opcode_Bytes then

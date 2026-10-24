@@ -123,7 +123,7 @@ package body Pictlib.Decoding is
          Kind := Ended_By_Input;
          return Internal.Sessions.Reject_Or_Warn
            (Object.Inner.Session, Errors.Missing_End_Opcode, Errors.Compatibility_Issue, Errors.Compatibility,
-            (Ordinal => Object.Inner.Session.Next_Ordinal, others => <>));
+            (Ordinal => Internal.Sessions.Opcodes_Read (Object.Inner.Session), others => <>));
       elsif Event.Op = Opcodes.End_Picture then
          Kind := Ended_By_End_Opcode;
       end if;

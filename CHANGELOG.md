@@ -83,6 +83,13 @@ place:
   nearest-neighbour scaling rule copies and images use.
 - One reader for QuickDraw's (v, h) pairs, one heap buffer deallocator, and
   one test of whether the encoder keeps alpha.
+- A session's counters (allocations, drawing work, opcodes, where an
+  opcode's data begins) are private to `Internal.Sessions`, which every
+  other unit reaches through its operations.
+- A painter's port state is one record whose defaults are QuickDraw's; each
+  render starts from it, so no field can keep a value from the last render.
+- `Opcode_Bytes` gives the size of an opcode, and of the version opcode's
+  data, for every version in one place.
 
 ### Tooling
 

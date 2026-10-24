@@ -50,11 +50,8 @@ package Pictlib.Internal.Rendering is
    --  helpers below use it.
    type Engine is limited private;
 
-   --  A QuickDraw port being drawn: its state, which the opcodes change, and the engine that paints.
-   type Painter is limited record
-      Machine : Engine;
-      --  The canvas in picture coordinates.
-      Window : Area;
+   --  The port state the opcodes change. Its defaults are QuickDraw's, so a render starts from (others => <>).
+   type Port_State is record
       Origin_H : Integer := 0;
       Origin_V : Integer := 0;
       Has_Clip : Boolean := False;
@@ -76,10 +73,18 @@ package Pictlib.Internal.Rendering is
       --  the codec -- skipped.
       Skip_Next_Bits : Boolean := False;
       --  The last shapes, as read (local coordinates), for the "same" opcodes.
-      Last_Rect : Geometry.Rect;
+      Last_Rect : Geometry.Rect := (others => 0);
       Last_Polygon : Coverage.Point_Vectors.Vector;
-      Last_Region : Regions.Region;
+      Last_Region : Regions.Region := Regions.Rectangle ((others => 0));
       Text_State : Text.Text_State;
+   end record;
+
+   --  A QuickDraw port being drawn: the engine that paints, the canvas, the port state and the fonts.
+   type Painter is limited record
+      Machine : Engine;
+      --  The canvas in picture coordinates.
+      Window : Area;
+      Port : Port_State;
       Fonts : Pictlib.Fonts.Font_Table;
       Font_Cache : aliased Text.Font_Cache;
    end record;
@@ -113,7 +118,7 @@ package Pictlib.Internal.Rendering is
    --  @param Item A local rectangle.
    --  @return Item in picture coordinates.
    function To_Picture (P : Painter; Item : Geometry.Rect) return Area is
-     (Regions.To_Area (Item, -P.Origin_H, -P.Origin_V));
+     (Regions.To_Area (Item, -P.Port.Origin_H, -P.Port.Origin_V));
 
    --  Sampled: the nearest-neighbour rule copies and images scale by.
    --  @param Offset A destination pixel's offset from the destination's first pixel, from 0.

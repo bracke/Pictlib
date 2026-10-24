@@ -46,7 +46,7 @@ package body Pictlib.Internal.Drawing is
       V, H : Integer;
       Outcome : constant Results.Result := Read_Pair (S, V, H);
    begin
-      Item := (H => H - P.Origin_H, V => V - P.Origin_V);
+      Item := (H => H - P.Port.Origin_H, V => V - P.Port.Origin_V);
       return Outcome;
    end Read_Point;
 
@@ -120,7 +120,7 @@ package body Pictlib.Internal.Drawing is
    --  How frame and paint (pen), erase (background pattern), invert and fill (fill pattern) change pixels.
    function Paint_For (P : Rendering.Painter; Verb : Shape_Verb) return Rendering.Paint is
      (case Verb is
-         when Framed | Painted => (Rendering.Pattern_Paint, Rendering.Pen_Slot, P.Pen_Mode),
+         when Framed | Painted => (Rendering.Pattern_Paint, Rendering.Pen_Slot, P.Port.Pen_Mode),
          when Erased => (Rendering.Pattern_Paint, Rendering.Back_Slot, Transfer_Modes.Copy),
          when Inverted => (Rendering.Invert_Paint, Rendering.Pen_Slot, Transfer_Modes.Copy),
          when Filled => (Rendering.Pattern_Paint, Rendering.Fill_Slot, Transfer_Modes.Copy));
@@ -153,14 +153,14 @@ package body Pictlib.Internal.Drawing is
          end case;
       end Interior;
    begin
-      if Frame and then (P.Pen_Width <= 0 or else P.Pen_Height <= 0) then
+      if Frame and then (P.Port.Pen_Width <= 0 or else P.Port.Pen_Height <= 0) then
          return;
       end if;
-      Interior (Shape, Bounds, P.Oval_Width, P.Oval_Height);
+      Interior (Shape, Bounds, P.Port.Oval_Width, P.Port.Oval_Height);
       if Frame then
          Coverage.Start (Inner, Coverage.Window_Of (Shape), Coverage.Remaining (Shape));
-         Interior (Inner, Inset (Bounds, P.Pen_Width, P.Pen_Height),
-                   P.Oval_Width - 2 * P.Pen_Width, P.Oval_Height - 2 * P.Pen_Height);
+         Interior (Inner, Inset (Bounds, P.Port.Pen_Width, P.Port.Pen_Height),
+                   P.Port.Oval_Width - 2 * P.Port.Pen_Width, P.Port.Oval_Height - 2 * P.Port.Pen_Height);
          Coverage.Subtract (Shape, Inner);
       end if;
       if Kind = Arc_Shape then
@@ -186,7 +186,7 @@ package body Pictlib.Internal.Drawing is
                Start_Angle, Arc_Angle : Integer := 0;
             begin
                if not Same then
-                  Outcome := Sessions.Read_Bounds (S, P.Last_Rect);
+                  Outcome := Sessions.Read_Bounds (S, P.Port.Last_Rect);
                end if;
                if Results.Succeeded (Outcome) and then Kind = Arc_Shape then
                   Outcome := Read_Pair (S, Start_Angle, Arc_Angle);
@@ -195,17 +195,18 @@ package body Pictlib.Internal.Drawing is
                   return Outcome;
                end if;
                Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
-               Rect_Like (P, Kind, Verb, Rendering.To_Picture (P, P.Last_Rect), Start_Angle, Arc_Angle, Shape);
+               Rect_Like (P, Kind, Verb, Rendering.To_Picture (P, P.Port.Last_Rect), Start_Angle, Arc_Angle, Shape);
             end;
          when Polygon_Shape =>
             if not Same then
-               Outcome := Read_Polygon (S, P.Last_Polygon);
+               Outcome := Read_Polygon (S, P.Port.Last_Polygon);
                if not Results.Succeeded (Outcome) then
                   return Outcome;
                end if;
             end if;
             --  The polygon is copied for drawing; the copy counts against the aggregate allocation quota.
-            Outcome := Sessions.Admit_Aggregate (S, Sessions.Point_Cost_Bytes * Byte_Count (P.Last_Polygon.Length));
+            Outcome :=
+              Sessions.Admit_Aggregate (S, Sessions.Point_Cost_Bytes * Byte_Count (P.Port.Last_Polygon.Length));
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
@@ -213,43 +214,43 @@ package body Pictlib.Internal.Drawing is
                Points : Coverage.Point_Vectors.Vector;
             begin
                Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
-               for Item of P.Last_Polygon loop
-                  Points.Append (Point'(H => Item.H - P.Origin_H, V => Item.V - P.Origin_V));
+               for Item of P.Port.Last_Polygon loop
+                  Points.Append (Point'(H => Item.H - P.Port.Origin_H, V => Item.V - P.Port.Origin_V));
                end loop;
                if Verb /= Framed then
                   Coverage.Polygon (Shape, Points);
                elsif Natural (Points.Length) >= 2 then
                   --  FramePoly draws the polygon's lines; it does not close the polygon.
                   for Index in 1 .. Natural (Points.Length) - 1 loop
-                     Coverage.Line (Shape, Points (Index), Points (Index + 1), P.Pen_Width, P.Pen_Height);
+                     Coverage.Line (Shape, Points (Index), Points (Index + 1), P.Port.Pen_Width, P.Port.Pen_Height);
                   end loop;
                end if;
             end;
          when Region_Shape =>
             if not Same then
-               Outcome := Region_Reader.Read (S, P.Last_Region);
+               Outcome := Region_Reader.Read (S, P.Port.Last_Region);
                if not Results.Succeeded (Outcome) then
                   return Outcome;
                end if;
             end if;
             --  Copying and moving the region is work like drawing it.
-            Outcome := Sessions.Charge_Work (S, Regions.Size (P.Last_Region));
+            Outcome := Sessions.Charge_Work (S, Regions.Size (P.Port.Last_Region));
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
             --  So is the region: its scanlines and inversion points, by its size.
             Outcome :=
-              Sessions.Admit_Aggregate (S, Sessions.Region_Unit_Bytes * Byte_Count (Regions.Size (P.Last_Region)));
+              Sessions.Admit_Aggregate (S, Sessions.Region_Unit_Bytes * Byte_Count (Regions.Size (P.Port.Last_Region)));
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
             declare
-               Region : Regions.Region := P.Last_Region;
+               Region : Regions.Region := P.Port.Last_Region;
             begin
                Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
-               Regions.Translate (Region, -P.Origin_H, -P.Origin_V);
+               Regions.Translate (Region, -P.Port.Origin_H, -P.Port.Origin_V);
                if Verb = Framed then
-                  Coverage.Region_Frame (Shape, Region, P.Pen_Width, P.Pen_Height);
+                  Coverage.Region_Frame (Shape, Region, P.Port.Pen_Width, P.Port.Pen_Height);
                else
                   Coverage.From_Region (Shape, Region);
                end if;
@@ -272,10 +273,10 @@ package body Pictlib.Internal.Drawing is
          return Out_Of_Reach (Event, To.V);
       end if;
       Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
-      Coverage.Line (Shape, From, To, P.Pen_Width, P.Pen_Height);
-      P.Pen_H := To.H;
-      P.Pen_V := To.V;
-      return Rendering.Fill (P, S, Shape, (Rendering.Pattern_Paint, Rendering.Pen_Slot, P.Pen_Mode));
+      Coverage.Line (Shape, From, To, P.Port.Pen_Width, P.Port.Pen_Height);
+      P.Port.Pen_H := To.H;
+      P.Port.Pen_V := To.V;
+      return Rendering.Fill (P, S, Shape, (Rendering.Pattern_Paint, Rendering.Pen_Slot, P.Port.Pen_Mode));
    end Draw_Line;
 
    function Consume_Line
@@ -283,7 +284,7 @@ package body Pictlib.Internal.Drawing is
       S : in out Sessions.Session;
       Event : Pictures.Opcode_Event) return Results.Result
    is
-      From : Point := (H => P.Pen_H, V => P.Pen_V);
+      From : Point := (H => P.Port.Pen_H, V => P.Port.Pen_V);
       To : Point;
       Outcome : Results.Result := Results.Success;
    begin
@@ -327,8 +328,8 @@ package body Pictlib.Internal.Drawing is
             Origin : Point;
          begin
             Outcome := Read_Point (P, S, Origin);
-            P.Text_State.Origin_H := Origin.H;
-            P.Text_State.Origin_V := Origin.V;
+            P.Port.Text_State.Origin_H := Origin.H;
+            P.Port.Text_State.Origin_V := Origin.V;
          end;
       else
          --  Unsigned offsets from the previous text origin.
@@ -337,16 +338,16 @@ package body Pictlib.Internal.Drawing is
          begin
             if Event.Op in Opcodes.DH_Text | Opcodes.DHDV_Text then
                Outcome := Sessions.Read_Count_Byte (S, Offset);
-               P.Text_State.Origin_H := P.Text_State.Origin_H + Natural (Offset);
+               P.Port.Text_State.Origin_H := P.Port.Text_State.Origin_H + Natural (Offset);
             end if;
             if Results.Succeeded (Outcome) and then Event.Op in Opcodes.DV_Text | Opcodes.DHDV_Text then
                Outcome := Sessions.Read_Count_Byte (S, Offset);
-               P.Text_State.Origin_V := P.Text_State.Origin_V + Natural (Offset);
+               P.Port.Text_State.Origin_V := P.Port.Text_State.Origin_V + Natural (Offset);
             end if;
-            if Results.Succeeded (Outcome) and then not Rendering.Within_Reach (P.Text_State.Origin_H) then
-               return Out_Of_Reach (Event, P.Text_State.Origin_H);
-            elsif Results.Succeeded (Outcome) and then not Rendering.Within_Reach (P.Text_State.Origin_V) then
-               return Out_Of_Reach (Event, P.Text_State.Origin_V);
+            if Results.Succeeded (Outcome) and then not Rendering.Within_Reach (P.Port.Text_State.Origin_H) then
+               return Out_Of_Reach (Event, P.Port.Text_State.Origin_H);
+            elsif Results.Succeeded (Outcome) and then not Rendering.Within_Reach (P.Port.Text_State.Origin_V) then
+               return Out_Of_Reach (Event, P.Port.Text_State.Origin_V);
             end if;
          end;
       end if;
@@ -380,15 +381,15 @@ package body Pictlib.Internal.Drawing is
    begin
       if Event.Op in Opcodes.Background_Pixel_Pattern .. Opcodes.Fill_Pixel_Pattern then
          --  Decoded straight into the port's pattern, whose old tile goes first: a tile is held once.
-         Outcome := Patterns.Read_Pixel_Pattern (S, Event, P.Pattern_Set (Slot), Sessions.Work_Left (S), Work);
+         Outcome := Patterns.Read_Pixel_Pattern (S, Event, P.Port.Pattern_Set (Slot), Sessions.Work_Left (S), Work);
       else
-         Outcome := Patterns.Read_Bit_Pattern (S, P.Pattern_Set (Slot));
+         Outcome := Patterns.Read_Bit_Pattern (S, P.Port.Pattern_Set (Slot));
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Sessions.Charge_Work (S, Work);
       end if;
       if not Results.Succeeded (Outcome) then
-         P.Pattern_Set (Slot) := Rendering.Default_Pattern (Slot);
+         P.Port.Pattern_Set (Slot) := Rendering.Default_Pattern (Slot);
       end if;
       return Outcome;
    end Consume_Pattern;
@@ -403,18 +404,18 @@ package body Pictlib.Internal.Drawing is
    begin
       case Event.Op is
          when Opcodes.Pen_Size =>
-            Outcome := Read_Pair (S, P.Pen_Height, P.Pen_Width);
+            Outcome := Read_Pair (S, P.Port.Pen_Height, P.Port.Pen_Width);
          when Opcodes.Pen_Mode =>
             declare
                Value : Interfaces.Unsigned_16;
             begin
                Outcome := Sessions.Read_Word (S, Value);
                if Results.Succeeded (Outcome) then
-                  Outcome := Rendering.Mode (S, Event, Value, P.Pen_Mode);
+                  Outcome := Rendering.Mode (S, Event, Value, P.Port.Pen_Mode);
                end if;
             end;
          when Opcodes.Oval_Size =>
-            Outcome := Read_Pair (S, P.Oval_Height, P.Oval_Width);
+            Outcome := Read_Pair (S, P.Port.Oval_Height, P.Port.Oval_Width);
          when others =>  --  Origin: the clip region keeps its local coordinates
             declare
                Dh, Dv : Integer;
@@ -422,13 +423,13 @@ package body Pictlib.Internal.Drawing is
                --  Origin's data is dh, then dv.
                Outcome := Read_Pair (S, Dh, Dv);
                if Results.Succeeded (Outcome) then
-                  if not Rendering.Origin_Within_Reach (P.Origin_H + Dh) then
-                     return Out_Of_Reach (Event, P.Origin_H + Dh);
-                  elsif not Rendering.Origin_Within_Reach (P.Origin_V + Dv) then
-                     return Out_Of_Reach (Event, P.Origin_V + Dv);
+                  if not Rendering.Origin_Within_Reach (P.Port.Origin_H + Dh) then
+                     return Out_Of_Reach (Event, P.Port.Origin_H + Dh);
+                  elsif not Rendering.Origin_Within_Reach (P.Port.Origin_V + Dv) then
+                     return Out_Of_Reach (Event, P.Port.Origin_V + Dv);
                   end if;
-                  P.Origin_H := P.Origin_H + Dh;
-                  P.Origin_V := P.Origin_V + Dv;
+                  P.Port.Origin_H := P.Port.Origin_H + Dh;
+                  P.Port.Origin_V := P.Port.Origin_V + Dv;
                end if;
             end;
       end case;
@@ -454,24 +455,24 @@ package body Pictlib.Internal.Drawing is
                   if not Planar_Color (Value, Color) then
                      Outcome := Rendering.Unsupported (S, Event);
                   elsif Event.Op = Opcodes.Foreground_Color then
-                     P.Colors.Foreground := Color;
+                     P.Port.Colors.Foreground := Color;
                   else
-                     P.Colors.Background := Color;
+                     P.Port.Colors.Background := Color;
                   end if;
                end if;
             end;
          when Opcodes.RGB_Foreground_Color =>
-            Outcome := Sessions.Read_RGB (S, P.Colors.Foreground);
+            Outcome := Sessions.Read_RGB (S, P.Port.Colors.Foreground);
          when Opcodes.RGB_Background_Color =>
-            Outcome := Sessions.Read_RGB (S, P.Colors.Background);
+            Outcome := Sessions.Read_RGB (S, P.Port.Colors.Background);
          when Opcodes.Hilite_Color =>
-            Outcome := Sessions.Read_RGB (S, P.Colors.Highlight);
+            Outcome := Sessions.Read_RGB (S, P.Port.Colors.Highlight);
          when Opcodes.Op_Color =>
-            Outcome := Sessions.Read_RGB (S, P.Colors.Operation);
+            Outcome := Sessions.Read_RGB (S, P.Port.Colors.Operation);
          when Opcodes.Hilite_Mode =>
-            P.Hilite_Next := True;
+            P.Port.Hilite_Next := True;
          when others =>  --  DefHilite: black, so highlighting inverts black and white
-            P.Colors.Highlight := Images.Black;
+            P.Port.Colors.Highlight := Images.Black;
       end case;
       return Outcome;
    end Consume_Color;
@@ -482,7 +483,7 @@ package body Pictlib.Internal.Drawing is
       S : in out Sessions.Session;
       Event : Pictures.Opcode_Event) return Results.Result
    is
-      State : Text.Text_State renames P.Text_State;
+      State : Text.Text_State renames P.Port.Text_State;
       Outcome : Results.Result := Results.Success;
       Value : Interfaces.Unsigned_16 := 0;
    begin
@@ -567,12 +568,12 @@ package body Pictlib.Internal.Drawing is
       Handled := True;
       --  Only the opcode right after a QuickTime image is its placeholder.
       if Opcodes.Rule_For (Event.Op).Rule /= Opcodes.Bits_Data and then Event.Op /= Opcodes.Compressed_QuickTime then
-         P.Skip_Next_Bits := False;
+         P.Port.Skip_Next_Bits := False;
       end if;
       case Event.Op is
          when Opcodes.Clip =>  --  kept in local coordinates
-            Outcome := Region_Reader.Read (S, P.Clip);
-            P.Has_Clip := Results.Succeeded (Outcome);
+            Outcome := Region_Reader.Read (S, P.Port.Clip);
+            P.Port.Has_Clip := Results.Succeeded (Outcome);
          when Opcodes.Background_Pattern | Opcodes.Pen_Pattern | Opcodes.Fill_Pattern
             | Opcodes.Background_Pixel_Pattern .. Opcodes.Fill_Pixel_Pattern
          =>
@@ -607,6 +608,6 @@ package body Pictlib.Internal.Drawing is
 
    procedure Register_Font_Name (P : in out Rendering.Painter; Font : Natural; Name : String) is
    begin
-      P.Text_State.Names.Include (Fonts.Font_ID (Font), Name);
+      P.Port.Text_State.Names.Include (Fonts.Font_ID (Font), Name);
    end Register_Font_Name;
 end Pictlib.Internal.Drawing;

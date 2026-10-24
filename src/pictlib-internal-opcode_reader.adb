@@ -178,7 +178,7 @@ package body Pictlib.Internal.Opcode_Reader is
       return Sessions.Skip_Data (S, Length);
    end Consume_Length_Prefixed;
 
-   function Consume_Text (S : in out Session; Prefix : Natural) return Results.Result is
+   function Skip_Text (S : in out Session; Prefix : Natural) return Results.Result is
       Count : Byte;
       Outcome : Results.Result := Sessions.Skip_Data (S, Byte_Count (Prefix));
    begin
@@ -189,7 +189,7 @@ package body Pictlib.Internal.Opcode_Reader is
          Outcome := Sessions.Skip_Data (S, Byte_Count (Count));
       end if;
       return Outcome;
-   end Consume_Text;
+   end Skip_Text;
 
    function Consume_Data
      (S : in out Session;
@@ -232,13 +232,13 @@ package body Pictlib.Internal.Opcode_Reader is
          when Opcodes.Pixel_Pattern_Data =>
             return Skip_Pixel_Pattern (S);
          when Opcodes.Text_Data =>
-            return Consume_Text (S, Rule.Fixed_Length);
+            return Skip_Text (S, Rule.Fixed_Length);
          when Opcodes.Long_Comment_Data =>
             return Consume_Long_Comment (S, Event);
          when Opcodes.Bits_Data =>
             return Skip_Bits (S, Event);
          when Opcodes.Version_Data =>
-            return Sessions.Skip_Data (S, (if S.Version = Version_1 then 1 else 2));
+            return Sessions.Skip_Data (S, Byte_Count (Opcode_Bytes (S.Version)));
          when Opcodes.End_Of_Picture =>
             return Results.Success;
       end case;
@@ -290,7 +290,7 @@ package body Pictlib.Internal.Opcode_Reader is
       Event.Reserved := Opcodes.Is_Reserved (Op);
       Outcome := Sessions.Claim_Ordinal (S, Event.Ordinal);
       if Results.Succeeded (Outcome) then
-         S.Data_Start := Picture_Stream.Picture_Offset (S.Stream);
+         Sessions.Begin_Opcode_Data (S);
          declare
             Handled : Boolean := False;
          begin
@@ -302,7 +302,7 @@ package body Pictlib.Internal.Opcode_Reader is
                Outcome := Consume_Data (S, Event, Paint);
             end if;
          end;
-         Event.Data_Length := Picture_Stream.Picture_Offset (S.Stream) - S.Data_Start;
+         Event.Data_Length := Sessions.Opcode_Data_Length (S);
       end if;
       if not Results.Succeeded (Outcome) then
          return Sessions.Attributed (Outcome, Event);

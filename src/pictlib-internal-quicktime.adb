@@ -298,10 +298,10 @@ package body Pictlib.Internal.QuickTime is
          Bottom => Coordinate'Min (Header.Source.Bottom, Coordinate (Natural'Min (Item.Height, Largest))),
          Right => Coordinate'Min (Header.Source.Right, Coordinate (Natural'Min (Item.Width, Largest))));
       Destination : constant Regions.Area :=
-        (Top => Round_Fixed (Long_Long_Integer (Clamped.Top) * Transform (5) + Transform (8)) - P.Origin_V,
-         Left => Round_Fixed (Long_Long_Integer (Clamped.Left) * Transform (1) + Transform (7)) - P.Origin_H,
-         Bottom => Round_Fixed (Long_Long_Integer (Clamped.Bottom) * Transform (5) + Transform (8)) - P.Origin_V,
-         Right => Round_Fixed (Long_Long_Integer (Clamped.Right) * Transform (1) + Transform (7)) - P.Origin_H);
+        (Top => Round_Fixed (Long_Long_Integer (Clamped.Top) * Transform (5) + Transform (8)) - P.Port.Origin_V,
+         Left => Round_Fixed (Long_Long_Integer (Clamped.Left) * Transform (1) + Transform (7)) - P.Port.Origin_H,
+         Bottom => Round_Fixed (Long_Long_Integer (Clamped.Bottom) * Transform (5) + Transform (8)) - P.Port.Origin_V,
+         Right => Round_Fixed (Long_Long_Integer (Clamped.Right) * Transform (1) + Transform (7)) - P.Port.Origin_H);
       Source_Width : constant Long_Long_Integer := Long_Long_Integer (Geometry.Width (Clamped));
       Source_Height : constant Long_Long_Integer := Long_Long_Integer (Geometry.Height (Clamped));
       Destination_Width : constant Long_Long_Integer := Long_Long_Integer (Destination.Right - Destination.Left);
@@ -321,7 +321,7 @@ package body Pictlib.Internal.QuickTime is
       begin
          return Transfer_Modes.Compose
            (Kind, (Byte (Pixels (At_Pixel)), Byte (Pixels (At_Pixel + 1)), Byte (Pixels (At_Pixel + 2))), Under,
-            P.Colors, Colorize => False);
+            P.Port.Colors, Colorize => False);
       end Color_At;
       function Paint is new Rendering.Paint_Row (Color_At);
    begin
@@ -369,7 +369,7 @@ package body Pictlib.Internal.QuickTime is
         (Failures.In_Opcode (Event, Errors.Opcode_Length_Invalid, Length, Used + Wanted));
    begin
       --  Only an image drawn by this opcode hides the bits opcode after it.
-      P.Skip_Next_Bits := False;
+      P.Port.Skip_Next_Bits := False;
       if Length < Header_Bytes + Description_Bytes then
          return Too_Long (Header_Bytes + Description_Bytes);
       end if;
@@ -405,7 +405,7 @@ package body Pictlib.Internal.QuickTime is
                return Sessions.Fail (S, Errors.Region_Invalid, Byte_Count (Header.Mask_Size), Used - Before);
             end if;
             Has_Mask := True;
-            Regions.Translate (Mask, -P.Origin_H, -P.Origin_V);
+            Regions.Translate (Mask, -P.Port.Origin_H, -P.Port.Origin_V);
          end;
       end if;
 
@@ -456,7 +456,7 @@ package body Pictlib.Internal.QuickTime is
          Outcome := Paint_Image (P, S, Event, Header, Item, Mask, Has_Mask, Pixels);
       end if;
       Free (Pixels);
-      P.Skip_Next_Bits := Results.Succeeded (Outcome);
+      P.Port.Skip_Next_Bits := Results.Succeeded (Outcome);
       return Outcome;
    end Draw;
 end Pictlib.Internal.QuickTime;

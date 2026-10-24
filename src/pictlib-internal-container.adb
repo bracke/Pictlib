@@ -209,8 +209,9 @@ package body Pictlib.Internal.Container is
       end if;
       Info.Version := (if Detected = Detected_1 then Version_1 else Version_2);
       S.Version := Info.Version;
-      Event.Data_Length := (if Detected = Detected_1 then 1 else 2);
-      return Sessions.Attributed (Streams.Skip_Exact (S.Stream, (if Detected = Detected_1 then 2 else 4)), Event);
+      --  The opcode and its data, each Opcode_Bytes long.
+      Event.Data_Length := Byte_Count (Opcode_Bytes (Info.Version));
+      return Sessions.Attributed (Streams.Skip_Exact (S.Stream, 2 * Event.Data_Length), Event);
    end Read_Version_Opcode;
 
    --  Version 2 continues with the HeaderOp at an even offset.

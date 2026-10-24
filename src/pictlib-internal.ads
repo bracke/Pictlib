@@ -12,6 +12,11 @@ package Pictlib.Internal is
    --  Rows shorter than this are stored unpacked.
    Smallest_Packed_Row_Bytes : constant := 8;
 
+   --  Opcode bytes: an opcode is a byte in version 1 and a word after it, and so is the version opcode's data.
+   --  @param Version A picture version.
+   --  @return 1 for version 1, 2 otherwise.
+   function Opcode_Bytes (Version : PICT_Version) return Positive is (if Version = Version_1 then 1 else 2);
+
    --  The version opcode's data in version 2, and the HeaderOp version of an extended version 2 picture (-2).
    Version_2_Word : constant := 16#02FF#;
    Extended_Header_Version : constant := 16#FFFE#;

@@ -38,7 +38,7 @@ package body Pictlib.Internal.Typesetting is
       Event : Pictures.Opcode_Event;
       Characters : Streams.Byte_Array) return Results.Result
    is
-      State : Text.Text_State renames P.Text_State;
+      State : Text.Text_State renames P.Port.Text_State;
       Family : constant String :=
         (if State.Names.Contains (State.Font) then State.Names.Element (State.Font) else "");
       Path : constant String := Fonts.Resolve (P.Fonts, State.Font, Family);
@@ -105,7 +105,7 @@ package body Pictlib.Internal.Typesetting is
       Kind : Transfer_Modes.Mode_Kind;
       Size : Positive) return Results.Result
    is
-      State : Text.Text_State renames P.Text_State;
+      State : Text.Text_State renames P.Port.Text_State;
       Font : constant not null access Textrender.Renderer := Text.Renderer (P.Font_Cache, Slot);
       Style : constant Textrender.Font_Style :=
         (if Has (State.Face, Text.Italic) then Textrender.Italic else Textrender.Regular);
@@ -123,7 +123,7 @@ package body Pictlib.Internal.Typesetting is
       --  Text is a bit source: ink black, the rest white, through the text mode.
       function Through_Mode (Ink : Boolean; Under : Images.RGB_Color) return Images.RGB_Color is
         (Transfer_Modes.Compose
-           (Kind, (if Ink then Images.Black else Images.White), Under, P.Colors, Bit_Source => True));
+           (Kind, (if Ink then Images.Black else Images.White), Under, P.Port.Colors, Bit_Source => True));
 
       --  Paint the cell of a glyph drawn from the pen: the larger of its advance box and its ink.
       function Paint_Cell (Metric : Textrender.Glyph_Metric; Drawable : Boolean; Advance : Float)

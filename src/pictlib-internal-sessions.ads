@@ -16,6 +16,10 @@ with Pictlib.Streams;
 --  the budget-checked readers every opcode's data goes through, and the session's accounting: the drawing work
 --  done, the allocations admitted, and the one place each overrun is reported.
 package Pictlib.Internal.Sessions is
+   --  What a session counts, kept by this package alone: allocations, drawing work, opcodes, and where the
+   --  current opcode's data begins.
+   type Accounting is private;
+
    type Session is limited record
       Stream : Picture_Stream.Reader;
       Version : PICT_Version := Version_1;
@@ -24,17 +28,7 @@ package Pictlib.Internal.Sessions is
       Budget : Limits.Limit_Set := Limits.Default_Limits;
       Store : Metadata_Store.Store;
       Log : Diagnostics.Warning_Log;
-      --  Allocations admitted this session, never given back.
-      Total_Allocation_Bytes : Byte_Count := 0;
-      --  Drawing work done in the current render.
-      Work_Used : Pixel_Count := 0;
-      Next_Ordinal : Opcode_Ordinal := 0;
-      --  Picture offset where the current opcode's data begins.
-      Data_Start : Byte_Count := 0;
-      --  An opcode the header reader read but did not consume.
-      Has_Pending : Boolean := False;
-      Pending_Op : Opcode := 0;
-      Pending_Offset : Source_Offset := 0;
+      Counts : Accounting;
    end record;
 
    --  Clear.
@@ -138,8 +132,7 @@ package Pictlib.Internal.Sessions is
    --  Work left.
    --  @param S Session.
    --  @return The drawing work the budget still allows.
-   function Work_Left (S : Session) return Pixel_Count is
-     (S.Budget.Max_Drawing_Work - Pixel_Count'Min (S.Work_Used, S.Budget.Max_Drawing_Work));
+   function Work_Left (S : Session) return Pixel_Count;
    --  Charge work.
    --  @param S Session doing the work.
    --  @param Units Drawing work about to be done.
@@ -192,6 +185,18 @@ package Pictlib.Internal.Sessions is
    --  @param Ordinal The next opcode ordinal.
    --  @return Success, or Limit_Exceeded when the opcode count limit is reached.
    function Claim_Ordinal (S : in out Session; Ordinal : out Opcode_Ordinal) return Results.Result;
+   --  Opcodes read.
+   --  @param S Session.
+   --  @return The opcodes claimed so far: the ordinal the next one gets.
+   function Opcodes_Read (S : Session) return Opcode_Ordinal;
+
+   --  Begin opcode data: the current opcode's data, which the per-opcode budget bounds, begins here.
+   --  @param S Session positioned after an opcode.
+   procedure Begin_Opcode_Data (S : in out Session);
+   --  Opcode data length.
+   --  @param S Session.
+   --  @return The bytes of the current opcode's data read or skipped since Begin_Opcode_Data.
+   function Opcode_Data_Length (S : Session) return Byte_Count;
 
    --  Admit data.
    --  @param S Session reading an opcode's data.
@@ -263,4 +268,22 @@ package Pictlib.Internal.Sessions is
    --  @return Success (also when a lenient session drops the item with a Data_Loss warning), or the failure.
    function Retain (S : in out Session; Info : Metadata.Item_Info; Length : Byte_Count) return Results.Result;
 
+private
+   type Accounting is record
+      --  Allocations admitted this session, never given back.
+      Total_Allocation_Bytes : Byte_Count := 0;
+      --  Drawing work done in the current render.
+      Work_Used : Pixel_Count := 0;
+      Next_Ordinal : Opcode_Ordinal := 0;
+      --  Picture offset where the current opcode's data begins.
+      Data_Start : Byte_Count := 0;
+      --  An opcode the header reader read but did not consume.
+      Has_Pending : Boolean := False;
+      Pending_Op : Opcode := 0;
+      Pending_Offset : Source_Offset := 0;
+   end record;
+
+   function Work_Left (S : Session) return Pixel_Count is
+     (S.Budget.Max_Drawing_Work - Pixel_Count'Min (S.Counts.Work_Used, S.Budget.Max_Drawing_Work));
+   function Opcodes_Read (S : Session) return Opcode_Ordinal is (S.Counts.Next_Ordinal);
 end Pictlib.Internal.Sessions;

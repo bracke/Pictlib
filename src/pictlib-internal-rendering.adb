@@ -16,25 +16,7 @@ package body Pictlib.Internal.Rendering is
       Canvas.Bind (P.Machine.Target, View);
       Canvas.Fill (P.Machine.Target, Background);
       P.Window := Regions.To_Area (Frame);
-      P.Origin_H := 0;
-      P.Origin_V := 0;
-      P.Has_Clip := False;
-      P.Clip := Regions.Rectangle (P.Window);
-      P.Colors := (others => <>);
-      P.Pen_Width := 1;
-      P.Pen_Height := 1;
-      P.Pen_Mode := Transfer_Modes.Copy;
-      P.Pattern_Set := [for Slot in Pattern_Slot => Default_Pattern (Slot)];
-      P.Pen_H := 0;
-      P.Pen_V := 0;
-      P.Oval_Width := 0;
-      P.Oval_Height := 0;
-      P.Hilite_Next := False;
-      P.Skip_Next_Bits := False;
-      P.Last_Rect := (others => 0);
-      P.Last_Polygon.Clear;
-      P.Last_Region := Regions.Rectangle ((others => 0));
-      P.Text_State := (others => <>);
+      P.Port := (others => <>);
       P.Fonts := Font_Files;
       Text.Clear (P.Font_Cache);
    end Start;
@@ -81,22 +63,22 @@ package body Pictlib.Internal.Rendering is
    end Drawing_Mode;
 
    function Take_Hilite (P : in out Painter) return Boolean is
-      Hilited : constant Boolean := P.Hilite_Next;
+      Hilited : constant Boolean := P.Port.Hilite_Next;
    begin
-      P.Hilite_Next := False;
+      P.Port.Hilite_Next := False;
       return Hilited;
    end Take_Hilite;
 
    function Clip_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result is
       Work : Pixel_Count;
    begin
-      if not P.Has_Clip then
+      if not P.Port.Has_Clip then
          return Results.Success;
       end if;
       --  The clip is local: picture row Y is its row Y + origin, and its columns lie origin to the right.
-      Regions.Row_Spans (P.Clip, Y + P.Origin_V, P.Machine.Clip_Spans, Work, Sessions.Work_Left (S));
+      Regions.Row_Spans (P.Port.Clip, Y + P.Port.Origin_V, P.Machine.Clip_Spans, Work, Sessions.Work_Left (S));
       for Item of P.Machine.Clip_Spans loop
-         Item := (Item.Left - P.Origin_H, Item.Right - P.Origin_H);
+         Item := (Item.Left - P.Port.Origin_H, Item.Right - P.Port.Origin_H);
       end loop;
       Regions.Intersect (P.Machine.Row_Spans, P.Machine.Clip_Spans, P.Machine.Scratch);
       P.Machine.Row_Spans.Move (P.Machine.Scratch);
@@ -197,7 +179,7 @@ package body Pictlib.Internal.Rendering is
       Outcome : Results.Result :=
         (if Coverage.Exhausted (Shape) then Sessions.Over_Work (S, Coverage.Work (Shape))
          else Sessions.Charge_Work (S, Checked_Arithmetic.Saturating_Add (Coverage.Work (Shape), Walked)));
-      Source : Patterns.Pattern renames P.Pattern_Set (How.Source);
+      Source : Patterns.Pattern renames P.Port.Pattern_Set (How.Source);
       Colorize : constant Boolean := Patterns.Kind (Source) = Patterns.Bit_Pattern;
       Kind : constant Transfer_Modes.Mode_Kind := (if Take_Hilite (P) then Transfer_Modes.Hilite else How.Mode);
    begin
@@ -214,12 +196,12 @@ package body Pictlib.Internal.Rendering is
          function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
            (if How.Kind = Invert_Paint then Transfer_Modes.Invert (Under)
             else Transfer_Modes.Compose
-                   (Kind, Patterns.Sample (Source, X, Y), Under, P.Colors, Colorize, Bit_Source => Colorize));
+                   (Kind, Patterns.Sample (Source, X, Y), Under, P.Port.Colors, Colorize, Bit_Source => Colorize));
          function Paint is new Paint_Row (Color_At);
       begin
          --  A uniform pattern whose result does not depend on the pixels under it paints one color, or nothing.
          if How.Kind = Pattern_Paint and then Patterns.Uniform (Source, Sample) then
-            Effect := Transfer_Modes.Effect (Kind, Sample, P.Colors, Colorize, Color);
+            Effect := Transfer_Modes.Effect (Kind, Sample, P.Port.Colors, Colorize, Color);
          end if;
          if Effect = Transfer_Modes.Unchanged then
             return Outcome;
@@ -273,7 +255,7 @@ package body Pictlib.Internal.Rendering is
            Integer (Source.Left) + Sampled (X - Destination.Left, Source_Width, Destination_Width);
       begin
          return Transfer_Modes.Compose
-           (Kind, Pixmaps.Pixel (Decoder, Source_X - Integer (Header.Bounds.Left)), Under, P.Colors);
+           (Kind, Pixmaps.Pixel (Decoder, Source_X - Integer (Header.Bounds.Left)), Under, P.Port.Colors);
       end Color_At;
       function Paint is new Paint_Row (Color_At);
    begin
@@ -345,8 +327,8 @@ package body Pictlib.Internal.Rendering is
    begin
       --  A QuickTime image's placeholder is skipped like any undrawn copy: its rows are read whatever the image
       --  cost.
-      if P.Skip_Next_Bits then
-         P.Skip_Next_Bits := False;
+      if P.Port.Skip_Next_Bits then
+         P.Port.Skip_Next_Bits := False;
          return Skip_Copy (S, Header);
       end if;
       Outcome := Drawing_Mode (S, Event, Header.Mode, Take_Hilite (P), Kind);
@@ -360,7 +342,7 @@ package body Pictlib.Internal.Rendering is
          return Skip_Copy (S, Header);
       end if;
       if Header.Masked then
-         Regions.Translate (Mask, -P.Origin_H, -P.Origin_V);
+         Regions.Translate (Mask, -P.Port.Origin_H, -P.Port.Origin_V);
       end if;
 
       Outcome := Pixmaps.Start (S, Decoder, Header);
