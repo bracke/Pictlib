@@ -2,7 +2,8 @@ with Ada.Containers.Vectors;
 with Pictlib.Internal.Regions;
 
 --  The pixels a shape covers, as sorted spans per row, kept only inside a window (the canvas, in picture
---  coordinates). A pixel x, y is the unit square from (x, y) to (x + 1, y + 1); shapes follow QuickDraw's
+--  coordinates) and only for the rows the shape reaches, so an empty or small shape costs little whatever the
+--  window. A pixel x, y is the unit square from (x, y) to (x + 1, y + 1); shapes follow QuickDraw's
 --  rules where those are documented and the rules in the specification where they are not.
 package Pictlib.Internal.Coverage is
    subtype Area is Regions.Area;
@@ -33,6 +34,14 @@ package Pictlib.Internal.Coverage is
    --  @return The row's spans, sorted and disjoint; none once the shape is exhausted, so an incomplete shape
    --  never paints.
    function Row (Item : Shape; Y : Integer) return Span_List;
+   --  First row.
+   --  @param Item Shape.
+   --  @return The first row it holds; above Last_Row when it holds none.
+   function First_Row (Item : Shape) return Integer;
+   --  Last row.
+   --  @param Item Shape.
+   --  @return The last row it holds.
+   function Last_Row (Item : Shape) return Integer;
    --  Work.
    --  @param Item Shape.
    --  @return Units of work building it took, for the drawing budget.
@@ -72,6 +81,8 @@ private
 
    type Shape is record
       Window : Area;
+      --  Rows Top .. Top + Rows.Length - 1, each charged as it is added.
+      Top : Integer := 0;
       Rows : Row_Vectors.Vector;
       Units : Pixel_Count := 0;
       Allowance : Pixel_Count := Pixel_Count'Last;

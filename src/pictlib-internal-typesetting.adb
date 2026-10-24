@@ -71,6 +71,14 @@ package body Pictlib.Internal.Typesetting is
       if Text.Atlas_Bytes (Size) > S.Budget.Max_Allocation_Bytes then
          return Sessions.Over_Limit (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Text.Atlas_Bytes (Size));
       end if;
+      --  Loading a font is drawing work, charged before it is done, so a picture that keeps evicting fonts
+      --  from the cache runs out of budget.
+      if not Text.Cached (P.Font_Cache, Path, Size) then
+         Outcome := Rendering.Charge (P, S, Text.Load_Work (Size));
+         if not Results.Succeeded (Outcome) then
+            return Outcome;
+         end if;
+      end if;
       Outcome := Rendering.Mode (S, Event, State.Mode, Kind);
       if not Results.Succeeded (Outcome) then
          return Outcome;
@@ -116,6 +124,11 @@ package body Pictlib.Internal.Typesetting is
          Missing_Reported : Boolean := False;
       begin
          for Item of Characters loop
+            exit when not Results.Succeeded (Outcome);
+            --  Every glyph request is drawing work, wherever the character lands.
+            if Item >= Space then
+               Outcome := Rendering.Charge (P, S, Text.Glyph_Work (Size));
+            end if;
             exit when not Results.Succeeded (Outcome);
             if Item >= Space then
                declare

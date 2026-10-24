@@ -6,6 +6,7 @@ with Pictlib.Decoding;
 with Pictlib.Errors;
 with Pictlib.Fonts;
 with Pictlib.Images;
+with Pictlib.Limits;
 with Pictlib.Results;
 with Pictlib.Streams;
 with Pictlib_Testing.Builders;
@@ -176,6 +177,7 @@ package body Pictlib_Testing.Test_Text is
    procedure Faces (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Modes_And_Colors (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Spacing_And_Clipping (T : in out AUnit.Test_Cases.Test_Case'Class);
+   procedure Text_Work (T : in out AUnit.Test_Cases.Test_Case'Class);
 
    overriding function Name (T : Test) return AUnit.Message_String is
       pragma Unreferenced (T);
@@ -194,6 +196,7 @@ package body Pictlib_Testing.Test_Text is
       Register_Routine (T, Faces'Access, "text.faces");
       Register_Routine (T, Modes_And_Colors'Access, "text.modes_and_colors");
       Register_Routine (T, Spacing_And_Clipping'Access, "text.spacing_and_clipping");
+      Register_Routine (T, Text_Work'Access, "text.work");
    end Register_Tests;
 
    procedure Plain_Text (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -337,4 +340,75 @@ package body Pictlib_Testing.Test_Text is
       Ink (Spaced_Out, Sans, 12, 2.0, 15, Points ("a b"), Pen_End, Extra => 3.0, Space_Extra => 4.0);
       Canvases.Expect_Raster (Spaced, Width, Height, Image (Spaced_Out), "ChExtra and SpExtra", With_Fonts);
    end Spacing_And_Clipping;
+
+   --  Text is drawing work wherever it lands: each font loaded, each glyph asked for. Everything here is drawn
+   --  below the frame, so only the charges stop it.
+   procedure Text_Work (T : in out AUnit.Test_Cases.Test_Case'Class) is
+      pragma Unreferenced (T);
+      use type Pictlib.Pixel_Count;
+      use type Pictlib.Limit_Kind;
+      Big_Font : aliased constant Bytes := Pic (Size_Op (500) & Long_Text (500, 2, "A"));
+      Many_Glyphs : aliased constant Bytes := Pic (Size_Op (12) & Long_Text (500, 2, [1 .. 255 => 'A']));
+      One_Glyph : aliased constant Bytes := Pic (Size_Op (12) & Long_Text (500, 2, "A"));
+
+      --  Nine sizes in turn, Rounds times: more fonts than the cache holds, so every one is loaded again.
+      function Sizes (Rounds : Positive) return Bytes is
+         One : constant Bytes :=
+           Size_Op (12) & Long_Text (500, 2, "A") & Size_Op (13) & Long_Text (500, 2, "A")
+           & Size_Op (14) & Long_Text (500, 2, "A") & Size_Op (15) & Long_Text (500, 2, "A")
+           & Size_Op (16) & Long_Text (500, 2, "A") & Size_Op (17) & Long_Text (500, 2, "A")
+           & Size_Op (18) & Long_Text (500, 2, "A") & Size_Op (19) & Long_Text (500, 2, "A")
+           & Size_Op (20) & Long_Text (500, 2, "A");
+      begin
+         return (if Rounds = 1 then One else One & Sizes (Rounds - 1));
+      end Sizes;
+
+      Once : aliased constant Bytes := Pic (Sizes (1));
+      Twice : aliased constant Bytes := Pic (Sizes (2));
+      Storage : aliased Bytes := [1 .. 3 * Width * Height => 0];
+      Decoder : Pictlib.Decoding.Decoder;
+      Outcome : Pictlib.Results.Result;
+      Options : constant Pictlib.Decoding.Options := With_Fonts;
+      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+
+      function Renders (Input : aliased Bytes; Work : Pictlib.Pixel_Count) return Boolean is
+      begin
+         Budget.Max_Drawing_Work := Work;
+         Canvases.Render (Input, Decoder, Canvases.View (Storage'Access, Width, Height), Outcome, Options, Budget);
+         Assert (Pictlib.Results.Succeeded (Outcome) or else Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded,
+                 "text work: failed with " & Outcome.First_Error.Code'Image);
+         return Pictlib.Results.Succeeded (Outcome);
+      end Renders;
+
+      --  The least drawing budget Input renders under.
+      function Least (Input : aliased Bytes) return Pictlib.Pixel_Count is
+         Low : Pictlib.Pixel_Count := 0;
+         High : Pictlib.Pixel_Count := 2 ** 30;
+         Middle : Pictlib.Pixel_Count;
+      begin
+         while Low < High loop
+            Middle := (Low + High) / 2;
+            if Renders (Input, Middle) then
+               High := Middle;
+            else
+               Low := Middle + 1;
+            end if;
+         end loop;
+         return High;
+      end Least;
+   begin
+      --  A size 500 font costs its 16 MiB atlas before it is loaded, so a small budget never loads it.
+      Assert (not Renders (Big_Font, 10_000_000), "a size 500 font was loaded on a budget below its atlas");
+      Assert (Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit, "a size 500 font: wrong limit");
+      --  255 glyphs cost more than one.
+      Assert (Least (Many_Glyphs) > Least (One_Glyph) + 254,
+              "glyphs drawn below the frame cost nothing");
+      --  Reloading an evicted font costs as much as loading it the first time.
+      declare
+         First_Round : constant Pictlib.Pixel_Count := Least (Once);
+      begin
+         Assert (First_Round > 0 and then Least (Twice) >= 2 * First_Round - First_Round / 10,
+                 "fonts evicted and loaded again cost nothing");
+      end;
+   end Text_Work;
 end Pictlib_Testing.Test_Text;

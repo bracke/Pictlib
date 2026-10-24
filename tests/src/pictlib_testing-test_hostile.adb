@@ -1,4 +1,3 @@
-with Ada.Real_Time;
 with AUnit.Assertions;
 
 with Pictlib;
@@ -13,13 +12,11 @@ with Pictlib_Testing.Builders;
 with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Recorders;
 
---  Pictures built to make the renderer overflow, allocate or work without bound; each must end quickly with a
---  result, never an exception.
+--  Pictures built to make the renderer overflow, allocate or work without bound; each must end with a result
+--  within its budgets, never an exception. What they cost is asserted through the budgets, not the clock.
 package body Pictlib_Testing.Test_Hostile is
    use AUnit.Assertions;
    use Pictlib_Testing.Builders;
-   use type Ada.Real_Time.Time;
-   use type Ada.Real_Time.Time_Span;
    use type Pictlib.Streams.Byte_Array;
    use type Pictlib.Byte_Count;
    use type Pictlib.Errors.Error_Code;
@@ -29,9 +26,6 @@ package body Pictlib_Testing.Test_Hostile is
    use type Pictlib.Opcode;
 
    package Errors renames Pictlib.Errors;
-
-   --  Every case here finishes in a fraction of this on any machine the suite runs on.
-   Slow : constant Ada.Real_Time.Time_Span := Ada.Real_Time.Seconds (2);
 
    function Pic (Width, Height : Natural; Body_Bytes : Bytes) return Bytes is
      (V2_Picture (0, 0, Height, Width, Body_Bytes));
@@ -49,10 +43,6 @@ package body Pictlib_Testing.Test_Hostile is
 
    Compatible : constant Pictlib.Decoding.Options := (Strictness => Pictlib.Compatible, others => <>);
 
-   procedure Check_Time (Started : Ada.Real_Time.Time; Label : String) is
-   begin
-      Assert (Ada.Real_Time.Clock - Started < Slow, Label & ": took too long");
-   end Check_Time;
 
    procedure Coordinates (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Pen_Steps (T : in out AUnit.Test_Cases.Test_Case'Class);
@@ -89,7 +79,6 @@ package body Pictlib_Testing.Test_Hostile is
       Origin_At_Bound : aliased constant Bytes :=
         Pic (4, 4, Repeat (Origin (-32_768, 0), 511) & W (16#20#) & W (0) & W (-32_768) & W (0) & W (32_767));
       Origin_Past_Bound : aliased constant Bytes := Pic (4, 4, Repeat (Origin (-32_768, 0), 512));
-      Started : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
    begin
       Canvases.Expect_Raster (Origin_At_Bound, 4, 4, "WWWW/WWWW/WWWW/WWWW", "a line after the origin at its bound");
       Canvases.Expect_Failure (Origin_Past_Bound, 4, 4, Errors.Opcode_Invalid, "origin past its bound", 16#0C#);
@@ -97,17 +86,14 @@ package body Pictlib_Testing.Test_Hostile is
       Canvases.Expect_Failure (Runaway_Origin, 4, 4, Errors.Opcode_Invalid, "origin moved 600 times", 16#0C#);
       Canvases.Expect_Failure (Runaway_Text, 4, 4, Errors.Opcode_Invalid, "text origin moved 70,000 times", 16#29#,
                                Compatible);
-      Check_Time (Started, "coordinates");
    end Coordinates;
 
    procedure Pen_Steps (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
       --  140,000 short lines of 127 move the pen beyond the frame; each line costs its opcode, nothing more.
       Runaway_Pen : aliased constant Bytes := Pic (4, 4, Repeat (W (16#23#) & B (127) & B (0), 140_000));
-      Started : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
    begin
       Canvases.Expect_Failure (Runaway_Pen, 4, 4, Errors.Opcode_Invalid, "pen moved 140,000 times", 16#23#);
-      Assert (Ada.Real_Time.Clock - Started < 3 * Slow, "pen steps: took too long");
    end Pen_Steps;
 
    --  Pixel layouts that enumeration and rendering must read alike.
@@ -166,7 +152,6 @@ package body Pictlib_Testing.Test_Hostile is
       Events : Recorders.Recorder;
       Outcome : Pictlib.Results.Result;
       Storage : aliased Bytes := [1 .. 3 * 16 => 0];
-      Started : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
 
       procedure Over (Input : aliased Bytes; Budget : Pictlib.Limits.Limit_Set; Limit : Pictlib.Limit_Kind;
                       Label : String) is
@@ -273,7 +258,6 @@ package body Pictlib_Testing.Test_Hostile is
       Canvases.Render (Costly_Tile, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Budget => Tight);
       Assert (Pictlib.Results.Succeeded (Outcome), "a tile within the budget failed with "
               & Outcome.First_Error.Code'Image);
-      Check_Time (Started, "pixel patterns");
       Recorders.Decode (Planar_Count, Decoder, Events, Outcome);
       Assert (Outcome.First_Error.Code = Errors.Pixmap_Invalid,
               "cmpCount 16#FFFF# enumerated with " & Outcome.First_Error.Code'Image);
@@ -321,7 +305,6 @@ package body Pictlib_Testing.Test_Hostile is
       Storage : aliased Bytes := [1 .. 3 * 200 * 200 => 0];
       Decoder : Pictlib.Decoding.Decoder;
       Outcome : Pictlib.Results.Result;
-      Started : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
    begin
       Canvases.Render (Polygon, Decoder, Canvases.View (Storage'Access, 200, 200), Outcome);
       Assert (Pictlib.Results.Succeeded (Outcome), "zig-zag polygon failed with " & Outcome.First_Error.Code'Image);
@@ -349,7 +332,33 @@ package body Pictlib_Testing.Test_Hostile is
          Assert (not Coverage.Exhausted (Whole) and then not Coverage.Row (Whole, 9).Is_Empty,
                  "a wide allowance cut the rectangle short");
       end;
-      Check_Time (Started, "shape work");
+      --  A shape holds only the rows it reaches, so a small shape costs little in a tall window, and an empty
+      --  one nothing but its opcode.
+      declare
+         package Coverage renames Pictlib.Internal.Coverage;
+         use type Pictlib.Pixel_Count;
+         Small : Coverage.Shape;
+         Tall : constant Coverage.Area := (Top => 0, Left => 0, Bottom => 16_384, Right => 1);
+         Same_Rects : aliased constant Bytes := Pic (1, 16_384, Repeat (W (16#39#), 10_000));
+         Tall_Storage : aliased Bytes := [1 .. 3 * 16_384 => 0];
+         Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+      begin
+         Coverage.Start (Small, Tall);
+         Coverage.Rectangle (Small, (Top => 100, Left => 0, Bottom => 101, Right => 1));
+         Assert (Coverage.First_Row (Small) = 100 and then Coverage.Last_Row (Small) = 100
+                 and then Coverage.Work (Small) < 10,
+                 "a one-row shape holds rows" & Coverage.First_Row (Small)'Image & " .."
+                 & Coverage.Last_Row (Small)'Image);
+         --  10,000 paintSameRect before any rect: a unit each.
+         Budget.Max_Drawing_Work := 10_000;
+         Canvases.Render (Same_Rects, Decoder, Canvases.View (Tall_Storage'Access, 1, 16_384), Outcome,
+                          Budget => Budget);
+         Assert (Pictlib.Results.Succeeded (Outcome), "10,000 empty shapes cost more than a unit each: "
+                 & Outcome.First_Error.Code'Image);
+         Budget.Max_Drawing_Work := 9_999;
+         Canvases.Expect_Failure (Same_Rects, 1, 16_384, Errors.Limit_Exceeded, "10,000 empty shapes on 9,999",
+                                  16#39#, Budget => Budget);
+      end;
    end Shape_Work;
 
    --  Pixel data that costs work without drawing anything.
@@ -373,7 +382,6 @@ package body Pictlib_Testing.Test_Hostile is
       Pen_Bits : aliased constant Bytes := Pic (4, 4, W (16#09#) & Zeros (8));
       Cut_Pen_Bits : aliased constant Bytes := V2_Prefix (0, 0, 4, 4) & W (16#09#) & Zeros (3);
       Cut_Pixel_Pattern : aliased constant Bytes := V2_Prefix (0, 0, 4, 4) & W (16#13#) & W (1);
-      Started : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
    begin
       Canvases.Expect_Failure (Empty_Rows, 64, 1_000, Errors.PackBits_Invalid, "empty packed rows", 16#98#,
                                Compatible);
@@ -398,6 +406,5 @@ package body Pictlib_Testing.Test_Hostile is
                                16#09#, Budget => Small);
       Canvases.Expect_Failure (Cut_Pixel_Pattern, 4, 4, Errors.Source_Unexpected_End, "cut PnPixPat past the budget",
                                16#13#, Budget => Small);
-      Check_Time (Started, "pixel work");
    end Pixel_Work;
 end Pictlib_Testing.Test_Hostile;

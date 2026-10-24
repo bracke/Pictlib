@@ -57,23 +57,24 @@ package body Pictlib.Internal.Coverage is
       return Guess;
    end Square_Root;
 
-   function Height_Of (Item : Shape) return Natural is
-     (Natural'Max (0, Item.Window.Bottom - Item.Window.Top));
-
    procedure Start (Item : out Shape; Window : Area; Allowance : Pixel_Count := Pixel_Count'Last) is
    begin
       Item.Window := Window;
       Item.Units := 0;
       Item.Allowance := Allowance;
       Item.Spent := False;
+      Item.Top := Window.Top;
       Item.Rows.Clear;
-      Item.Rows.Set_Length (Ada.Containers.Count_Type (Natural'Max (0, Window.Bottom - Window.Top)));
    end Start;
 
    function Window_Of (Item : Shape) return Area is (Item.Window);
 
+   function First_Row (Item : Shape) return Integer is (Item.Top);
+
+   function Last_Row (Item : Shape) return Integer is (Item.Top + Natural (Item.Rows.Length) - 1);
+
    function Row (Item : Shape; Y : Integer) return Span_List is
-     (if not Item.Spent and then Y in Item.Window.Top .. Item.Window.Bottom - 1 then Item.Rows (Y - Item.Window.Top)
+     (if not Item.Spent and then Y in First_Row (Item) .. Last_Row (Item) then Item.Rows (Y - Item.Top)
       else Regions.Span_Vectors.Empty_Vector);
 
    function Work (Item : Shape) return Pixel_Count is (Item.Units);
@@ -96,6 +97,25 @@ package body Pictlib.Internal.Coverage is
       Add_Work (Item, Pixel_Count (Units));
    end Charge;
 
+   --  Hold row Y, inside the window, charging a unit for every row added. Builders mostly go down the rows, so
+   --  rows are appended; a row above the first moves those held, which is charged too.
+   procedure Hold (Item : in out Shape; Y : Integer) is
+      Empty : Span_List;
+   begin
+      if Item.Rows.Is_Empty then
+         Item.Top := Y;
+         Item.Rows.Append (Empty);
+         Charge (Item, 1);
+      elsif Y > Last_Row (Item) then
+         Charge (Item, Y - Last_Row (Item));
+         Item.Rows.Append (Empty, Ada.Containers.Count_Type (Y - Last_Row (Item)));
+      elsif Y < Item.Top then
+         Charge (Item, Item.Top - Y + Natural (Item.Rows.Length));
+         Item.Rows.Prepend (Empty, Ada.Containers.Count_Type (Item.Top - Y));
+         Item.Top := Y;
+      end if;
+   end Hold;
+
    --  Add pixels Left .. Right - 1 of row Y, merging with what the row holds.
    procedure Add (Item : in out Shape; Y, Left, Right : Integer) is
       First : constant Integer := Integer'Max (Left, Item.Window.Left);
@@ -104,9 +124,10 @@ package body Pictlib.Internal.Coverage is
       if Y not in Item.Window.Top .. Item.Window.Bottom - 1 or else First >= Last then
          return;
       end if;
+      Hold (Item, Y);
       --  Spans mostly arrive left to right: append, or widen the last span, in place.
       declare
-         Row : Span_List renames Item.Rows.Reference (Y - Item.Window.Top).Element.all;
+         Row : Span_List renames Item.Rows.Reference (Y - Item.Top).Element.all;
       begin
          Charge (Item, 1);
          if Row.Is_Empty or else Row.Last_Element.Right < First then
@@ -119,7 +140,7 @@ package body Pictlib.Internal.Coverage is
          end if;
       end;
       declare
-         Old : constant Span_List := Item.Rows (Y - Item.Window.Top);
+         Old : constant Span_List := Item.Rows (Y - Item.Top);
          Merged : Span_List;
          Pending : Regions.Span := (First, Last);
          Placed : Boolean := False;
@@ -140,7 +161,7 @@ package body Pictlib.Internal.Coverage is
          if not Placed then
             Merged.Append (Pending);
          end if;
-         Item.Rows.Replace_Element (Y - Item.Window.Top, Merged);
+         Item.Rows.Replace_Element (Y - Item.Top, Merged);
          Charge (Item, Natural (Merged.Length));
       end;
    end Add;
@@ -272,10 +293,10 @@ package body Pictlib.Internal.Coverage is
             return not (F2 > 0 and then F1 < 0);
          end Inside;
       begin
-         for Index in 0 .. Height_Of (Item) - 1 loop
+         for Index in 0 .. Natural (Item.Rows.Length) - 1 loop
             exit when Item.Spent;
             declare
-               Y : constant Integer := Item.Window.Top + Index;
+               Y : constant Integer := Item.Top + Index;
                Old : constant Span_List := Item.Rows (Index);
                Kept : Span_List;
             begin
@@ -342,8 +363,14 @@ package body Pictlib.Internal.Coverage is
       end loop;
       Charge (Item, Count);
       Edge_Sorting.Sort (Edges);
+      if Edges.Is_Empty then
+         return;
+      end if;
 
-      for Y in Item.Window.Top .. Item.Window.Bottom - 1 loop
+      --  From the first row an edge crosses, not the window's top.
+      for Y in Integer (Long_Long_Integer'Max (Long_Long_Integer (Item.Window.Top), Edges.First_Element.First))
+        .. Item.Window.Bottom - 1
+      loop
          exit when Item.Spent;
          declare
             Row : constant Long_Long_Integer := Long_Long_Integer (Y);
@@ -557,12 +584,12 @@ package body Pictlib.Internal.Coverage is
       if Item.Spent then
          return;
       end if;
-      for Index in 0 .. Height_Of (Item) - 1 loop
+      for Index in 0 .. Natural (Item.Rows.Length) - 1 loop
          exit when Item.Spent;
          declare
             Kept : Span_List := Item.Rows (Index);
          begin
-            for Cut of Other.Rows (Index) loop
+            for Cut of Row (Other, Item.Top + Index) loop
                declare
                   Next : Span_List;
                begin

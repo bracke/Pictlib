@@ -18,7 +18,7 @@ bounds a read, a skip, an allocation or a loop.
 
 | `Max_Canvas_Pixels` | the frame, when `Render` starts | `Limit_Exceeded` |
 | `Max_Output_Bytes` | the view's accessible bytes, when `Render` starts | `Limit_Exceeded` |
-| `Max_Drawing_Work` | every pixel painted, every pixel converted from a copied row or a PixPat, every row a copy skips, every pattern, every unit of region, polygon, line and shape-building work, checked while a shape is built | `Limit_Exceeded` |
+| `Max_Drawing_Work` | every shape opcode and every row a shape holds or painting walks, every pixel painted, every pixel converted from a copied row or a PixPat, every row a copy skips, every pattern, every font loaded and every glyph asked for (wherever it lands), every unit of region, polygon, line and shape-building work, checked while a shape is built | `Limit_Exceeded` |
 | `Max_Polygon_Points` | each polygon, also while rendering | `Limit_Exceeded` |
 | `Max_Allocation_Bytes` | each opcode's row buffers, each font's glyph atlas; a PixPat's tile and row buffers together, set aside only once the drawing budget admits decoding it; the port's old tile is released first | `Limit_Exceeded` |
 
@@ -40,6 +40,16 @@ picture, measured by a dry run before anything is written.
 The renderer draws into the caller's view and allocates no canvas, so there is
 no canvas byte limit: `Max_Output_Bytes` bounds the view.
 
+## What a unit of drawing work costs
+
+A unit is meant to be about one pixel's work. Measured, it is between about
+50 and 150 ns: a font load is charged its atlas bytes plus 65 536, a glyph
+request 16 units for each pixel of its cell, as rasterizing samples it. The
+default `Max_Drawing_Work` of 2^30 is about four paints of the largest
+default canvas and bounds a hostile picture to a minute or two of work;
+callers that render very large pictures raise it, callers that need a tighter
+bound lower it.
+
 ## Fuzzing and the real-world corpus
 
 `pictlib_fuzz` mutates the fixture pictures and fresh encoder output and runs
@@ -49,8 +59,11 @@ work, 64 MiB of allocation. Besides flipping, replacing, truncating, deleting
 and inserting bytes, it plants opcodes, writes extreme points (±32 768) and
 repeats short chunks up to 64 KiB, as runaway origins, pens and text do.
 `hostile.*` in the AUnit suite holds the cases that once overflowed or
-worked without bound. Any exception, or any input taking more than two
-seconds, is saved for replay and fails the run. `pictlib_real_world` holds
+worked without bound; they assert what work costs through the budgets, never
+the clock. Any exception, or any input taking more than a minute, is saved for
+replay and fails the run; an input taking more than two seconds is saved and
+reported, since a loaded machine can be that slow. Seeds are taken in
+file-name order, so a run's arguments reproduce it on any machine. `pictlib_real_world` holds
 LibreOffice's PICT filter test files, CVE reproductions among them, to their
 recorded outcomes.
 

@@ -12,7 +12,7 @@ package Pictlib.Limits is
       Max_Opcode_Bytes : Byte_Count := 268_435_456;
       Max_Region_Bytes : Byte_Count := 16 * 1024 * 1024;
       Max_Polygon_Points : Natural := 1_048_576;
-      Max_Drawing_Work : Pixel_Count := 2 ** 34;
+      Max_Drawing_Work : Pixel_Count := 2 ** 30;
       Max_Retained_Metadata_Bytes : Byte_Count := 64 * 1024 * 1024;
       Max_Metadata_Items : Natural := 65_536;
       Max_Allocation_Bytes : Byte_Count := 1_073_741_824;

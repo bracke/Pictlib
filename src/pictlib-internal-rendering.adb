@@ -120,10 +120,14 @@ package body Pictlib.Internal.Rendering is
       Shape : Coverage.Shape;
       How : Paint) return Results.Result
    is
-      --  A shape that spent its allowance is over the limit, whatever allowance it was built with.
+      --  Building the shape, a unit for the opcode and one for every row painting walks. A shape that spent its
+      --  allowance is over the limit, whatever allowance it was built with.
+      Walked : constant Pixel_Count :=
+        1 + Pixel_Count (Integer'Max (0, Coverage.Last_Row (Shape) - Coverage.First_Row (Shape) + 1));
       Outcome : Results.Result :=
         (if Coverage.Exhausted (Shape) then Over_Budget (P, S, Coverage.Work (Shape))
-         else Charge (P, S, Coverage.Work (Shape)));
+         elsif Coverage.Work (Shape) > Pixel_Count'Last - Walked then Over_Budget (P, S, Pixel_Count'Last)
+         else Charge (P, S, Coverage.Work (Shape) + Walked));
       Source : Patterns.Pattern renames P.Pattern_Set (How.Source);
       Colorize : constant Boolean := Patterns.Kind (Source) = Patterns.Bit_Pattern;
       Kind : constant Transfer_Modes.Mode_Kind :=
@@ -143,7 +147,7 @@ package body Pictlib.Internal.Rendering is
             if Effect = Transfer_Modes.Unchanged then
                return Outcome;
             elsif Effect = Transfer_Modes.Constant_Color then
-               for Y in P.Window.Top .. P.Window.Bottom - 1 loop
+               for Y in Coverage.First_Row (Shape) .. Coverage.Last_Row (Shape) loop
                   exit when not Results.Succeeded (Outcome);
                   P.Row_Spans := Coverage.Row (Shape, Y);
                   if not P.Row_Spans.Is_Empty then
@@ -163,7 +167,8 @@ package body Pictlib.Internal.Rendering is
             end if;
          end;
       end if;
-      for Y in P.Window.Top .. P.Window.Bottom - 1 loop
+      --  Only the rows the shape holds.
+      for Y in Coverage.First_Row (Shape) .. Coverage.Last_Row (Shape) loop
          exit when not Results.Succeeded (Outcome);
          P.Row_Spans := Coverage.Row (Shape, Y);
          if not P.Row_Spans.Is_Empty then

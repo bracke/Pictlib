@@ -55,6 +55,12 @@ package Pictlib.Internal.Text is
    --  @return Textrender's status of loading the font, Success when it was loaded already.
    function Acquire (Cache : in out Font_Cache; Path : String; Size : Positive; Slot : out Positive)
      return Textrender.Status_Code;
+   --  Cached.
+   --  @param Cache Cache of loaded fonts.
+   --  @param Path TrueType file.
+   --  @param Size Pixel size.
+   --  @return True when Acquire would find the font loaded and load nothing.
+   function Cached (Cache : Font_Cache; Path : String; Size : Positive) return Boolean;
    --  Renderer.
    --  @param Cache Cache.
    --  @param Slot A slot Acquire returned.
@@ -69,6 +75,16 @@ package Pictlib.Internal.Text is
    --  @param Size Pixel size.
    --  @return Bytes of the square alpha atlas a font of that size is loaded with.
    function Atlas_Bytes (Size : Positive) return Byte_Count;
+
+   --  Drawing work of loading a font: clearing its atlas, plus a fixed part for reading and parsing the file.
+   --  @param Size Pixel size.
+   --  @return The units to charge before a font is loaded.
+   function Load_Work (Size : Positive) return Pixel_Count;
+
+   --  Drawing work of one glyph request: rasterizing at most a cell, sampled 16 times a pixel, as measured.
+   --  @param Size Pixel size.
+   --  @return The units to charge before each character is looked up, drawn or not.
+   function Glyph_Work (Size : Positive) return Pixel_Count;
 
 private
    type Textrender_Guard is new Ada.Finalization.Limited_Controlled with record

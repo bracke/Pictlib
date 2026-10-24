@@ -63,6 +63,14 @@ package body Pictlib.Internal.Text is
 
    function Atlas_Bytes (Size : Positive) return Byte_Count is (Byte_Count (Atlas_Side (Size)) ** 2);
 
+   function Load_Work (Size : Positive) return Pixel_Count is (Pixel_Count (Atlas_Bytes (Size)) + 65_536);
+
+   function Glyph_Work (Size : Positive) return Pixel_Count is (16 * Pixel_Count (Cell (Size)) ** 2);
+
+   function Cached (Cache : Font_Cache; Path : String; Size : Positive) return Boolean is
+     (for some Item of Cache.Items =>
+        Item.Used and then Ada.Strings.Unbounded.To_String (Item.Path) = Path and then Item.Size = Size);
+
    function Acquire (Cache : in out Font_Cache; Path : String; Size : Positive; Slot : out Positive)
      return Textrender.Status_Code
    is

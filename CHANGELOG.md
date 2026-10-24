@@ -2,6 +2,18 @@
 
 ## 0.1.0-dev
 
+- Fixes from the full-project review, part 1: the drawing budget now bounds
+  shapes and text. A shape holds only the rows it reaches, each charged as it
+  is added, and painting walks only those rows, charging each and a unit for
+  the opcode, where every shape used to cost a row for every canvas row
+  uncharged (10 000 empty shapes on a 16 384-row frame took a minute; now
+  milliseconds). Text charges every font load (its atlas bytes plus 65 536)
+  before loading and every glyph request (16 units per cell pixel) wherever
+  it lands, where a picture cycling nine sizes reloaded a font per opcode for
+  free. The default `Max_Drawing_Work` is 2^30, down from 2^34, now that a
+  unit is calibrated at about 50-150 ns. Tests assert costs through budgets,
+  never the clock; the fuzzer reports slow inputs and fails only on one
+  stuck past a minute, and takes its seeds in file-name order.
 - Fixes from the eleventh review. A PixPat tile too large to index has its
   rows read past in every mode, so a pattern read that succeeds has always
   consumed its opcode; strictly it is then unsupported before the pattern's

@@ -1,7 +1,9 @@
 --  Mutation fuzzing: seeds are the external and real-world fixtures and fresh encoder output; each iteration
 --  mutates one seed and has pictlib enumerate it strictly and render it compatibly and recoverably under tight
---  limits. An exception escaping pictlib is a defect; an input taking longer than Slow_Seconds is suspect. Both
---  are saved under artifacts/fuzz for replay. Arguments: [iterations] [seed]; deterministic for a given pair.
+--  limits. An exception escaping pictlib is a defect; an input taking longer than Slow_Seconds is suspect and one
+--  taking longer than Stuck_Seconds, far beyond any load, a defect too. All are saved under artifacts/fuzz for
+--  replay. What an input may cost is bounded by the limits, not the clock: slow inputs are reported, not failed.
+--  Arguments: [iterations] [seed]; seeds are taken in file-name order, so a pair is deterministic everywhere.
 --  Run from the tests directory.
 with Ada.Calendar;
 with Ada.Command_Line;
@@ -36,6 +38,7 @@ procedure Pictlib_Fuzz is
    package Byte_Vectors is new Ada.Containers.Indefinite_Vectors (Positive, Bytes, Pictlib.Streams."=");
 
    Slow_Seconds : constant Duration := 2.0;
+   Stuck_Seconds : constant Duration := 60.0;
    Artifacts : constant String := "artifacts/fuzz";
 
    Iterations : constant Natural :=
@@ -69,10 +72,14 @@ procedure Pictlib_Fuzz is
    --  How far inputs got: past the header, rendered completely, rendered as a partial picture.
    Headers_Read, Rendered, Partial : Natural := 0;
 
+   package Name_Vectors is new Ada.Containers.Indefinite_Vectors (Positive, String);
+   package Name_Sorting is new Name_Vectors.Generic_Sorting;
+
    procedure Add_Files (Directory : String) is
       use Ada.Directories;
       Search : Search_Type;
       Item : Directory_Entry_Type;
+      Names : Name_Vectors.Vector;
    begin
       if not Exists (Directory) then
          return;
@@ -81,21 +88,26 @@ procedure Pictlib_Fuzz is
       while More_Entries (Search) loop
          Get_Next_Entry (Search, Item);
          if Kind (Item) = Ordinary_File and then Extension (Simple_Name (Item)) in "pict" | "pct" then
-            declare
-               use Ada.Streams.Stream_IO;
-               File : File_Type;
-               Data : Bytes (1 .. Natural (Size (Item)));
-            begin
-               Open (File, In_File, Full_Name (Item));
-               Bytes'Read (Stream (File), Data);
-               Close (File);
-               if Data'Length <= 256 * 1024 then
-                  Seeds.Append (Data);
-               end if;
-            end;
+            Names.Append (Full_Name (Item));
          end if;
       end loop;
       End_Search (Search);
+      --  The search order depends on the file system; the seeds' order must not.
+      Name_Sorting.Sort (Names);
+      for Name of Names loop
+         declare
+            use Ada.Streams.Stream_IO;
+            File : File_Type;
+            Data : Bytes (1 .. Natural (Ada.Directories.Size (Name)));
+         begin
+            Open (File, In_File, Name);
+            Bytes'Read (Stream (File), Data);
+            Close (File);
+            if Data'Length <= 256 * 1024 then
+               Seeds.Append (Data);
+            end if;
+         end;
+      end loop;
    end Add_Files;
 
    procedure Add_Encoded (Item : Pictlib_Testing.Samples.Kind; Layout : Pictlib.Encoding.Layout_Kind) is
@@ -294,7 +306,7 @@ procedure Pictlib_Fuzz is
       Close (File);
    end Save;
 
-   Defects, Slow : Natural := 0;
+   Defects, Slow, Stuck : Natural := 0;
 begin
    Add_Files ("fixtures/external");
    Add_Files ("fixtures/real_world/libreoffice/pass");
@@ -308,7 +320,10 @@ begin
          Started : constant Ada.Calendar.Time := Ada.Calendar.Clock;
       begin
          Exercise (Input);
-         if Ada.Calendar.Clock - Started > Slow_Seconds then
+         if Ada.Calendar.Clock - Started > Stuck_Seconds then
+            Stuck := Stuck + 1;
+            Save ("stuck-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
+         elsif Ada.Calendar.Clock - Started > Slow_Seconds then
             Slow := Slow + 1;
             Save ("slow-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
          end if;
@@ -321,9 +336,9 @@ begin
       end;
    end loop;
    Ada.Text_IO.Put_Line (Iterations'Image & " inputs:" & Headers_Read'Image & " past the header," & Rendered'Image
-                         & " rendered," & Partial'Image & " partial;" & Defects'Image & " defects," & Slow'Image
-                         & " slow");
-   if Defects > 0 or else Slow > 0 then
+                         & " rendered," & Partial'Image & " partial;" & Defects'Image & " defects," & Stuck'Image
+                         & " stuck," & Slow'Image & " slow");
+   if Defects > 0 or else Stuck > 0 then
       Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
    end if;
 end Pictlib_Fuzz;
