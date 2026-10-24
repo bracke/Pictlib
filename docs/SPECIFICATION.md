@@ -484,7 +484,9 @@ bounds a picture to about a minute.
 `Unsupported_Feature`, `Invalid_State`, `Invalid_Argument`, `Integer_Overflow`, `Limit_Exceeded`,
 `Operation_Cancelled`, `Internal_Invariant_Failed`. Identifiers are stable dotted strings
 (`pict.*`). `Diagnostic_Context` carries source/destination offset, opcode, opcode ordinal, row,
-expected/actual counts, limit kind and an underlying code.
+expected/actual counts, limit kind and an underlying code. Sizes taken from a picture saturate
+instead of overflowing, so an overflowing size is reported as the limit it exceeds;
+`Integer_Overflow` is kept for callers and for parity with `jpeglib`.
 
 ## 11. Crate and project structure
 
@@ -526,7 +528,7 @@ ImageMagick 7 reads only pictures with the file header, misreads rows stored unp
 | I/O | fragmented reads/writes, EOF, zero progress, destination failure |
 | Encoder | each layout and pixel format, alpha, thresholds, unpacked rows, byte and word counts, widest rows, >256 colors, header on/off, resolution, picSize, limits, short and full destinations, states; decode by independent decoders (`pictlib_conformance`) |
 | Stress | huge frames with tight limits, many opcodes, repeated large fills, cancellation, reset reuse, independent decoders in concurrent tasks, every limit kind |
-| Robustness | the real-world corpus (LibreOffice's PICT filter test files, CVE reproductions among them) to recorded outcomes; mutation fuzzing without defects or slow inputs |
+| Robustness | the real-world corpus (LibreOffice's PICT filter test files, CVE reproductions among them) to recorded outcomes; mutation fuzzing without defects (slow and stuck inputs are saved and reported) |
 
 Fixtures are independent: hand-assembled byte literals with documented provenance, real-world
 PICT files with recorded origin and license, and expected rasters produced by an external

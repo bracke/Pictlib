@@ -174,6 +174,11 @@ package body Pictlib_Testing.Test_Text is
      Pic (Long_Text_Bytes (15, 2, [Character'Pos ('a'), 16#F0#, Character'Pos ('b'), 16#F0#]));
    Big_Atlas : aliased constant Bytes := Pic (Size_Op (100) & Long_Text (15, 2, "H"));
    Red_Text : aliased constant Bytes := Pic (W (16#1A#) & W (16#FFFF#) & W (0) & W (0) & Long_Text (15, 2, "Hi"));
+   --  HiliteColor red, then HiliteMode: the text after it draws its ink in the highlight color, the rectangle
+   --  after the text in the pen's black again.
+   Hilite_Text : aliased constant Bytes :=
+     Pic (W (16#1D#) & W (16#FFFF#) & W (0) & W (0) & W (16#1C#) & Long_Text (15, 2, "Hi")
+          & W (16#31#) & Rect (0, 40, 2, Width));
    Black_Under : constant Bytes := W (16#31#) & Rect (0, 0, Height, Width);
    Xor_Text : aliased constant Bytes := Pic (Black_Under & Mode_Op (2) & Long_Text (15, 2, "Hi"));
    Copy_Text : aliased constant Bytes := Pic (Black_Under & Mode_Op (0) & Long_Text (15, 2, "."));
@@ -374,6 +379,12 @@ package body Pictlib_Testing.Test_Text is
    begin
       Ink (Red, Sans, 12, 2.0, 15, Points ("Hi"), Pen_End, Color => 'R');
       Canvases.Expect_Raster (Red_Text, Width, Height, Image (Red), "RGBFgCol", With_Fonts);
+      for Y in 0 .. 1 loop
+         for X in 40 .. Width - 1 loop
+            Red (Y, X) := 'B';
+         end loop;
+      end loop;
+      Canvases.Expect_Raster (Hilite_Text, Width, Height, Image (Red), "HiliteMode before text", With_Fonts);
       Inverted := Blank ('B');
       Ink (Inverted, Sans, 12, 2.0, 15, Points ("Hi"), Pen_End, Color => 'W');
       Canvases.Expect_Raster (Xor_Text, Width, Height, Image (Inverted), "srcXor", With_Fonts);

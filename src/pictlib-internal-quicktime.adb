@@ -331,9 +331,8 @@ package body Pictlib.Internal.QuickTime is
       function Paint is new Rendering.Paint_Row (Color_At);
    begin
       --  The drawing after HiliteMode, as for any copy.
-      if P.Hilite_Next then
+      if Rendering.Take_Hilite (P) then
          Kind := Transfer_Modes.Hilite;
-         P.Hilite_Next := False;
       end if;
       if not Results.Succeeded (Outcome) or else Geometry.Is_Empty (Clamped) or else Regions.Is_Empty (Destination)
       then

@@ -54,6 +54,14 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - `hostile.*` tests hold the cases that once overflowed or worked without
   bound, asserting their cost through budgets, never the clock.
 
+### Fixed
+
+- Text after `HiliteMode` draws in the hilite mode, and the flag no longer
+  carries over to the drawing after the text.
+- An encoder frame taller than `Max_Frame_Height` reports the height limit
+  and height, not the width's.
+- A per-opcode size that overflows reports the size that saturated, not 0.
+
 ### Tooling
 
 All tooling is Ada, in the `tests` crate:

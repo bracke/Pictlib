@@ -11,7 +11,7 @@ alr --chdir tests exec -- ./bin/pictlib_prove
 
 | Unit | What is proved |
 | --- | --- |
-| `Pictlib.Internal.Checked_Arithmetic` | `Add` and `Multiply` never overflow and report overflow instead of wrapping. |
+| `Pictlib.Internal.Checked_Arithmetic` | `Saturating_Add` and `Saturating_Multiply` never overflow: a result past the range is its largest value, which the limit it exceeds then refuses. |
 | `Pictlib.Images` | `Bytes_Per_Pixel`, `Minimum_Row_Bytes` and `Descriptor_Is_Valid`: the stride is compared before `stride * (height - 1)` is formed, so the row-span check cannot overflow. The access-bearing `Is_Valid` checks only add the null test and stay outside SPARK. |
 | `Pictlib.Opcodes` | `Rule_For`, `Is_Reserved` and `Name` are total over all 65 536 opcodes, free of runtime errors. |
 | `Pictlib.Internal.PackBits` | `Unpack` -- which reads hostile pixel rows -- never indexes outside its input or output and writes at most the output's length (its postcondition); `Worst_Case` cannot overflow. `Pack` (the encoder's, over its own rows) is runtime-checked. |

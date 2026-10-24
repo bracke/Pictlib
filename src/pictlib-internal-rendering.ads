@@ -126,6 +126,11 @@ package Pictlib.Internal.Rendering is
       Event : Pictures.Opcode_Event;
       Expected, Actual : Byte_Count := 0) return Results.Result;
 
+   --  Take hilite: HiliteMode applies to the one drawing after it, drawn or not.
+   --  @param P Painter; its HiliteMode flag is cleared.
+   --  @return True when HiliteMode preceded this drawing, which then draws in the hilite mode.
+   function Take_Hilite (P : in out Painter) return Boolean;
+
    --  Mode.
    --  @param S Session whose strictness decides.
    --  @param Event The opcode, for diagnostics.

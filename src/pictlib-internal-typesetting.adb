@@ -16,7 +16,6 @@ package body Pictlib.Internal.Typesetting is
    Ink_Threshold : constant := 128;
    Space : constant := 16#20#;
 
-
    function Has (Face : Byte; Bit : Byte) return Boolean is ((Face and Bit) /= 0);
 
    function Unavailable (S : in out Sessions.Session; Event : Pictures.Opcode_Event) return Results.Result is
@@ -44,6 +43,8 @@ package body Pictlib.Internal.Typesetting is
         (if State.Names.Contains (State.Font) then State.Names.Element (State.Font) else "");
       Path : constant String := Fonts.Resolve (P.Fonts, State.Font, Family);
       Size : constant Natural := (if State.Size = 0 then Default_Size else State.Size);
+      --  Taken whether or not the text is drawn, as by any drawing.
+      Hilited : constant Boolean := Rendering.Take_Hilite (P);
       Outcome : Results.Result := Results.Success;
       Kind : Transfer_Modes.Mode_Kind;
       Slot : Positive;
@@ -78,6 +79,9 @@ package body Pictlib.Internal.Typesetting is
          end if;
       end if;
       Outcome := Rendering.Mode (S, Event, State.Mode, Kind);
+      if Hilited then
+         Kind := Transfer_Modes.Hilite;
+      end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;

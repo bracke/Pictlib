@@ -124,10 +124,10 @@ package body Pictlib.Internal.Sessions is
    --  Admit More bytes of the current opcode's data against the per-opcode budget.
    function Admit_Data (S : Session; More : Byte_Count) return Results.Result is
       Used : constant Byte_Count := Picture_Stream.Picture_Offset (S.Stream) - S.Data_Start;
-      Sum : constant Checked_Arithmetic.Count_Result := Checked_Arithmetic.Add (Used, More);
+      Sum : constant Byte_Count := Checked_Arithmetic.Saturating_Add (Used, More);
    begin
-      if not Results.Succeeded (Sum.Outcome) or else Sum.Value > S.Budget.Max_Opcode_Bytes then
-         return Over_Limit (S, Opcode_Byte_Limit, S.Budget.Max_Opcode_Bytes, Sum.Value);
+      if Sum > S.Budget.Max_Opcode_Bytes then
+         return Over_Limit (S, Opcode_Byte_Limit, S.Budget.Max_Opcode_Bytes, Sum);
       end if;
       return Results.Success;
    end Admit_Data;
@@ -286,15 +286,8 @@ package body Pictlib.Internal.Sessions is
       Outcome : Results.Result;
    begin
       if not Packed then
-         declare
-            Total : constant Checked_Arithmetic.Count_Result :=
-              Checked_Arithmetic.Multiply (Raw_Row_Length, Byte_Count (Height));
-         begin
-            if not Results.Succeeded (Total.Outcome) then
-               return Over_Limit (S, Opcode_Byte_Limit, S.Budget.Max_Opcode_Bytes, Byte_Count'Last);
-            end if;
-            return Skip_Data (S, Total.Value);
-         end;
+         --  A saturated product is refused by the per-opcode budget.
+         return Skip_Data (S, Checked_Arithmetic.Saturating_Multiply (Raw_Row_Length, Byte_Count (Height)));
       end if;
       for Row in 0 .. Height - 1 loop
          declare

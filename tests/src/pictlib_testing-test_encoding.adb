@@ -282,6 +282,12 @@ package body Pictlib_Testing.Test_Encoding is
       Assert (Picture.Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
               and then Picture.Outcome.First_Error.Context.Limit = Pictlib.Frame_Width_Limit,
               "the frame limit was not enforced");
+      Picture := Encode (Samples.Gradient, 40, 4, Budget => (Defaults with delta Max_Frame_Height => 3));
+      Assert (Picture.Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
+              and then Picture.Outcome.First_Error.Context.Limit = Pictlib.Frame_Height_Limit
+              and then Picture.Outcome.First_Error.Context.Expected = 3
+              and then Picture.Outcome.First_Error.Context.Actual = 4,
+              "the frame height limit was not reported as itself");
       Picture := Encode (Samples.Gradient, 40, 4, Budget => (Defaults with delta Max_Output_Bytes => 600));
       Assert (Picture.Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
               and then Picture.Outcome.First_Error.Context.Limit = Pictlib.Output_Byte_Limit

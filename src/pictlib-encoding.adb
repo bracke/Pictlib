@@ -298,17 +298,22 @@ package body Pictlib.Encoding is
          return Invalid (0, 0);
       elsif Settings.Horizontal_Resolution <= 0 or else Settings.Vertical_Resolution <= 0 then
          return Invalid (1, 0);
-      elsif Image.Descriptor.Width > Budget.Max_Frame_Width or else Image.Descriptor.Height > Budget.Max_Frame_Height
-      then
+      elsif Image.Descriptor.Width > Budget.Max_Frame_Width then
          return Fail
            (Object,
             Results.Failure
               (Errors.Make
                  (Errors.Limit_Exceeded,
                   (Expected => Byte_Count (Budget.Max_Frame_Width), Actual => Byte_Count (Image.Descriptor.Width),
-                   Limit => (if Image.Descriptor.Width > Budget.Max_Frame_Width then Frame_Width_Limit
-                             else Frame_Height_Limit),
-                   others => <>))));
+                   Limit => Frame_Width_Limit, others => <>))));
+      elsif Image.Descriptor.Height > Budget.Max_Frame_Height then
+         return Fail
+           (Object,
+            Results.Failure
+              (Errors.Make
+                 (Errors.Limit_Exceeded,
+                  (Expected => Byte_Count (Budget.Max_Frame_Height), Actual => Byte_Count (Image.Descriptor.Height),
+                   Limit => Frame_Height_Limit, others => <>))));
       end if;
 
       Survey (Image, Colors);

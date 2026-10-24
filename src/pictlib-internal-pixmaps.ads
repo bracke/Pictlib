@@ -135,7 +135,8 @@ package Pictlib.Internal.Pixmaps is
    --  @param S Session positioned at the next row.
    --  @param Decoder Started decoder.
    --  @param Row Row index from 0, for diagnostics.
-   --  @return Success, or the failure; a lenient session repairs bad PackBits and color indexes with warnings.
+   --  @return Success, or the failure: bad PackBits fail in every mode (Recover_When_Safe keeps the rows before
+   --  them as a partial picture); a lenient session repairs a bad color index with a warning.
    function Read_Row (S : in out Sessions.Session; Decoder : in out Row_Decoder; Row : Natural) return Results.Result;
    --  Pixel.
    --  @param Decoder Decoder holding the last row read.

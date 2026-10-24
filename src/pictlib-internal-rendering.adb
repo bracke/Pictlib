@@ -65,6 +65,13 @@ package body Pictlib.Internal.Rendering is
          (Sessions.Context_Of (Event) with delta Actual => Byte_Count (Value)));
    end Mode;
 
+   function Take_Hilite (P : in out Painter) return Boolean is
+      Hilited : constant Boolean := P.Hilite_Next;
+   begin
+      P.Hilite_Next := False;
+      return Hilited;
+   end Take_Hilite;
+
    function Clip_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result is
       Work : Pixel_Count;
    begin
@@ -162,8 +169,7 @@ package body Pictlib.Internal.Rendering is
          else Sessions.Charge_Work (S, Checked_Arithmetic.Saturating_Add (Coverage.Work (Shape), Walked)));
       Source : Patterns.Pattern renames P.Pattern_Set (How.Source);
       Colorize : constant Boolean := Patterns.Kind (Source) = Patterns.Bit_Pattern;
-      Kind : constant Transfer_Modes.Mode_Kind :=
-        (if P.Hilite_Next then Transfer_Modes.Hilite else How.Mode);
+      Kind : constant Transfer_Modes.Mode_Kind := (if Take_Hilite (P) then Transfer_Modes.Hilite else How.Mode);
    begin
       --  The spans building made count against the session's allocation total.
       if Results.Succeeded (Outcome) then
@@ -171,7 +177,6 @@ package body Pictlib.Internal.Rendering is
            (S, Checked_Arithmetic.Saturating_Multiply
                  (Byte_Count (Coverage.Work (Shape)), Sessions.Shape_Bytes_Per_Work_Unit));
       end if;
-      P.Hilite_Next := False;
       --  A uniform pattern whose result does not depend on the pixels under it paints one color, or nothing.
       if How.Kind = Pattern_Paint then
          declare
@@ -332,9 +337,8 @@ package body Pictlib.Internal.Rendering is
          return Skip_Copy (S, Header);
       end if;
       Outcome := Mode (S, Event, Header.Mode, Kind);
-      if P.Hilite_Next then
+      if Take_Hilite (P) then
          Kind := Transfer_Modes.Hilite;
-         P.Hilite_Next := False;
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Source_Rect (S, Header, Event, Source);

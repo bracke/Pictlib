@@ -135,20 +135,17 @@ package body Pictlib_Testing.Test_Bytes is
 
    procedure Arithmetic_Rejects_Overflow (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
-      Sum : constant Arithmetic.Count_Result := Arithmetic.Add (Pictlib.Byte_Count'Last - 1, 1);
-      Too_Big : constant Arithmetic.Count_Result := Arithmetic.Add (Pictlib.Byte_Count'Last, 1);
-      Product : constant Arithmetic.Count_Result := Arithmetic.Multiply (32_767, 32_767 * 4);
-      Huge : constant Arithmetic.Count_Result := Arithmetic.Multiply (2 ** 32, 2 ** 31);
-      Zero : constant Arithmetic.Count_Result := Arithmetic.Multiply (0, Pictlib.Byte_Count'Last);
+      use type Pictlib.Pixel_Count;
+      Top : constant Pictlib.Byte_Count := Pictlib.Byte_Count'Last;
    begin
-      Assert (Pictlib.Results.Succeeded (Sum.Outcome) and then Sum.Value = Pictlib.Byte_Count'Last,
-              "largest sum rejected");
-      Assert (Too_Big.Outcome.First_Error.Code = Pictlib.Errors.Integer_Overflow and then Too_Big.Value = 0,
-              "overflowing sum accepted");
-      Assert (Pictlib.Results.Succeeded (Product.Outcome) and then Product.Value = 32_767 * 32_767 * 4,
-              "largest RGBA frame size rejected");
-      Assert (Huge.Outcome.First_Error.Code = Pictlib.Errors.Integer_Overflow and then Huge.Value = 0,
-              "overflowing product accepted");
-      Assert (Pictlib.Results.Succeeded (Zero.Outcome) and then Zero.Value = 0, "zero product rejected");
+      Assert (Arithmetic.Saturating_Add (Top - 1, 1) = Top, "largest sum");
+      Assert (Arithmetic.Saturating_Add (Top, 1) = Top and then Arithmetic.Saturating_Add (Top, Top) = Top,
+              "an overflowing sum did not saturate");
+      Assert (Arithmetic.Saturating_Multiply (32_767, 32_767 * 4) = 32_767 * 32_767 * 4,
+              "largest RGBA frame size");
+      Assert (Arithmetic.Saturating_Multiply (2 ** 32, 2 ** 31) = Top, "an overflowing product did not saturate");
+      Assert (Arithmetic.Saturating_Multiply (0, Top) = 0, "zero product");
+      Assert (Arithmetic.Saturating_Add (Pictlib.Pixel_Count'Last, 1) = Pictlib.Pixel_Count'Last,
+              "overflowing work did not saturate");
    end Arithmetic_Rejects_Overflow;
 end Pictlib_Testing.Test_Bytes;

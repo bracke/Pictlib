@@ -17,7 +17,7 @@ procedure Pictlib_Prove is
    --  The units the profile proves; docs/proof_profile.md says what each proof covers.
    type Unit_List is array (Positive range <>) of Unbounded_String;
    Units : constant Unit_List :=
-     [To_Unbounded_String ("pictlib-internal-checked_arithmetic.adb"),
+     [To_Unbounded_String ("pictlib-internal-checked_arithmetic.ads"),
       To_Unbounded_String ("pictlib-images.adb"),
       To_Unbounded_String ("pictlib-opcodes.adb"),
       To_Unbounded_String ("pictlib-internal-packbits.adb")];
