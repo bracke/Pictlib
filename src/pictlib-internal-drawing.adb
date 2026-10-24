@@ -220,6 +220,11 @@ package body Pictlib.Internal.Drawing is
                   return Outcome;
                end if;
             end if;
+            --  The polygon is copied for drawing; the copy counts against the aggregate allocation quota.
+            Outcome := Sessions.Admit_Aggregate (S, 8 * Byte_Count (P.Last_Polygon.Length));
+            if not Results.Succeeded (Outcome) then
+               return Outcome;
+            end if;
             declare
                Points : Coverage.Point_Vectors.Vector;
             begin
@@ -245,6 +250,11 @@ package body Pictlib.Internal.Drawing is
             end if;
             --  Copying and moving the region is work like drawing it.
             Outcome := Rendering.Charge (P, S, Regions.Size (P.Last_Region));
+            if not Results.Succeeded (Outcome) then
+               return Outcome;
+            end if;
+            --  So is the region: its scanlines and inversion points, about 8 bytes a unit of its size.
+            Outcome := Sessions.Admit_Aggregate (S, 8 * Byte_Count (Regions.Size (P.Last_Region)));
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;

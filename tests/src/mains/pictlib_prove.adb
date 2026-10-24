@@ -54,13 +54,16 @@ procedure Pictlib_Prove is
                Project_Tools.Processes.Argument (Prover), Project_Tools.Processes.Argument ("-P"),
                Project_Tools.Processes.Argument ("proof/pictlib_proof.gpr"),
                Project_Tools.Processes.Argument ("-u"), Project_Tools.Processes.Argument (Unit),
-               Project_Tools.Processes.Argument ("--level=0")]),
+               Project_Tools.Processes.Argument ("--level=0"),
+               --  gnatprove reports unproved checks on standard error, which is not captured, and exits 0 for
+               --  them unless asked: the exit status is what decides.
+               Project_Tools.Processes.Argument ("--checks-as-errors=on")]),
            Output);
       declare
          Text : constant String := To_String (Output);
       begin
          if Status /= 0 then
-            Fail (Unit & ": gnatprove exited with status" & Status'Image);
+            Fail (Unit & ": gnatprove exited with status" & Status'Image & ", unproved checks or an error");
          elsif Project_Tools.Text.Contains (Text, "might fail") then
             Fail (Unit & ": unproved checks remain");
          elsif Project_Tools.Text.Contains (Text, "medium:") or else Project_Tools.Text.Contains (Text, "high:") then

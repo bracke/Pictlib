@@ -6,6 +6,7 @@ with Pictlib.Decoding;
 with Pictlib.Errors;
 with Pictlib.Fonts;
 with Pictlib.Images;
+with Pictlib.Internal.Text;
 with Pictlib.Limits;
 with Pictlib.Results;
 with Pictlib.Streams;
@@ -460,8 +461,34 @@ package body Pictlib_Testing.Test_Text is
       Assert (not Renders (Big_Font, 10_000_000), "a size 500 font was loaded on a budget below its atlas");
       Assert (Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit, "a size 500 font: wrong limit");
       --  255 glyphs cost more than one.
-      Assert (Least (Many_Glyphs) > Least (One_Glyph) + 254,
-              "glyphs drawn below the frame cost nothing");
+      --  Each glyph asked for costs its full charge, 16 units a cell pixel, drawn or not.
+      Assert (Least (Many_Glyphs) - Least (One_Glyph) >= 254 * Pictlib.Internal.Text.Glyph_Work (12),
+              "glyphs drawn below the frame cost less than their charge");
+      --  Loading a font costs its atlas and its file, which textrender copies whole.
+      Assert (Least (One_Glyph) >= Pictlib.Internal.Text.Load_Work (12, Pictlib.Internal.Text.File_Bytes (Sans)),
+              "a font load cost less than its atlas and file");
+      --  Text counts against an aggregate allocation quota only what it allocates, the font: a hundred full
+      --  runs fit a quota a few times the font's size.
+      declare
+         function Runs (Count : Positive) return Bytes is
+           (if Count = 1 then Long_Text (500, 2, [1 .. 255 => 'A'])
+            else Long_Text (500, 2, [1 .. 255 => 'A']) & Runs (Count - 1));
+         Many_Runs : aliased constant Bytes := Pic (Size_Op (12) & Runs (100));
+      begin
+         Canvases.Render (Many_Runs, Decoder, Canvases.View (Storage'Access, Width, Height), Outcome, Options,
+                          (Pictlib.Limits.Default_Limits with delta Max_Total_Allocation_Bytes => 8_388_608));
+         Assert (Pictlib.Results.Succeeded (Outcome), "a hundred text runs overran an 8 MiB allocation quota: "
+                 & Outcome.First_Error.Code'Image);
+      end;
+      --  An underline is painted pixels too, even where the characters above it are outside the frame: at
+      --  size 4 the baseline one row above the frame puts every cell row out and the underline row in.
+      declare
+         Plain : aliased constant Bytes := Pic (Size_Op (4) & Long_Text (-1, 0, [1 .. 255 => 'A']));
+         Underlined : aliased constant Bytes :=
+           Pic (Size_Op (4) & Face_Op (4) & Long_Text (-1, 0, [1 .. 255 => 'A']));
+      begin
+         Assert (Least (Underlined) >= Least (Plain) + Width, "an underline below off-frame text cost nothing");
+      end;
       --  Reloading an evicted font costs as much as loading it the first time.
       declare
          First_Round : constant Pictlib.Pixel_Count := Least (Once);

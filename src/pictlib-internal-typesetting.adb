@@ -71,11 +71,15 @@ package body Pictlib.Internal.Typesetting is
       --  Loading a font is drawing work, charged before it is done, so a picture that keeps evicting fonts
       --  from the cache runs out of budget.
       if not Text.Cached (P.Font_Cache, Path, Size) then
-         Outcome := Sessions.Admit_Allocation (S, Text.Atlas_Bytes (Size));
-         if not Results.Succeeded (Outcome) then
-            return Outcome;
-         end if;
-         Outcome := Rendering.Charge (P, S, Text.Load_Work (Size));
+         declare
+            --  textrender keeps a copy of the whole file beside the atlas: both are this load's allocation.
+            File : constant Byte_Count := Text.File_Bytes (Path);
+         begin
+            Outcome := Sessions.Admit_Allocation (S, Text.Atlas_Bytes (Size) + File);
+            if Results.Succeeded (Outcome) then
+               Outcome := Rendering.Charge (P, S, Text.Load_Work (Size, File));
+            end if;
+         end;
          if not Results.Succeeded (Outcome) then
             return Outcome;
          end if;
@@ -110,20 +114,6 @@ package body Pictlib.Internal.Typesetting is
       Size : constant Natural := (if State.Size = 0 then Default_Size else State.Size);
       Outcome : Results.Result := Results.Success;
    begin
-      declare
-         Glyph_Rows : constant Byte_Count :=
-           (if Byte_Count (Characters'Length) > Byte_Count'Last / Byte_Count (Size)
-            then Byte_Count'Last
-            else Byte_Count (Characters'Length) * Byte_Count (Size));
-         Storage : constant Byte_Count :=
-           (if Glyph_Rows > Byte_Count'Last / 128
-            then Byte_Count'Last else Glyph_Rows * 128);
-      begin
-         Outcome := Sessions.Admit_Aggregate (S, Storage);
-         if not Results.Succeeded (Outcome) then
-            return Outcome;
-         end if;
-      end;
       declare
          Font : constant not null access Textrender.Renderer := Text.Renderer (P.Font_Cache, Slot);
          Style : constant Textrender.Font_Style :=
@@ -228,7 +218,11 @@ package body Pictlib.Internal.Typesetting is
               (Regions.Span'(Integer'Max (Start_X, P.Window.Left),
                 Integer'Min (Integer (Float'Rounding (Pen)), P.Window.Right)));
             Outcome := Rendering.Clip_Row (P, S, Baseline + 1);
+            --  The underline is painted pixels like any other: charged, and not drawn past the budget.
             for Span of P.Row_Spans loop
+               exit when not Results.Succeeded (Outcome);
+               Outcome := Rendering.Charge (P, S, Natural'Max (0, Span.Right - Span.Left));
+               exit when not Results.Succeeded (Outcome);
                for X in Span.Left .. Span.Right - 1 loop
                   Rendering.Put
                     (P, X, Baseline + 1,

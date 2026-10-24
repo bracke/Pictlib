@@ -444,7 +444,8 @@ counting every shape and scaled copy), retained metadata, per-allocation and mon
 decoder-allocation bytes, output bytes, embedded image bytes and pixels, warnings. Every input-derived size is checked with `Checked_Arithmetic` before
 allocation, indexing or a loop bound. Drawing work is the guard against tiny pictures with huge
 repeated fills. It counts a unit for every shape opcode and every row a shape holds and
-painting walks, every font text loads and every glyph it asks for (wherever the glyph lands),
+painting walks, every font text loads (its atlas and its file) and every glyph it asks for
+(wherever the glyph lands), every pixel and row a QuickTime image decodes, drawn or not,
 every pixel row a copy converts, drawn or not, a unit for every row a copy skips
 (a QuickTime image's placeholder included), a unit for every pattern and every pixel and row of a
 PixPat decoded, and the work of building each shape, which stops as soon as it would exceed what is left of the

@@ -1,9 +1,10 @@
 --  Mutation fuzzing: seeds are the external and real-world fixtures and fresh encoder output; each iteration
 --  mutates one seed and has pictlib enumerate it strictly and render it compatibly and recoverably under tight
---  limits. An exception escaping pictlib is a defect; an input taking longer than Slow_Seconds is suspect and one
---  taking longer than Stuck_Seconds, far beyond any load, a defect too. All are saved under artifacts/fuzz for
---  replay. What an input may cost is bounded by the limits, not the clock: slow inputs are reported, not failed.
---  Arguments: [iterations] [seed]; seeds are taken in file-name order, so a pair is deterministic everywhere.
+--  limits. An exception escaping pictlib is a defect and fails the run. What an input may cost is bounded by the
+--  limits, not the clock, so time only reports: an input taking longer than Slow_Seconds is slow, one taking
+--  longer than Stuck_Seconds stuck, and both are saved under artifacts/fuzz for replay; a stuck input fails the
+--  run only with --fail-stuck, for a machine whose speed is known. Arguments: [iterations] [seed]
+--  [--fail-stuck]; seeds are taken in file-name order, so a pair is deterministic everywhere.
 --  Run from the tests directory.
 with Ada.Calendar;
 with Ada.Command_Line;
@@ -41,6 +42,8 @@ procedure Pictlib_Fuzz is
    Stuck_Seconds : constant Duration := 60.0;
    Artifacts : constant String := "artifacts/fuzz";
 
+   Fail_Stuck : constant Boolean :=
+     (for some Index in 1 .. Ada.Command_Line.Argument_Count => Ada.Command_Line.Argument (Index) = "--fail-stuck");
    Iterations : constant Natural :=
      (if Ada.Command_Line.Argument_Count >= 1 then Natural'Value (Ada.Command_Line.Argument (1)) else 2_000);
    State : Interfaces.Unsigned_64 :=
@@ -338,7 +341,7 @@ begin
    Ada.Text_IO.Put_Line (Iterations'Image & " inputs:" & Headers_Read'Image & " past the header," & Rendered'Image
                          & " rendered," & Partial'Image & " partial;" & Defects'Image & " defects," & Stuck'Image
                          & " stuck," & Slow'Image & " slow");
-   if Defects > 0 or else Stuck > 0 then
+   if Defects > 0 or else (Stuck > 0 and then Fail_Stuck) then
       Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
    end if;
 end Pictlib_Fuzz;

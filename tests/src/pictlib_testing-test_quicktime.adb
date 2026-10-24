@@ -394,5 +394,38 @@ package body Pictlib_Testing.Test_QuickTime is
                  "the pixels and jpeglib do not share the allocation budget (jpeglib alone needs"
                  & Least_Jpeglib'Image & ")");
       end;
+      --  Decoding is drawing work whether or not anything is drawn: an image moved off the frame still costs its
+      --  8 x 6 pixels and rows.
+      declare
+         use type Pictlib.Pixel_Count;
+         Off_Frame : aliased constant Bytes :=
+           Image (QuickTime ("jpeg", Image_Width, Image_Height, JPEG, Move_H => 100 * 16#1_0000#), 8, 6);
+         Low : Pictlib.Pixel_Count := 0;
+         High : Pictlib.Pixel_Count := 1_000_000;
+         Middle : Pictlib.Pixel_Count;
+      begin
+         while Low < High loop
+            Middle := (Low + High) / 2;
+            Canvases.Render (Off_Frame, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome,
+                             Budget => (Defaults with delta Max_Drawing_Work => Middle));
+            if Pictlib.Results.Succeeded (Outcome) then
+               High := Middle;
+            else
+               Low := Middle + 1;
+            end if;
+         end loop;
+         Assert (High >= 48 + 6, "an image decoded off the frame cost" & High'Image);
+      end;
+      --  An aggregate allocation quota no larger than the per-allocation budget still decodes a small JPEG: an
+      --  image counts what it needs, not the whole per-allocation budget.
+      --  A one-pixel paint first, so the session has counted some allocation before the image.
+      declare
+         After_Paint : aliased constant Bytes := Image (W (16#31#) & Rect (0, 0, 1, 1) & Plain, 8, 6);
+      begin
+         Canvases.Render (After_Paint, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome,
+                          Budget => (Defaults with delta Max_Total_Allocation_Bytes => Defaults.Max_Allocation_Bytes));
+      end;
+      Assert (Pictlib.Results.Succeeded (Outcome), "a small JPEG under an aggregate quota of the per-allocation "
+              & "budget failed with " & Outcome.First_Error.Code'Image);
    end Limits;
 end Pictlib_Testing.Test_QuickTime;

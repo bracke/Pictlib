@@ -1,3 +1,4 @@
+with Ada.Directories;
 package body Pictlib.Internal.Text is
    use type Ada.Strings.Unbounded.Unbounded_String;
    use type Textrender.Status_Code;
@@ -63,7 +64,16 @@ package body Pictlib.Internal.Text is
 
    function Atlas_Bytes (Size : Positive) return Byte_Count is (Byte_Count (Atlas_Side (Size)) ** 2);
 
-   function Load_Work (Size : Positive) return Pixel_Count is (Pixel_Count (Atlas_Bytes (Size)) + 65_536);
+   function File_Bytes (Path : String) return Byte_Count is
+   begin
+      return Byte_Count (Ada.Directories.Size (Path));
+   exception
+      when others =>
+         return 0;
+   end File_Bytes;
+
+   function Load_Work (Size : Positive; File : Byte_Count) return Pixel_Count is
+     (Pixel_Count (Atlas_Bytes (Size)) + Pixel_Count (File) + 65_536);
 
    function Glyph_Work (Size : Positive) return Pixel_Count is (16 * Pixel_Count (Cell (Size)) ** 2);
 

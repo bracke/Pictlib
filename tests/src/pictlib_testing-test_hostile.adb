@@ -429,6 +429,13 @@ package body Pictlib_Testing.Test_Hostile is
               "empty packed rows did not end the picture early");
       Assert (Canvases.Pixel (Canvases.View (Storage'Access, 64, 1_000), 0, 999) = (16#FF#, 16#FF#, 16#FF#),
               "empty packed rows drew something");
+      --  A warning is never dropped, however little of the aggregate allocation quota is left: here the row
+      --  buffers (255 + 8 + 3 x 64 bytes) take all of it, and the picture still says it is partial.
+      Canvases.Render (Empty_Rows, Decoder, Canvases.View (Storage'Access, 64, 1_000), Outcome,
+                       (Strictness => Pictlib.Recover_When_Safe, others => <>),
+                       (Pictlib.Limits.Default_Limits with delta Max_Total_Allocation_Bytes => 455));
+      Assert (Pictlib.Results.Succeeded (Outcome) and then Recorders.Has_Warning (Decoder, Errors.Partial_Picture),
+              "a partial picture on a spent allocation quota did not say so: " & Outcome.First_Error.Code'Image);
       --  Rows are charged as they are converted, drawn or not.
       Small.Max_Drawing_Work := 10;
       Canvases.Expect_Failure (Wide, 16, 1, Errors.Limit_Exceeded, "row conversion over budget", 16#98#,

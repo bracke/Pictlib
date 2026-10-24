@@ -2,6 +2,22 @@
 
 ## 0.1.0-dev
 
+- Fixes from the second full review's raster and text parts. An underline
+  is charged like other painted pixels and not drawn past the budget. A
+  QuickTime image's decode is drawing work, a unit per pixel and row, drawn
+  or not, and counts against the aggregate allocation quota only its pixels
+  and a bounded share for jpeglib, not the whole per-allocation budget. A
+  warning is never dropped for the quota, so a partial picture always says
+  so. Text no longer charges the quota for storage it never allocates; a
+  font load is charged its file, which textrender copies, as well as its
+  atlas, against the drawing budget and the allocation limits. "Same" region
+  and polygon copies count against the quota. `pictlib_prove` fails on
+  unproved checks through gnatprove's exit status (`--checks-as-errors=on`),
+  where they went to an unread standard error; `pictlib_check` reads each
+  unit's context clauses whole, however they are laid out, and refuses
+  foreign interfacing however it is spelled; `pictlib_fuzz` fails on a stuck
+  input only with `--fail-stuck`. The text-work test pins the glyph charge
+  to its formula and covers underlines and font files.
 - Fixes from the second full-project review. Rects, ovals and round rects
   wholly left or right of the frame walk no rows, and every row a shape,
   a pen or a scaled copy walks is charged, in the frame or not: off-frame

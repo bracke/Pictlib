@@ -76,10 +76,17 @@ package Pictlib.Internal.Text is
    --  @return Bytes of the square alpha atlas a font of that size is loaded with.
    function Atlas_Bytes (Size : Positive) return Byte_Count;
 
-   --  Drawing work of loading a font: clearing its atlas, plus a fixed part for reading and parsing the file.
+   --  File bytes.
+   --  @param Path TrueType file.
+   --  @return Its size, which textrender copies whole on every load; 0 when it cannot be read, as the load
+   --  then fails.
+   function File_Bytes (Path : String) return Byte_Count;
+
+   --  Drawing work of loading a font: clearing its atlas and reading and parsing its file.
    --  @param Size Pixel size.
+   --  @param File The font file's bytes.
    --  @return The units to charge before a font is loaded.
-   function Load_Work (Size : Positive) return Pixel_Count;
+   function Load_Work (Size : Positive; File : Byte_Count) return Pixel_Count;
 
    --  Drawing work of one glyph request: rasterizing at most a cell, sampled 16 times a pixel, as measured.
    --  @param Size Pixel size.

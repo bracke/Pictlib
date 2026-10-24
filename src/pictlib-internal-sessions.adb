@@ -24,17 +24,11 @@ package body Pictlib.Internal.Sessions is
       Context : Errors.Diagnostic_Context := (others => <>))
    is
       Item : Errors.Diagnostic_Context := Context;
-      Admission : Results.Result;
    begin
       if Item.Source = 0 then
          Item.Source := S.Stream.Offset;
       end if;
-      if Diagnostics.Count (S.Log) < S.Budget.Max_Warning_Records then
-         Admission := Admit_Aggregate (S, 256);
-         if not Results.Succeeded (Admission) then
-            return;
-         end if;
-      end if;
+      --  A warning is never dropped: Max_Warning_Records bounds the log, so it needs no allocation quota.
       Diagnostics.Add (S.Log, Errors.Make_Warning (Code, Severity, Item), S.Budget.Max_Warning_Records);
    end Warn;
 

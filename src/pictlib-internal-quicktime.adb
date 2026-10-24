@@ -58,6 +58,7 @@ package body Pictlib.Internal.QuickTime is
       Mask : Regions.Region;
       Has_Mask : Boolean := False;
       Outcome : Results.Result := Results.Success;
+      Pixel_Bytes, Jpeglib_Share : Byte_Count := 0;
 
       function Used return Byte_Count is (Picture_Stream.Picture_Offset (S.Stream) - Start);
 
@@ -211,15 +212,23 @@ package body Pictlib.Internal.QuickTime is
                3 * Byte_Count (Image_Width) * Byte_Count (Image_Height));
          end if;
 
-         declare
-            Admission : constant Results.Result :=
-              Sessions.Admit_Allocation
-                (S, S.Budget.Max_Allocation_Bytes);
-         begin
-            if not Results.Succeeded (Admission) then
-               return Admission;
-            end if;
-         end;
+         --  Decoding is drawing work, a unit per pixel and per row, drawn or not, as for a copied pixmap.
+         Outcome :=
+           Rendering.Charge
+             (P, S, Pixel_Count (Image_Width) * Pixel_Count (Image_Height) + Pixel_Count (Image_Height));
+         if not Results.Succeeded (Outcome) then
+            return Outcome;
+         end if;
+         --  The pixels, plus what jpeglib is given for its own buffers: what is left of the per-allocation
+         --  budget, but no more than a progressive decode of this size needs, so one image does not take a
+         --  session's whole quota. Both count against the aggregate allocation quota.
+         Pixel_Bytes := 3 * Byte_Count (Image_Width) * Byte_Count (Image_Height);
+         Jpeglib_Share :=
+           Byte_Count'Min (S.Budget.Max_Allocation_Bytes - Pixel_Bytes, 8 * Pixel_Bytes + 1_048_576);
+         Outcome := Sessions.Admit_Aggregate (S, Pixel_Bytes + Jpeglib_Share);
+         if not Results.Succeeded (Outcome) then
+            return Outcome;
+         end if;
 
          declare
             --  jpeglib reads the JPEG straight from the picture, at most Data_Size bytes.
@@ -309,8 +318,7 @@ package body Pictlib.Internal.QuickTime is
                (Jpeglib.Limits.Default_Limits with delta
                   Max_Pixels => Jpeglib.Pixel_Count (S.Budget.Max_Embedded_Image_Pixels),
                   --  The decoded pixels and jpeglib's own buffers share the one allocation budget.
-                  Max_Allocation_Bytes =>
-                    Jpeglib.Byte_Count (S.Budget.Max_Allocation_Bytes - 3 * Byte_Count (Width) * Byte_Count (Height))));
+                  Max_Allocation_Bytes => Jpeglib.Byte_Count (Jpeglib_Share)));
             Decoded := Jpeglib.Decoding.Read_Header (Decoder);
             if Jpeglib.Results.Succeeded (Decoded)
               and then (Natural (Jpeglib.Decoding.Header (Decoder).Width) /= Width
