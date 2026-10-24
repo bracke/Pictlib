@@ -1,0 +1,134 @@
+# THIS FILE IS GENERATED. DO NOT EDIT.
+
+[solution]
+[solution.context]
+solved = true
+[[solution.state]]
+crate = "aunit"
+fulfilment = "solved"
+pinned = false
+transitivity = "direct"
+versions = "^26.0.0"
+[solution.state.release]
+authors = [
+"AdaCore",
+]
+description = "Ada unit test framework"
+licenses = "GPL-3.0-or-later WITH GCC-exception-3.1"
+maintainers = [
+"chouteau@adacore.com",
+"sagaert@adacore.com",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "aunit"
+project-files = [
+"lib/gnat/aunit.gpr",
+]
+tags = [
+"unit",
+"test",
+"unit-test",
+]
+version = "26.0.0"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.gpr-externals]
+AUNIT_BUILD_MODE = [
+"Devel",
+"Install",
+]
+AUNIT_RUNTIME = [
+"full",
+"zfp",
+"zfp-cross",
+"ravenscar",
+"ravenscar-cert",
+"cert",
+]
+[solution.state.release.origin]
+hashes = [
+"sha512:b882e96a4b2cbc2d0d3838e14f2c7b6e576d6d7ccf88fe3562b1fbca61a2ebfd4e8b3379dd5c3fb3140949cda69526c8696fe3b7a6c6748fe93f116213276b39",
+]
+url = "https://github.com/AdaCore/aunit/archive/refs/tags/v26.0.0.zip"
+[[solution.state]]
+crate = "gnat_native"
+fulfilment = "solved"
+pinned = false
+transitivity = "indirect"
+versions = "^15"
+[solution.state.release]
+auto-gpr-with = false
+description = "The GNAT Ada compiler - Native"
+licenses = "GPL-3.0-or-later AND GPL-3.0-or-later WITH GCC-exception-3.1"
+maintainers = [
+"Fabien Chouteau <chouteau@adacore.com>",
+"CÃ©sar Sagaert <sagaert@adacore.com>",
+]
+maintainers-logins = [
+"Fabien-Chouteau",
+"AldanTanneo",
+]
+name = "gnat_native"
+provides = [
+"gnat=15.2.1",
+]
+version = "15.2.1"
+website = "https://github.com/alire-project/GNAT-FSF-builds"
+[solution.state.release.configuration]
+auto_gpr_with = true
+disabled = true
+generate_ada = true
+generate_c = true
+generate_gpr = true
+output_dir = "config"
+[solution.state.release.environment]
+[solution.state.release.environment.LD_LIBRARY_PATH]
+prepend = "${CRATE_ROOT}/lib64"
+[solution.state.release.environment.LD_RUN_PATH]
+prepend = "${CRATE_ROOT}/lib64"
+[solution.state.release.environment.LIBRARY_PATH]
+prepend = "${CRATE_ROOT}/lib64"
+[solution.state.release.environment.PATH]
+prepend = "${CRATE_ROOT}/bin"
+[solution.state.release.origin]
+binary = true
+hashes = [
+"sha256:4640d4b369833947ab1a156753f4db0ecd44b0f14410b5b2bc2a14df496604bb",
+]
+url = "https://github.com/alire-project/GNAT-FSF-builds/releases/download/gnat-15.2.0-1/gnat-x86_64-linux-15.2.0-1.tar.gz"
+[[solution.state]]
+crate = "jpeglib"
+fulfilment = "linked"
+pinned = false
+transitivity = "direct"
+versions = "~0.1.0-dev"
+[solution.state.link]
+lockfiled = true
+path = "../../jpeglib"
+[[solution.state]]
+crate = "pictlib"
+fulfilment = "linked"
+pinned = false
+transitivity = "direct"
+versions = "*"
+[solution.state.link]
+lockfiled = true
+path = ".."
+[[solution.state]]
+crate = "project_tools"
+fulfilment = "linked"
+pinned = false
+transitivity = "direct"
+versions = "*"
+[solution.state.link]
+lockfiled = true
+path = "../../project_tools"
+

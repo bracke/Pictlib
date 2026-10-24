@@ -1,0 +1,27 @@
+name = "pictlib"
+description = "Native Ada QuickDraw PICT decoding and encoding library"
+version = "0.1.0-dev"
+
+authors = ["Bent Bracke"]
+maintainers = ["Bent Bracke <bent@bracke.dk>"]
+maintainers-logins = ["bracke"]
+licenses = "MIT"
+website = ""
+long-description = "pictlib is a native Ada 2022 Apple QuickDraw PICT codec: decoding of PICT version 1, version 2 and extended version 2 pictures, including raster opcodes, a QuickDraw renderer for vector and text opcodes and QuickTime-embedded JPEG images, and encoding of raster PICT version 2, with resource limits and streaming interfaces and no binding to any C library."
+tags = ["pict", "quickdraw", "codec", "image"]
+
+[[depends-on]]
+gnat_native = "^15"
+
+[[depends-on]]
+jpeglib = "*"
+
+[[pins]]
+jpeglib = { path = "../jpeglib" }
+
+[build-profiles]
+"*" = "development"
+
+[[actions]]
+type = "test"
+command = ["alr", "--chdir", "tests", "run"]

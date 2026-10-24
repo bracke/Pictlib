@@ -1,0 +1,31 @@
+name = "tests"
+description = "AUnit tests for pictlib"
+version = "0.1.0-dev"
+executables = ["pictlib_tests"]
+
+authors = ["Bent Bracke"]
+maintainers = ["Bent Bracke <bent@bracke.dk>"]
+maintainers-logins = ["bracke"]
+licenses = "MIT"
+tags = ["pict", "tests", "aunit"]
+
+[[depends-on]]
+pictlib = "*"
+
+[[depends-on]]
+aunit = "^26.0.0"
+
+[[depends-on]]
+project_tools = "*"
+
+[[pins]]
+pictlib = { path = ".." }
+
+[[pins]]
+jpeglib = { path = "../../jpeglib" }
+
+[[pins]]
+project_tools = { path = "../../project_tools" }
+
+[build-profiles]
+"*" = "development"

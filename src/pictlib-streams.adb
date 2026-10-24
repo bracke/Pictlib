@@ -1,0 +1,239 @@
+package body Pictlib.Streams is
+   function Read_Exact (Object : in out Source'Class; Buffer : out Byte_Array) return Results.Result is
+      Completed : Natural := 0;
+   begin
+      while Completed < Buffer'Length loop
+         declare
+            Step : constant Source_Result :=
+              Object.Read (Buffer (Buffer'First + Completed .. Buffer'Last));
+            Remaining : constant Natural := Buffer'Length - Completed;
+         begin
+            if Errors.Is_Fatal (Step.Error) then
+               return Results.Failure (Step.Error);
+            elsif Step.Count > Byte_Count (Remaining) then
+               return Results.Failure
+                 (Errors.Make
+                    (Errors.Internal_Invariant_Failed,
+                     (Source => Object.Offset,
+                      Expected => Byte_Count (Remaining),
+                      Actual => Step.Count,
+                      others => <>)));
+            elsif Step.Count = 0 then
+               if Step.End_Of_Input then
+                  return Results.Failure
+                    (Errors.Make
+                       (Errors.Source_Unexpected_End,
+                        (Source => Object.Offset,
+                         Expected => Byte_Count (Buffer'Length),
+                         Actual => Byte_Count (Completed),
+                         others => <>)));
+               else
+                  return Results.Failure
+                    (Errors.Make
+                       (Errors.Source_Zero_Progress,
+                        (Source => Object.Offset, others => <>)));
+               end if;
+            else
+               Completed := Completed + Natural (Step.Count);
+            end if;
+         end;
+      end loop;
+      return Results.Success;
+   end Read_Exact;
+
+   function Skip_Exact (Object : in out Source'Class; Count : Byte_Count) return Results.Result is
+      Completed : Byte_Count := 0;
+   begin
+      while Completed < Count loop
+         declare
+            Remaining : constant Byte_Count := Count - Completed;
+            Step : constant Source_Result := Object.Skip (Remaining);
+         begin
+            if Errors.Is_Fatal (Step.Error) then
+               return Results.Failure (Step.Error);
+            elsif Step.Count > Remaining then
+               return Results.Failure
+                 (Errors.Make
+                    (Errors.Internal_Invariant_Failed,
+                     (Source => Object.Offset,
+                      Expected => Remaining,
+                      Actual => Step.Count,
+                      others => <>)));
+            elsif Step.Count = 0 then
+               if Step.End_Of_Input then
+                  return Results.Failure
+                    (Errors.Make
+                       (Errors.Source_Unexpected_End,
+                        (Source => Object.Offset,
+                         Expected => Count,
+                         Actual => Completed,
+                         others => <>)));
+               else
+                  return Results.Failure
+                    (Errors.Make
+                       (Errors.Source_Zero_Progress,
+                        (Source => Object.Offset, others => <>)));
+               end if;
+            else
+               Completed := Completed + Step.Count;
+            end if;
+         end;
+      end loop;
+      return Results.Success;
+   end Skip_Exact;
+
+   function Write_All (Object : in out Destination'Class; Buffer : Byte_Array) return Results.Result is
+      Completed : Natural := 0;
+   begin
+      while Completed < Buffer'Length loop
+         declare
+            Step : constant Destination_Result :=
+              Object.Write (Buffer (Buffer'First + Completed .. Buffer'Last));
+            Remaining : constant Natural := Buffer'Length - Completed;
+         begin
+            if Errors.Is_Fatal (Step.Error) then
+               return Results.Failure (Step.Error);
+            elsif Step.Count > Byte_Count (Remaining) then
+               return Results.Failure
+                 (Errors.Make
+                    (Errors.Internal_Invariant_Failed,
+                     (Destination => Object.Offset,
+                      Expected => Byte_Count (Remaining),
+                      Actual => Step.Count,
+                      others => <>)));
+            elsif Step.Count = 0 then
+               return Results.Failure
+                 (Errors.Make
+                    (Errors.Destination_Zero_Progress,
+                     (Destination => Object.Offset, others => <>)));
+            else
+               Completed := Completed + Natural (Step.Count);
+            end if;
+         end;
+      end loop;
+      return Results.Success;
+   end Write_All;
+
+   function Transfer_Cap (Value : Byte_Count) return Natural is
+   begin
+      if Value > Byte_Count (Natural'Last) then
+         return Natural'Last;
+      else
+         return Natural (Value);
+      end if;
+   end Transfer_Cap;
+
+   procedure Open
+     (Object : in out Memory_Source;
+      Storage : not null Const_Byte_Array_Access;
+      Max_Transfer : Byte_Count := Byte_Count'Last)
+   is
+   begin
+      Object.Storage := Storage;
+      Object.Position := 0;
+      Object.Max_Transfer := Max_Transfer;
+   end Open;
+
+   overriding function Read (Object : in out Memory_Source; Buffer : out Byte_Array) return Source_Result is
+      Available : Natural;
+      To_Copy : Natural;
+   begin
+      if Object.Storage = null then
+         return (Error => Errors.Make (Errors.Source_Read_Failed), Count => 0, End_Of_Input => False);
+      end if;
+
+      Available := Object.Storage'Length - Object.Position;
+      To_Copy := Natural'Min (Natural'Min (Buffer'Length, Available), Transfer_Cap (Object.Max_Transfer));
+
+      if To_Copy > 0 then
+         for I in 0 .. To_Copy - 1 loop
+            Buffer (Buffer'First + I) := Object.Storage (Object.Storage'First + Object.Position + I);
+         end loop;
+      end if;
+
+      Object.Position := Object.Position + To_Copy;
+      return
+        (Error => Errors.Make (Errors.No_Error),
+         Count => Byte_Count (To_Copy),
+         End_Of_Input => Object.Position = Object.Storage'Length);
+   end Read;
+
+   overriding function Offset (Object : Memory_Source) return Source_Offset is
+   begin
+      return Source_Offset (Object.Position);
+   end Offset;
+
+   overriding function Skip (Object : in out Memory_Source; Count : Byte_Count) return Source_Result is
+      Available : Natural;
+      To_Skip : Natural;
+   begin
+      if Object.Storage = null then
+         return (Error => Errors.Make (Errors.Source_Read_Failed), Count => 0, End_Of_Input => False);
+      end if;
+
+      Available := Object.Storage'Length - Object.Position;
+      To_Skip := Natural'Min (Natural'Min (Available, Transfer_Cap (Count)), Transfer_Cap (Object.Max_Transfer));
+      Object.Position := Object.Position + To_Skip;
+      return
+        (Error => Errors.Make (Errors.No_Error),
+         Count => Byte_Count (To_Skip),
+         End_Of_Input => Object.Position = Object.Storage'Length);
+   end Skip;
+
+   procedure Open
+     (Object : in out Fixed_Buffer_Destination;
+      Storage : not null Byte_Array_Access;
+      Max_Transfer : Byte_Count := Byte_Count'Last)
+   is
+   begin
+      Object.Storage := Storage;
+      Object.Position := 0;
+      Object.Max_Transfer := Max_Transfer;
+   end Open;
+
+   overriding function Write
+     (Object : in out Fixed_Buffer_Destination; Buffer : Byte_Array) return Destination_Result
+   is
+      Available : Natural;
+      To_Copy : Natural;
+   begin
+      if Object.Storage = null then
+         return (Error => Errors.Make (Errors.Destination_Write_Failed), Count => 0);
+      end if;
+
+      Available := Object.Storage'Length - Object.Position;
+      To_Copy := Natural'Min (Natural'Min (Buffer'Length, Available), Transfer_Cap (Object.Max_Transfer));
+
+      if To_Copy > 0 then
+         for I in 0 .. To_Copy - 1 loop
+            Object.Storage (Object.Storage'First + Object.Position + I) := Buffer (Buffer'First + I);
+         end loop;
+      end if;
+      Object.Position := Object.Position + To_Copy;
+
+      if To_Copy < Buffer'Length and then To_Copy = Available then
+         return
+           (Error => Errors.Make
+              (Errors.Limit_Exceeded,
+               (Destination => Destination_Offset (Object.Position),
+                Expected => Byte_Count (Buffer'Length),
+                Actual => Byte_Count (To_Copy),
+                Limit => Output_Byte_Limit,
+                others => <>)),
+            Count => Byte_Count (To_Copy));
+      end if;
+
+      return (Error => Errors.Make (Errors.No_Error), Count => Byte_Count (To_Copy));
+   end Write;
+
+   overriding function Offset (Object : Fixed_Buffer_Destination) return Destination_Offset is
+   begin
+      return Destination_Offset (Object.Position);
+   end Offset;
+
+   overriding function Flush (Object : in out Fixed_Buffer_Destination) return Errors.Error is
+      pragma Unreferenced (Object);
+   begin
+      return Errors.Make (Errors.No_Error);
+   end Flush;
+end Pictlib.Streams;
