@@ -2,6 +2,15 @@
 
 ## 0.1.0-dev
 
+- All tooling and scripting is Ada. `scripts/check_all.sh` is replaced by
+  `pictlib_check`, now the day-to-day gate (library build, source policy,
+  AUnit suite; `--policy-only` for the policy alone), which `alr test` runs.
+  `tests/fixtures/external/generate.sh` and its embedded Python are replaced
+  by `pictlib_generate`, which reproduces the committed fixtures byte for
+  byte. CI steps are single commands: `pictlib_complete` gained
+  `--without-conformance` and finds its tools' executable suffix,
+  `pictlib_conformance` falls back to ImageMagick 6's `convert`, and
+  `pictlib_prove` finds an Alire-installed gnatprove off `PATH`.
 - Gate M7, library-complete. New tools in the tests crate: `pictlib_check`
   (line length, GNATdoc tags on the public API, production dependencies),
   `pictlib_real_world` (LibreOffice's PICT filter test files at a pinned

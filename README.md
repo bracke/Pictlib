@@ -40,24 +40,25 @@ header's native resolution is not implemented. See
 
 ## Build and test
 
-All commands use Alire so the declared GNAT 15 toolchain is selected:
+All commands use Alire so the declared GNAT 15 toolchain is selected, and all
+tooling is Ada, in the `tests` crate. The day-to-day gate builds the library on
+its own, checks the source policy and runs the AUnit suite:
 
 ```sh
-alr build
 alr --chdir tests build
-alr --chdir tests exec -- ./bin/pictlib_tests
+alr --chdir tests run --skip-build pictlib_check
 ```
 
-`./scripts/check_all.sh` runs the same sequence. AUnit failures produce a
-nonzero process exit status.
-
-The library-complete gate runs every check -- source policy, unit tests, the
-real-world corpus, fuzzing, the SPARK proofs and encoder conformance against
-ImageMagick and LibreOffice (test-time only):
+`alr test` runs the same. The library-complete gate adds the real-world corpus,
+fuzzing, the SPARK proofs and encoder conformance against ImageMagick and
+LibreOffice (test-time only; `--args=--without-conformance` leaves that out):
 
 ```sh
-alr --chdir tests exec -- ./bin/pictlib_complete
+alr --chdir tests run --skip-build pictlib_complete
 ```
+
+`pictlib_generate` regenerates the external fixtures with ImageMagick and
+Netpbm.
 
 ## License
 

@@ -24,7 +24,8 @@
 **Completed (2026-10-24):** Tasks 1–6 and Gate M0. The GNAT 15 Alire library and
 test crates, public foundation API, diagnostics, limits, stream adapters, checked
 big-endian bytes, compile-only consumer and AUnit runner (15 tests) are
-implemented and verified with `scripts/check_all.sh`.
+implemented and verified with the day-to-day gate (then `scripts/check_all.sh`, since
+replaced by the Ada tool `pictlib_check`).
 
 1. Create Alire library crate `pictlib` (GNAT 15 pin, MIT, `jpeglib` path pin, `src/`) and the child
    Alire crate `tests` depending on `pictlib`, `aunit` and `project_tools`.
@@ -34,7 +35,7 @@ implemented and verified with `scripts/check_all.sh`.
 4. `Streams` interfaces, memory source and fixed-buffer destination with transfer caps; exact
    read/skip/write helpers. Test partial reads/writes, EOF, zero progress, offsets, failures.
 5. `Internal.Checked_Arithmetic` and `Internal.Bytes` (big-endian 16/32-bit, signed coordinates).
-6. `AGENTS.md`, README, CHANGELOG, AUnit runner, `scripts/check_all.sh`.
+6. `AGENTS.md`, README, CHANGELOG, AUnit runner, a day-to-day gate (now `pictlib_check`).
 
 **Gate M0:** clean root and tests builds; API consumer compiles; foundation, stream and byte tests pass.
 

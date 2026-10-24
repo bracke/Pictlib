@@ -224,7 +224,14 @@ procedure Pictlib_Conformance is
       return True;
    end Encode;
 
-   Magick : constant String := Processes.Locate_Command ("magick");
+   --  ImageMagick 7 is `magick`; ImageMagick 6 calls the same tool `convert`.
+   function ImageMagick return String is
+      Seven : constant String := Processes.Locate_Command ("magick");
+   begin
+      return (if Seven'Length > 0 then Seven else Processes.Locate_Command ("convert"));
+   end ImageMagick;
+
+   Magick : constant String := ImageMagick;
    Office : constant String := Processes.Locate_Command ("soffice");
    Failures : Natural := 0;
    Skipped : Natural := 0;
@@ -246,7 +253,7 @@ procedure Pictlib_Conformance is
 begin
    Ada.Directories.Create_Path (Directory);
    if Magick'Length = 0 then
-      Ada.Text_IO.Put_Line ("SKIP ImageMagick: magick is not installed");
+      Ada.Text_IO.Put_Line ("SKIP ImageMagick: neither magick nor convert is installed");
       Skipped := Skipped + 1;
    end if;
    if Office'Length = 0 or else Magick'Length = 0 then

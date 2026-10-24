@@ -10,3 +10,5 @@ alire/flags/
 *.o
 *.ali
 *.lexch
+alire/alr_test_local.*
+tests/alire/alr_test_local.*

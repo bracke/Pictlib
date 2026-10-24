@@ -30,4 +30,8 @@ textrender = { path = "../textrender" }
 
 [[actions]]
 type = "test"
-command = ["alr", "--chdir", "tests", "run"]
+command = ["alr", "--chdir", "tests", "build"]
+
+[[actions]]
+type = "test"
+command = ["alr", "--chdir", "tests", "run", "--skip-build", "pictlib_check"]

@@ -1,9 +1,11 @@
---  The library-complete gate: every check pictlib has, in order, each required to pass -- the source policy,
---  the AUnit suite, the real-world corpus, a fuzzing run, the SPARK proof profile and encoder conformance against
---  ImageMagick and LibreOffice. Run from the tests directory after `alr build`.
+--  The library-complete gate: every check pictlib has, in order, each required to pass -- the day-to-day gate
+--  (library build, source policy, AUnit suite), the real-world corpus, a fuzzing run, the SPARK proof profile and
+--  encoder conformance against ImageMagick and LibreOffice. --without-conformance leaves out the last, for hosts
+--  without those readers. Run from the tests directory after `alr build`.
 with Ada.Command_Line;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
+with GNAT.OS_Lib;
 with Project_Tools.Processes;
 
 procedure Pictlib_Complete is
@@ -20,29 +22,37 @@ procedure Pictlib_Complete is
 
    Steps : constant array (Positive range <>) of Step :=
      [Step_Of ("pictlib_check"),
-      Step_Of ("pictlib_tests"),
       Step_Of ("pictlib_real_world"),
       Step_Of ("pictlib_fuzz", [Processes.Argument ("20000")]),
       Step_Of ("pictlib_prove"),
       Step_Of ("pictlib_conformance", [Processes.Argument ("--require")])];
 
-   Failed : Natural := 0;
+   Without_Conformance : constant Boolean := Processes.Has_Argument ("--without-conformance");
+   Suffix_Access : GNAT.OS_Lib.String_Access := GNAT.OS_Lib.Get_Executable_Suffix;
+   Suffix : constant String := Suffix_Access.all;
+   Failed, Ran : Natural := 0;
 begin
+   GNAT.OS_Lib.Free (Suffix_Access);
    for Item of Steps loop
       declare
          Name : constant String := To_String (Item.Program);
          Status : constant Integer :=
-           Processes.Run_Status (Name, ".", "./bin/" & Name, Item.Arguments, Quiet => True);
+           (if Without_Conformance and then Name = "pictlib_conformance" then 0
+            else Processes.Run_Status (Name, ".", "./bin/" & Name & Suffix, Item.Arguments, Quiet => True));
       begin
-         if Status = 0 then
+         if Without_Conformance and then Name = "pictlib_conformance" then
+            Ada.Text_IO.Put_Line ("SKIP " & Name);
+         elsif Status = 0 then
+            Ran := Ran + 1;
             Ada.Text_IO.Put_Line ("PASS " & Name);
          else
+            Ran := Ran + 1;
             Failed := Failed + 1;
             Ada.Text_IO.Put_Line ("FAIL " & Name & " (status" & Status'Image & ")");
          end if;
       end;
    end loop;
-   Ada.Text_IO.Put_Line (Natural'Image (Steps'Length) & " gates," & Failed'Image & " failed");
+   Ada.Text_IO.Put_Line (Ran'Image & " gates," & Failed'Image & " failed");
    if Failed > 0 then
       Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
    end if;

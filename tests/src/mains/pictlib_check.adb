@@ -1,13 +1,17 @@
---  Source policy, independent of what an incremental build recompiled: lines of at most 120 characters in every
---  Ada source of both crates, GNATdoc tags on every public subprogram of the public packages, and production
---  units that depend only on Ada, Interfaces, GNAT, pictlib, jpeglib's public packages and textrender.
---  Run from anywhere below the pictlib tree.
+--  The day-to-day gate: the library builds on its own, the sources keep the policy, and the AUnit suite passes.
+--  The policy holds independent of what an incremental build recompiled: lines of at most 120 characters in
+--  every Ada source of both crates, GNATdoc tags on every public subprogram of the public packages, and
+--  production units that depend only on Ada, Interfaces, GNAT, pictlib, jpeglib's public packages and
+--  textrender. --policy-only checks the sources alone. Run from anywhere below the pictlib tree, after
+--  `alr --chdir tests build`.
 with Ada.Command_Line;
 with Ada.Directories;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Project_Tools.Ada_Source;
+with GNAT.OS_Lib;
 with Project_Tools.Files;
+with Project_Tools.Processes;
 
 procedure Pictlib_Check is
    use Ada.Strings.Unbounded;
@@ -86,12 +90,43 @@ procedure Pictlib_Check is
       end loop;
       End_Search (Search);
    end Check_Tree;
+   Policy_Only : constant Boolean := Project_Tools.Processes.Has_Argument ("--policy-only");
+
+   procedure Run (Label, Directory, Program : String; Arguments : Project_Tools.Processes.Argument_Items) is
+   begin
+      if Project_Tools.Processes.Run_Status
+           (Label, Directory, Program, Project_Tools.Processes.Arguments (Arguments)) /= 0
+      then
+         Fail (Label & " failed");
+      end if;
+   end Run;
 begin
    if Root'Length = 0 then
       Fail ("run below the pictlib tree");
    else
+      if not Policy_Only then
+         --  The library alone, as a consumer builds it.
+         declare
+            Alr : constant String := Project_Tools.Processes.Locate_Command ("alr");
+         begin
+            if Alr'Length = 0 then
+               Fail ("alr is not on PATH");
+            else
+               Run ("library build", Root, Alr, [Project_Tools.Processes.Argument ("build")]);
+            end if;
+         end;
+      end if;
       Check_Tree (Root & "/src", Production => True);
       Check_Tree (Root & "/tests/src", Production => False);
+      if not Policy_Only and then Failures = 0 then
+         declare
+            Suffix : GNAT.OS_Lib.String_Access := GNAT.OS_Lib.Get_Executable_Suffix;
+            Tests : constant String := Root & "/tests/bin/pictlib_tests" & Suffix.all;
+         begin
+            GNAT.OS_Lib.Free (Suffix);
+            Run ("unit tests", Root & "/tests", Tests, [1 .. 0 => Null_Unbounded_String]);
+         end;
+      end if;
    end if;
    if Failures > 0 then
       Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);

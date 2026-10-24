@@ -437,7 +437,7 @@ expected/actual counts, limit kind and an underlying code.
 ```text
 pictlib/
   alire.toml  pictlib.gpr  AGENTS.md  CLAUDE.md  README.md  LICENSE  CHANGELOG.md
-  CONTRIBUTING.md  SECURITY.md  scripts/check_all.sh
+  CONTRIBUTING.md  SECURITY.md
   src/        pictlib.ads, pictlib-*.ads/.adb
   docs/       SPECIFICATION.md, IMPLEMENTATION_PLAN.md, PUBLIC_API.md,
               invariants.md, limits_and_safety.md (from M1)
@@ -451,7 +451,8 @@ Root `alire.toml`: `name = "pictlib"`, `0.1.0-dev`, MIT, `gnat_native = "^15"`, 
 (the real-world corpus against its recorded outcomes), `pictlib_fuzz` (mutation fuzzing),
 `pictlib_prove` (the SPARK proof profile), `pictlib_conformance` (encoder output read by ImageMagick
 and by LibreOffice's own PICT import, exact), `pictlib_benchmark` (throughput, informational) and
-`pictlib_complete` (every gate in turn).
+`pictlib_complete` (every gate in turn), and `pictlib_generate` (the external fixtures, from
+ImageMagick and Netpbm). All tooling is Ada; there are no shell or Python scripts.
 ImageMagick 7 reads only pictures with the file header, misreads rows stored unpacked and draws
 1-bit BitMaps black, so those pictures are judged by LibreOffice alone.
 

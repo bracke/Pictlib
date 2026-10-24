@@ -9,11 +9,13 @@ Use Alire for all GNAT/GPR/toolchain work. Do not call system GNAT, GPRBuild,
 GNATprove, or GNATdoc directly from `PATH`; use `alr` so the pinned toolchain is
 selected.
 
-Tests use AUnit. Test and release tooling should live in the tests crate and
-use `../project_tools` for test/release policy.
+Tests use AUnit. All test and release tooling and scripting is Ada, in the tests
+crate, using `../project_tools` for test/release policy; CI steps are single
+commands that run those tools.
 
 Keep the repository buildable after every change. The day-to-day gate is:
 
 ```sh
-./scripts/check_all.sh
+alr --chdir tests build
+alr --chdir tests run --skip-build pictlib_check
 ```

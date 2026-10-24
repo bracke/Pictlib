@@ -1,5 +1,7 @@
 name: ci
 
+# Every step is one command; the checking itself is done by the Ada tools of the tests crate.
+
 on:
   push:
   pull_request:
@@ -35,50 +37,26 @@ jobs:
           toolchain: gnat_native=15.2.1 gprbuild=25.0.1
 
       - name: Raise Alire solver timeout so slow runners get a complete solution
-        shell: bash
         run: alr settings --global --set solver.timeout 600
 
-      - name: Refresh platform-local Alire locks
+      - name: Refresh the library's platform-local Alire lock
         working-directory: pictlib
-        shell: bash
-        run: |
-          alr --non-interactive update gnat_native
-          cd tests
-          alr --non-interactive update gnat_native
+        run: alr --non-interactive update gnat_native
 
-      - name: Build library
-        working-directory: pictlib
-        shell: bash
-        run: alr --non-interactive build
+      - name: Refresh the tests crate's platform-local Alire lock
+        working-directory: pictlib/tests
+        run: alr --non-interactive update gnat_native
 
       - name: Build tests and tools
         working-directory: pictlib/tests
-        shell: bash
         run: alr --non-interactive build
 
       - name: Install GNATprove
-        shell: bash
-        run: |
-          alr install gnatprove
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            echo "$(cygpath -w "$HOME/.alire/bin")" >> "$GITHUB_PATH"
-          else
-            echo "$HOME/.alire/bin" >> "$GITHUB_PATH"
-          fi
+        run: alr install gnatprove
 
-      - name: Source policy, unit tests, real-world corpus, fuzzing and proof
+      - name: Library-complete gate without the external readers
         working-directory: pictlib/tests
-        shell: bash
-        run: |
-          exe=""
-          if [ "$RUNNER_OS" = "Windows" ]; then exe=".exe"; fi
-          for step in "pictlib_check" "pictlib_tests" "pictlib_real_world" "pictlib_fuzz 20000" "pictlib_prove"; do
-            set -- $step
-            tool="$1"; shift
-            echo "::group::$tool"
-            alr exec -- "./bin/$tool$exe" "$@"
-            echo "::endgroup::"
-          done
+        run: alr --non-interactive run --skip-build pictlib_complete --args=--without-conformance
 
   conformance:
     name: encoder conformance (ImageMagick, LibreOffice)
@@ -90,31 +68,29 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: pictlib
+
       - uses: bracke/project_tools/.github/actions/checkout-ada-siblings@main
         with:
           root: pictlib
+
       - uses: alire-project/setup-alire@v6
         with:
           toolchain: gnat_native=15.2.1 gprbuild=25.0.1
+
+      - name: Install the package index
+        run: sudo apt-get update
+
       - name: Install the independent PICT readers
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends imagemagick libreoffice-draw
-          if ! command -v magick >/dev/null 2>&1; then
-            convert_path="$(command -v convert)"
-            printf '#!/usr/bin/env sh\nexec "%s" "$@"\n' "$convert_path" | sudo tee /usr/local/bin/magick >/dev/null
-            sudo chmod +x /usr/local/bin/magick
-          fi
-          magick -version
-          soffice --version
-      - name: Build and run conformance
-        working-directory: pictlib
-        shell: bash
-        run: |
-          alr --non-interactive update gnat_native
-          alr --non-interactive build
-          cd tests
-          alr --non-interactive update gnat_native
-          alr --non-interactive build
-          alr exec -- ./bin/pictlib_conformance --require
+        run: sudo apt-get install -y --no-install-recommends imagemagick libreoffice-draw
+
+      - name: Refresh the tests crate's platform-local Alire lock
+        working-directory: pictlib/tests
+        run: alr --non-interactive update gnat_native
+
+      - name: Build tests and tools
+        working-directory: pictlib/tests
+        run: alr --non-interactive build
+
+      - name: Encoder conformance
+        working-directory: pictlib/tests
+        run: alr --non-interactive run --skip-build pictlib_conformance --args=--require
