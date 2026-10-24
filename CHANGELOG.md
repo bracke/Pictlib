@@ -2,6 +2,14 @@
 
 ## 0.1.0-dev
 
+- Fixes from the eighth review. A PixPat tile is checked against the drawing
+  budget, then the allocation budget, then the 2^31 - 1 pixels a tile can
+  index; a larger tile is `Unsupported_Feature` strictly and skipped with an
+  `Approximated_Rendering` warning otherwise, its 1-bit pattern standing in,
+  rather than a limit no budget raises. The pattern reader resets a pattern
+  it failed to read itself again. The specification states what a pattern
+  costs and no longer promises port state that no one can observe after a
+  failure. Tests cover each step of the order.
 - Fixes from the seventh review. Every pattern opcode is read, then charged,
   and any failure puts that slot's default pattern back, as the
   specification now says; the extra skip after an over-budget bit pattern is

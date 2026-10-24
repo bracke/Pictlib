@@ -192,9 +192,21 @@ package body Pictlib_Testing.Test_Hostile is
       Tight.Max_Allocation_Bytes := 1_000;
       Over (Unaffordable_Tile, Tight, Pictlib.Drawing_Work_Limit, "18000 x 18000 PixPat on small budgets");
       Tight := Pictlib.Limits.Default_Limits;
-      --  A resource bound, not a malformed picture: whatever the budget, a tile indexes at most 2^31 - 1 pixels.
+      --  A 65535 x 65535 tile meets the drawing budget, then the allocation budget, then the 2^31 - 1 pixels a tile
+      --  can index, which no budget raises: unsupported, strictly; skipped with a warning otherwise.
+      Tight.Max_Drawing_Work := 100;
+      Over (Unindexable_Tile, Tight, Pictlib.Drawing_Work_Limit, "65535 x 65535 PixPat on a small drawing budget");
+      Over (Unindexable_Tile, Pictlib.Limits.Default_Limits, Pictlib.Allocation_Byte_Limit,
+            "65535 x 65535 PixPat on the default budgets");
+      Tight := Pictlib.Limits.Default_Limits;
       Tight.Max_Allocation_Bytes := Pictlib.Byte_Count'Last;
-      Over (Unindexable_Tile, Tight, Pictlib.Allocation_Byte_Limit, "65535 x 65535 PixPat");
+      Canvases.Expect_Failure (Unindexable_Tile, 8, 2, Errors.Unsupported_Feature, "65535 x 65535 PixPat",
+                               Options => (Strictness => Pictlib.Strict, others => <>), Budget => Tight);
+      Canvases.Render (Unindexable_Tile, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Compatible,
+                       Budget => Tight);
+      Assert (Recorders.Has_Warning (Decoder, Errors.Approximated_Rendering)
+              and then Outcome.First_Error.Code = Errors.Source_Unexpected_End,
+              "65535 x 65535 PixPat was not skipped leniently: " & Outcome.First_Error.Code'Image);
       --  Limits apply only to rendering: enumeration reads on, to the rows this picture does not have.
       Recorders.Decode (Unindexable_Tile, Decoder, Events, Outcome);
       Assert (Outcome.First_Error.Code = Errors.Source_Unexpected_End,

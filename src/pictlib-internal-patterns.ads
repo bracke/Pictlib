@@ -45,13 +45,14 @@ package Pictlib.Internal.Patterns is
    --  Read pixel pattern.
    --  @param S Session positioned at a PixPat.
    --  @param Item The pattern; its old tile is released before the new one is set aside. After a failure it is
-   --  incomplete, and the caller puts its default back.
+   --  a plain black pattern, never a part-read tile. A tile of more than Count_Type'Last pixels is
+   --  unsupported: strictly a failure, leniently skipped with a warning, its pat1Data standing in.
    --  @param Allowance Drawing work a tile's decoding may take, a unit per pixel and per row; a tile is decoded
    --  only when that fits.
    --  @param Work The drawing work it took, for the caller to charge: a unit for any pattern, plus a tile's
    --  decoding. The unit alone may exceed Allowance; the charge then fails.
-   --  @return Success, Pattern_Invalid for an unknown type, Limit_Exceeded past Allowance, the allocation budget
-   --  or the pixels a tile can index, or the pixmap's failure.
+   --  @return Success, Pattern_Invalid for an unknown type, Limit_Exceeded past Allowance or the allocation budget,
+   --  Unsupported_Feature for a tile too large to index (strictly), or the pixmap's failure.
    function Read_Pixel_Pattern
      (S : in out Sessions.Session;
       Item : out Pattern;

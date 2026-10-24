@@ -107,19 +107,28 @@ package body Pictlib.Internal.Patterns is
             end if;
          end;
       end if;
-      --  A tile holds at most Count_Type'Last pixels: a bound on what can be allocated, whatever the budget.
-      if Results.Succeeded (Outcome) and then Pixels > Byte_Count (Ada.Containers.Count_Type'Last) then
-         --  Reported as that bound, which no budget raises.
-         Outcome := Sessions.Over_Limit
-           (S, Allocation_Byte_Limit, 3 * Byte_Count (Ada.Containers.Count_Type'Last), 3 * Pixels);
-      end if;
       --  The tile and the row buffers are one opcode's allocation; the tile is set aside whole, once.
       if Results.Succeeded (Outcome) then
-         Outcome := Pixmaps.Start
-           (S, Decoder, Header, Extra => 3 * Pixels);
+         Outcome := Pixmaps.Start (S, Decoder, Header, Extra => 3 * Pixels);
       end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
+      end if;
+      --  A tile indexes at most Count_Type'Last pixels: not malformed, and no budget raises it, so a larger one is
+      --  unsupported. Leniently its rows are skipped and pat1Data, already read, stands in for it.
+      if Pixels > Byte_Count (Ada.Containers.Count_Type'Last) then
+         Pixmaps.Finish (Decoder);
+         declare
+            Context : constant Errors.Diagnostic_Context :=
+              (Source => S.Stream.Offset, Expected => Byte_Count (Ada.Containers.Count_Type'Last), Actual => Pixels,
+               others => <>);
+         begin
+            if not Sessions.Is_Lenient (S) then
+               return Results.Failure (Errors.Make (Errors.Unsupported_Feature, Context));
+            end if;
+            Sessions.Warn (S, Errors.Approximated_Rendering, Errors.Data_Loss, Context);
+            return Pixmaps.Skip_Pixels (S, Header);
+         end;
       end if;
       Item.Kind := Color_Pattern;
       Item.Width := Header.Width;
@@ -171,6 +180,10 @@ package body Pictlib.Internal.Patterns is
             when others =>
                Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 2, Byte_Count (Pattern_Type));
          end case;
+      end if;
+      --  Never a part-read tile, whoever calls.
+      if not Results.Succeeded (Outcome) then
+         Item := (others => <>);
       end if;
       return Outcome;
    end Read_Pixel_Pattern;
