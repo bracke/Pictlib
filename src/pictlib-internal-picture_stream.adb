@@ -104,7 +104,8 @@ package body Pictlib.Internal.Picture_Stream is
          declare
             Count : constant Natural := Natural'Min (Buffer'Length, Buffered (Object));
          begin
-            Buffer (Buffer'First .. Buffer'First + Count - 1) := Object.Buffer (Object.First .. Object.First + Count - 1);
+            Buffer (Buffer'First .. Buffer'First + Count - 1) :=
+              Object.Buffer (Object.First .. Object.First + Count - 1);
             Object.First := Object.First + Count;
             Object.Consumed := Object.Consumed + Byte_Count (Count);
             return

@@ -80,4 +80,31 @@ package body Pictlib.Internal.Transfer_Modes is
                Each (Source.Blue, Destination.Blue, Fore.Blue, Back.Blue, Colors.Operation.Blue));
       end case;
    end Compose;
+   function Effect
+     (Kind : Mode_Kind;
+      Source : Images.RGB_Color;
+      Colors : Port_Colors;
+      Colorize : Boolean;
+      Color : out Images.RGB_Color) return Effect_Kind
+   is
+      --  The share of the destination the or and bic modes keep is the source component (its inverse for the
+      --  not modes): none of it when every component is dark, all of it when every one is light.
+      Shade : constant Images.RGB_Color :=
+        (if Kind in Not_Copy .. Not_Bic then (not Source.Red, not Source.Green, not Source.Blue) else Source);
+   begin
+      Color := Compose (Kind, Source, Images.White, Colors, Colorize);
+      case Kind is
+         when Copy | Not_Copy =>
+            return Constant_Color;
+         when Or_Mode | Bic | Not_Or | Not_Bic =>
+            if Shade = Images.Black then
+               return Constant_Color;
+            elsif Shade = Images.White then
+               return Unchanged;
+            end if;
+            return Depends_On_Destination;
+         when others =>
+            return Depends_On_Destination;
+      end case;
+   end Effect;
 end Pictlib.Internal.Transfer_Modes;

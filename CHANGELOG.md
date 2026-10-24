@@ -2,6 +2,23 @@
 
 ## 0.1.0-dev
 
+- Gate M7, library-complete. New tools in the tests crate: `pictlib_check`
+  (line length, GNATdoc tags on the public API, production dependencies),
+  `pictlib_real_world` (LibreOffice's PICT filter test files at a pinned
+  commit, MPL-2.0, held to recorded outcomes), `pictlib_fuzz` (deterministic
+  mutation fuzzing; 300 000 inputs, no defects), `pictlib_prove` (SPARK:
+  checked arithmetic, image descriptors, opcode rules and PackBits `Unpack`
+  proved at level 0), `pictlib_benchmark` and `pictlib_complete` (every
+  gate). A stress suite covers reset reuse, decoders in concurrent tasks and
+  every limit kind. Fixes found on the way: textrender's rasterizer shares
+  scratch buffers between renderers, so concurrent text failed -- textrender
+  is now called under one process-wide lock; a 205-megapixel real-world
+  picture took 16 s -- uniform fills whose result does not depend on the
+  destination are now span writes, polygons use an active edge list, and the
+  background fill copies rows (1.1 s); eight over-long source lines that
+  incremental builds had hidden. `PackBits.Unpack` became a procedure, for
+  SPARK. `Limits.Max_Canvas_Bytes` and `Canvas_Byte_Limit`, never enforced,
+  are removed. A CI workflow mirrors jpeglib's. 107 AUnit tests.
 - Gate M6: `Pictlib.Encoding` writes raster PICT version 2. `Direct_32`
   (DirectBitsRect, PackBits over component planes, alpha optional),
   `Indexed_8` (PackBitsRect with an exact color table), `Mono_1` (a BitMap

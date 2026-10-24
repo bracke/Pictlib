@@ -28,6 +28,19 @@ package body Pictlib.Internal.Patterns is
       end case;
    end Sample;
 
+   function Uniform (Item : Pattern; Color : out Images.RGB_Color) return Boolean is
+   begin
+      Color := Sample (Item, 0, 0);
+      case Item.Kind is
+         when Bit_Pattern =>
+            return (for all Row of Item.Bits => Row = Item.Bits (0) and then Row in 0 | 16#FF#);
+         when Solid_Color =>
+            return True;
+         when Color_Pattern =>
+            return False;
+      end case;
+   end Uniform;
+
    function Read_Bit_Pattern (S : in out Sessions.Session; Item : out Pattern) return Results.Result is
       Data : Streams.Byte_Array (1 .. 8);
       Outcome : constant Results.Result := Sessions.Read_Into (S, Data);

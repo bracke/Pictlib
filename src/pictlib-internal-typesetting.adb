@@ -31,6 +31,15 @@ package body Pictlib.Internal.Typesetting is
       return Results.Success;
    end Unavailable;
 
+   --  The characters, with the font in Slot loaded; called under the textrender lock.
+   function Draw_Characters
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event;
+      Characters : Streams.Byte_Array;
+      Slot : Positive;
+      Kind : Transfer_Modes.Mode_Kind) return Results.Result;
+
    function Draw
      (P : in out Rendering.Painter;
       S : in out Sessions.Session;
@@ -65,10 +74,33 @@ package body Pictlib.Internal.Typesetting is
       Outcome := Rendering.Mode (S, Event, State.Mode, Kind);
       if not Results.Succeeded (Outcome) then
          return Outcome;
-      elsif Text.Acquire (P.Font_Cache, Path, Size, Slot) /= Textrender.Success then
-         return Unavailable (S, Event);
       end if;
 
+      declare
+         --  Every textrender call below is made under the process-wide textrender lock.
+         Guard : Text.Textrender_Guard;
+         pragma Unreferenced (Guard);
+      begin
+         if Text.Acquire (P.Font_Cache, Path, Size, Slot) /= Textrender.Success then
+            return Unavailable (S, Event);
+         end if;
+         Outcome := Draw_Characters (P, S, Event, Characters, Slot, Kind);
+      end;
+      return Outcome;
+   end Draw;
+
+   function Draw_Characters
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event;
+      Characters : Streams.Byte_Array;
+      Slot : Positive;
+      Kind : Transfer_Modes.Mode_Kind) return Results.Result
+   is
+      State : Text.Text_State renames P.Text_State;
+      Size : constant Natural := (if State.Size = 0 then Default_Size else State.Size);
+      Outcome : Results.Result := Results.Success;
+   begin
       declare
          Font : constant not null access Textrender.Renderer := Text.Renderer (P.Font_Cache, Slot);
          Style : constant Textrender.Font_Style :=
@@ -90,7 +122,8 @@ package body Pictlib.Internal.Typesetting is
                   Metric : Textrender.Glyph_Metric;
                   Status : constant Textrender.Status_Code :=
                     Font.Get_Glyph (Text.To_Unicode (Item), Metric, Style);
-                  Drawable : constant Boolean := Status = Textrender.Success and then Metric.W > 0 and then Metric.H > 0;
+                  Drawable : constant Boolean :=
+                    Status = Textrender.Success and then Metric.W > 0 and then Metric.H > 0;
                   Advance : Float :=
                     (if Status = Textrender.Success then Metric.Advance_X else Float (Size) / 2.0)
                     + Float (State.Char_Extra + Width_Change);
@@ -117,7 +150,8 @@ package body Pictlib.Internal.Typesetting is
                      Top : constant Integer :=
                        (if Drawable then Integer'Min (Baseline - Ascent, Glyph_Top) else Baseline - Ascent);
                      Bottom : constant Integer :=
-                       (if Drawable then Integer'Max (Baseline + Descent, Glyph_Top + Metric.H) else Baseline + Descent);
+                       (if Drawable then Integer'Max (Baseline + Descent, Glyph_Top + Metric.H)
+                        else Baseline + Descent);
 
                      function Covered (X, Y : Integer) return Boolean is
                        (Drawable
@@ -137,7 +171,8 @@ package body Pictlib.Internal.Typesetting is
                            Outcome := Rendering.Charge (P, S, Natural'Max (0, Span.Right - Span.Left));
                            for X in Span.Left .. Span.Right - 1 loop
                               declare
-                                 Ink : constant Boolean := Covered (X, Y) or else (Bold = 1 and then Covered (X - 1, Y));
+                                 Ink : constant Boolean :=
+                                   Covered (X, Y) or else (Bold = 1 and then Covered (X - 1, Y));
                               begin
                                  Rendering.Put
                                    (P, X, Y,
@@ -173,5 +208,5 @@ package body Pictlib.Internal.Typesetting is
          end if;
       end;
       return Outcome;
-   end Draw;
+   end Draw_Characters;
 end Pictlib.Internal.Typesetting;

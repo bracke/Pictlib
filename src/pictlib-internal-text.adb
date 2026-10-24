@@ -24,6 +24,39 @@ package body Pictlib.Internal.Text is
    function To_Unicode (Item : Byte) return Textrender.Codepoint is
      (if Item < 16#80# then Textrender.Codepoint (Item) else High_Half (Item));
 
+   protected Textrender_Lock is
+      entry Seize;
+      procedure Release;
+   private
+      Busy : Boolean := False;
+   end Textrender_Lock;
+
+   protected body Textrender_Lock is
+      entry Seize when not Busy is
+      begin
+         Busy := True;
+      end Seize;
+
+      procedure Release is
+      begin
+         Busy := False;
+      end Release;
+   end Textrender_Lock;
+
+   overriding procedure Initialize (Guard : in out Textrender_Guard) is
+   begin
+      Textrender_Lock.Seize;
+      Guard.Held := True;
+   end Initialize;
+
+   overriding procedure Finalize (Guard : in out Textrender_Guard) is
+   begin
+      if Guard.Held then
+         Guard.Held := False;
+         Textrender_Lock.Release;
+      end if;
+   end Finalize;
+
    function Cell (Size : Positive) return Positive is (2 * Size + 2);
 
    function Atlas_Side (Size : Positive) return Positive is (Positive'Max (256, 4 * Cell (Size)));
@@ -75,6 +108,8 @@ package body Pictlib.Internal.Text is
      return not null access Textrender.Renderer is (Cache.Items (Slot).Renderer'Access);
 
    procedure Clear (Cache : in out Font_Cache) is
+      Guard : Textrender_Guard;
+      pragma Unreferenced (Guard);
    begin
       for Item of Cache.Items loop
          if Item.Used then

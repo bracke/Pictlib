@@ -21,8 +21,10 @@ alr --chdir tests build
 alr --chdir tests exec -- ./bin/pictlib_tests
 ```
 
-`scripts/check_all.sh` runs the same sequence and is the day-to-day gate. Keep the repository buildable after every
-change and add a `CHANGELOG.md` entry for each change.
+`scripts/check_all.sh` runs the same sequence plus `pictlib_check` and is the day-to-day gate; `pictlib_complete`
+(from `tests/`) is the library-complete gate and needs ImageMagick, LibreOffice and GNATprove. Keep the repository
+buildable after every change and add a `CHANGELOG.md` entry for each change. Incremental builds report style
+diagnostics only for units they recompile: rely on `pictlib_check`, not on a quiet build.
 
 PICT input is hostile input. Every feature requires checked arithmetic, bounded memory and work under
 `Pictlib.Limits`, non-raising diagnostic behavior, malformed-input tests and state machine consistency. Output

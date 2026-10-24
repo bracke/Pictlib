@@ -1,6 +1,8 @@
 --  PICT opcode names and data-length rules (Inside Macintosh: Imaging With QuickDraw, Appendix A).
 --  Version 1 pictures use the opcodes 16#00# .. 16#FF# with the same data layouts as version 2.
-package Pictlib.Opcodes is
+package Pictlib.Opcodes
+  with SPARK_Mode => On
+is
    pragma Pure;
 
    type Data_Rule is

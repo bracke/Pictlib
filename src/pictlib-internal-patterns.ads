@@ -31,6 +31,12 @@ package Pictlib.Internal.Patterns is
    --  @return Black or white for a bit pattern, otherwise the pattern's color.
    function Sample (Item : Pattern; X, Y : Integer) return Images.RGB_Color;
 
+   --  Uniform.
+   --  @param Item Pattern.
+   --  @param Color Its one sample, when it has one.
+   --  @return True when every sample of Item is the same.
+   function Uniform (Item : Pattern; Color : out Images.RGB_Color) return Boolean;
+
    --  Read bit pattern.
    --  @param S Session positioned at 8 pattern bytes.
    --  @param Item The pattern.

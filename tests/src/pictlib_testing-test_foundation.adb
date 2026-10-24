@@ -182,8 +182,8 @@ package body Pictlib_Testing.Test_Foundation is
    begin
       Assert (L.Max_Frame_Width = 16_384 and then L.Max_Frame_Height = 16_384, "frame limits changed");
       Assert (L.Max_Canvas_Pixels > 0, "canvas pixel limit disabled");
-      Assert (L.Max_Canvas_Bytes >= 4 * Pictlib.Byte_Count (L.Max_Canvas_Pixels),
-              "canvas bytes cannot hold the RGBA canvas the pixel limit allows");
+      Assert (L.Max_Output_Bytes >= 4 * Pictlib.Byte_Count (L.Max_Canvas_Pixels),
+              "the output limit cannot hold the RGBA view the canvas pixel limit allows");
       Assert (L.Max_Picture_Bytes > 0, "picture byte limit disabled");
       Assert (L.Max_Opcodes > 0, "opcode count limit disabled");
       Assert (L.Max_Opcode_Bytes > 0 and then L.Max_Opcode_Bytes <= L.Max_Picture_Bytes,

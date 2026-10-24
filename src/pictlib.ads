@@ -32,7 +32,6 @@ package Pictlib is
       Frame_Width_Limit,
       Frame_Height_Limit,
       Canvas_Pixel_Limit,
-      Canvas_Byte_Limit,
       Picture_Byte_Limit,
       Opcode_Count_Limit,
       Opcode_Byte_Limit,

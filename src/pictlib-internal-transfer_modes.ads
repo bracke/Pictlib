@@ -42,6 +42,26 @@ package Pictlib.Internal.Transfer_Modes is
       Colors : Port_Colors;
       Colorize : Boolean := True) return Images.RGB_Color;
 
+   type Effect_Kind is
+     (Depends_On_Destination,  --  each pixel must be composed
+      Constant_Color,          --  every pixel becomes Color
+      Unchanged);              --  no pixel changes
+
+   --  Effect.
+   --  @param Kind Transfer mode.
+   --  @param Source One source color used for every pixel.
+   --  @param Colors Port colors.
+   --  @param Colorize As for Compose.
+   --  @param Color The result, for Constant_Color.
+   --  @return Whether Compose with Source depends on the destination: copies never do, and the or and bic modes
+   --  do not where the source is fully dark (a constant) or fully light (no change).
+   function Effect
+     (Kind : Mode_Kind;
+      Source : Images.RGB_Color;
+      Colors : Port_Colors;
+      Colorize : Boolean;
+      Color : out Images.RGB_Color) return Effect_Kind;
+
    --  Invert.
    --  @param Item Pixel.
    --  @return Each component inverted, as InvertRect does.

@@ -447,8 +447,11 @@ pictlib/
 
 Root `alire.toml`: `name = "pictlib"`, `0.1.0-dev`, MIT, `gnat_native = "^15"`, `jpeglib` and
 `textrender` pinned by path (`../jpeglib`, `../textrender`). Child crate `tests` depends on `pictlib`, `aunit ^26.0.0` and
-`project_tools`. Test binaries: `pictlib_tests`, `pictlib_conformance` (encoder output read by ImageMagick and by
-LibreOffice's own PICT import, exact), later `pictlib_check`, `pictlib_fuzz`, `pictlib_benchmark`.
+`project_tools`. Test binaries: `pictlib_tests` (AUnit), `pictlib_check` (source policy), `pictlib_real_world`
+(the real-world corpus against its recorded outcomes), `pictlib_fuzz` (mutation fuzzing),
+`pictlib_prove` (the SPARK proof profile), `pictlib_conformance` (encoder output read by ImageMagick
+and by LibreOffice's own PICT import, exact), `pictlib_benchmark` (throughput, informational) and
+`pictlib_complete` (every gate in turn).
 ImageMagick 7 reads only pictures with the file header, misreads rows stored unpacked and draws
 1-bit BitMaps black, so those pictures are judged by LibreOffice alone.
 
@@ -467,7 +470,8 @@ ImageMagick 7 reads only pictures with the file header, misreads rows stored unp
 | QuickTime | JPEG with identity/translated/scaled matrix, srcRect, origin, matte, mask, clip, modes, placeholder bitmap, non-JPEG codec, skewing matrix, truncated/garbage/mis-sized JPEG, description and data sizes, embedded limits; independent QuickTime PICTs within decoder tolerance of libjpeg |
 | I/O | fragmented reads/writes, EOF, zero progress, destination failure |
 | Encoder | each layout and pixel format, alpha, thresholds, unpacked rows, byte and word counts, widest rows, >256 colors, header on/off, resolution, picSize, limits, short and full destinations, states; decode by independent decoders (`pictlib_conformance`) |
-| Stress | huge frames with tight limits, many opcodes, repeated large fills, cancellation, reset |
+| Stress | huge frames with tight limits, many opcodes, repeated large fills, cancellation, reset reuse, independent decoders in concurrent tasks, every limit kind |
+| Robustness | the real-world corpus (LibreOffice's PICT filter test files, CVE reproductions among them) to recorded outcomes; mutation fuzzing without defects or slow inputs |
 
 Fixtures are independent: hand-assembled byte literals with documented provenance, real-world
 PICT files with recorded origin and license, and expected rasters produced by an external
@@ -478,7 +482,12 @@ expected data.
 ## 13. Phases and acceptance gates
 
 Milestones M0–M7 in the implementation plan. First release: Gate M6 (raster and vector decode,
-text, QuickTime JPEG, raster encode accepted by independent decoders). Library-complete: Gate M7.
+text, QuickTime JPEG, raster encode accepted by independent decoders). Library-complete: Gate M7,
+`pictlib_complete`.
+
+Decoders and encoders keep no shared state and may be used from different tasks, one object per
+task. Calls into textrender, whose rasterizer shares scratch buffers between renderers, are
+serialized by one process-wide lock.
 
 ## 14. Implementation discipline for coding agents
 

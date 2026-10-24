@@ -68,6 +68,12 @@ package body Pictlib_Testing.Test_Shapes is
      Pic (4, 2, Pen_Mode (9) & W (16#09#) & Checker & Op_Rect (16#31#, 0, 0, 1, 4));
    Not_Pattern : aliased constant Bytes :=
      Pic (4, 2, Pen_Mode (12) & W (16#09#) & Checker & Op_Rect (16#31#, 0, 0, 1, 4));
+   --  Uniform patterns: a constant result, or none.
+   Red_Field : constant Bytes := Red_Foreground & Op_Rect (16#31#, 0, 0, 2, 4) & Black_Foreground;
+   Solid_Or : aliased constant Bytes := Pic (4, 2, Red_Field & Pen_Mode (9) & Op_Rect (16#31#, 0, 0, 1, 4));
+   White_Or : aliased constant Bytes :=
+     Pic (4, 2, Red_Field & Pen_Mode (9) & W (16#09#) & Zeros (8) & Op_Rect (16#31#, 0, 0, 1, 4));
+   Solid_Bic : aliased constant Bytes := Pic (4, 2, Red_Field & Pen_Mode (11) & Op_Rect (16#31#, 0, 0, 1, 4));
    Source_Mode_As_Pen : aliased constant Bytes :=
      Pic (4, 2, Op_Rect (16#31#, 0, 0, 2, 4) & Pen_Mode (2) & Op_Rect (16#31#, 0, 0, 1, 4));
 
@@ -201,6 +207,9 @@ package body Pictlib_Testing.Test_Shapes is
       Canvases.Expect_Raster (Pattern_Or, 4, 2, "BWBW/WWWW", "patOr");
       Canvases.Expect_Raster (Not_Pattern, 4, 2, "WBWB/WWWW", "notPatCopy");
       Canvases.Expect_Raster (Source_Mode_As_Pen, 4, 2, "WWWW/BBBB", "srcXor as a pen mode");
+      Canvases.Expect_Raster (Solid_Or, 4, 2, "BBBB/RRRR", "patOr, solid black");
+      Canvases.Expect_Raster (White_Or, 4, 2, "RRRR/RRRR", "patOr, white");
+      Canvases.Expect_Raster (Solid_Bic, 4, 2, "WWWW/RRRR", "patBic, solid black");
    end Patterns_And_Modes;
 
    procedure Expect_Color (Input : aliased Bytes; Width, Height : Positive; Color : Pictlib.Images.RGB_Color;

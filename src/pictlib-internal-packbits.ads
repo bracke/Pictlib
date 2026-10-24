@@ -2,7 +2,9 @@ with Pictlib.Streams;
 
 --  Apple PackBits. A flag byte N introduces N + 1 literal units (0 .. 127), one unit repeated 257 - N times
 --  (129 .. 255), or nothing (128). A unit is a byte, or a big-endian word for 16-bit pixel rows.
-package Pictlib.Internal.PackBits is
+package Pictlib.Internal.PackBits
+  with SPARK_Mode => On
+is
    pragma Preelaborate;
 
    type Unit_Size is range 1 .. 2;
@@ -18,13 +20,16 @@ package Pictlib.Internal.PackBits is
    --  @param Unit Bytes per unit.
    --  @param Output Receives the unpacked row; its length is a whole number of units.
    --  @param Written Bytes of Output that were unpacked.
-   --  @return Whether the packed row matched Output exactly.
-   function Unpack
+   --  @param Status Whether the packed row matched Output exactly.
+   procedure Unpack
      (Packed : Streams.Byte_Array;
       Unit : Unit_Size;
       Output : out Streams.Byte_Array;
-      Written : out Natural) return Unpack_Status
-     with Pre => Output'Length mod Natural (Unit) = 0;
+      Written : out Natural;
+      Status : out Unpack_Status)
+     with Pre => Output'Length mod Natural (Unit) = 0 and then Packed'Last < Natural'Last
+                 and then Output'Last < Natural'Last,
+          Post => Written <= Output'Length;
 
    --  Pack.
    --  @param Row One row of whole units.
@@ -36,12 +41,13 @@ package Pictlib.Internal.PackBits is
       Unit : Unit_Size;
       Output : out Streams.Byte_Array;
       Written : out Natural)
-     with Pre => Row'Length mod Natural (Unit) = 0;
+     with SPARK_Mode => Off, Pre => Row'Length mod Natural (Unit) = 0;
 
    --  Worst case.
    --  @param Length Bytes of an unpacked row.
    --  @param Unit Bytes per unit.
    --  @return The most bytes Pack can produce for it.
    function Worst_Case (Length : Natural; Unit : Unit_Size) return Natural is
-     (Length + (Length / Natural (Unit) + 127) / 128);
+     (Length + (Length / Natural (Unit) + 127) / 128)
+     with Pre => Length <= Natural'Last / 2;
 end Pictlib.Internal.PackBits;

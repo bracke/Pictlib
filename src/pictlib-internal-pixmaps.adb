@@ -45,7 +45,8 @@ package body Pictlib.Internal.Pixmaps is
       elsif Pack > Interfaces.Unsigned_16 (Pack_Type'Last) then
          return Sessions.Fail (S, Errors.Pixmap_Invalid, Byte_Count (Pack_Type'Last), Byte_Count (Pack));
       end if;
-      Fields := (Pack => Natural (Pack), Pixel_Size => Natural (Pixel_Size), Component_Count => Natural (Component_Count));
+      Fields :=
+        (Pack => Natural (Pack), Pixel_Size => Natural (Pixel_Size), Component_Count => Natural (Component_Count));
       return Results.Success;
    end Read_Pixmap_Tail;
 
@@ -115,7 +116,8 @@ package body Pictlib.Internal.Pixmaps is
                if not Sessions.Is_Lenient (S) then
                   return Sessions.Fail (S, Errors.Color_Table_Invalid, 255, Byte_Count (Index));
                end if;
-               Sessions.Warn (S, Errors.Recovery_Applied, Errors.Recovery, (Actual => Byte_Count (Index), others => <>));
+               Sessions.Warn
+                 (S, Errors.Recovery_Applied, Errors.Recovery, (Actual => Byte_Count (Index), others => <>));
             else
                --  The high byte of each 16-bit component.
                Table.Colors (Index) := (Red => Item (3), Green => Item (5), Blue => Item (7));
@@ -184,7 +186,8 @@ package body Pictlib.Internal.Pixmaps is
 
       --  A chunky row must hold the bounds width.
       if For_Decoding and then Header.Encoding not in RGB_Triplets | Planar
-        and then Long_Long_Integer (Header.Unpacked_Length) * 8 < Long_Long_Integer (Header.Width) * Long_Long_Integer (Depth)
+        and then Long_Long_Integer (Header.Unpacked_Length) * 8
+                 < Long_Long_Integer (Header.Width) * Long_Long_Integer (Depth)
       then
          return Invalid ((Header.Width * Depth + 7) / 8, Header.Unpacked_Length);
       end if;
@@ -395,9 +398,9 @@ package body Pictlib.Internal.Pixmaps is
                Outcome := Sessions.Read_Into (S, Decoder.Stored (1 .. Count));
             end if;
             if Results.Succeeded (Outcome) then
-               Status := PackBits.Unpack
+               PackBits.Unpack
                  (Decoder.Stored (1 .. Count), (if Header.Layout = Packed_Words then 2 else 1),
-                  Decoder.Unpacked (1 .. Header.Unpacked_Length), Written);
+                  Decoder.Unpacked (1 .. Header.Unpacked_Length), Written, Status);
                if Status /= PackBits.Exact then
                   if not Sessions.Is_Lenient (S) then
                      Outcome := Results.Failure

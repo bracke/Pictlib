@@ -1,4 +1,5 @@
 with Ada.Containers.Indefinite_Ordered_Maps;
+with Ada.Finalization;
 with Ada.Strings.Unbounded;
 with Interfaces;
 with Pictlib.Fonts;
@@ -40,6 +41,10 @@ package Pictlib.Internal.Text is
    --  @return Its Unicode code point.
    function To_Unicode (Item : Byte) return Textrender.Codepoint;
 
+   --  Textrender keeps scratch buffers shared by every renderer, so no two textrender calls may run at once,
+   --  even on different renderers. A Textrender_Guard holds the process-wide lock for its lifetime.
+   type Textrender_Guard is new Ada.Finalization.Limited_Controlled with private;
+
    type Font_Cache is limited private;
 
    --  Acquire.
@@ -66,6 +71,13 @@ package Pictlib.Internal.Text is
    function Atlas_Bytes (Size : Positive) return Byte_Count;
 
 private
+   type Textrender_Guard is new Ada.Finalization.Limited_Controlled with record
+      Held : Boolean := False;
+   end record;
+
+   overriding procedure Initialize (Guard : in out Textrender_Guard);
+   overriding procedure Finalize (Guard : in out Textrender_Guard);
+
    Slots : constant := 8;
 
    type Slot_Type is limited record

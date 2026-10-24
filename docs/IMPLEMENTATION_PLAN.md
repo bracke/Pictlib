@@ -1,6 +1,6 @@
 # pictlib — Implementation Plan
 
-**Status:** M0–M6 implemented (first release gate); M7 is next  
+**Status:** M0–M7 implemented; open items are listed under M7  
 **Contract:** [SPECIFICATION.md](SPECIFICATION.md) (authoritative)  
 **Reference:** https://github.com/bracke/jpeglib
 
@@ -148,6 +148,26 @@ decoders (LibreOffice for every picture, ImageMagick where its reader applies); 
 passes.
 
 ## M7 — Conformance, security and completeness
+
+**Completed (2026-10-24):** Tasks 26–29 and the library-complete gate, with the
+open items below. `pictlib_complete` runs every gate: the source policy
+(`pictlib_check`), the AUnit suite (107 tests), the real-world corpus
+(`pictlib_real_world`: LibreOffice's PICT filter test files at a pinned commit,
+pass and fail, CVE reproductions among them), mutation fuzzing (`pictlib_fuzz`;
+300 000 inputs found no defect), the SPARK proof profile (`pictlib_prove`) and
+encoder conformance (`pictlib_conformance`). The stress suite covers reset
+reuse, independent decoders in four tasks and a matrix of every limit kind; the
+concurrency test exposed textrender's shared rasterizer buffers, now behind a
+lock. `pictlib_benchmark` reports throughput. CI mirrors jpeglib's.
+
+Open:
+
+- The shape and text rules (specification sections 3.2 and 3.4) have not been
+  compared with real QuickDraw: that needs classic Mac OS under emulation, with
+  its ROM and system software, which this environment lacks.
+- Netpbm `picttoppm` was not available as a third independent reader.
+- The CI workflow has not run on GitHub yet.
+- Task 19a, rendering at an extended header's native resolution.
 
 26. Real-world corpus with provenance, external oracle matrix, fuzz harness and seed corpus;
     compare shape rendering with a QuickDraw reference (classic Mac OS emulation or a reference

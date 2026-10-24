@@ -44,6 +44,9 @@ Available since Gate M4:
 
 Gate M5 adds no public API: QuickTime JPEG images render through `Render`.
 
+Changed at Gate M7: `Limits.Max_Canvas_Bytes` and `Limit_Kind'(Canvas_Byte_Limit)`
+were removed; they were never enforced (the renderer allocates no canvas).
+
 Available since Gate M6:
 
 - `Pictlib.Encoding` — `Layout_Kind`, `Options`, `Encoder` with `Initialize`,

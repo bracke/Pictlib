@@ -29,8 +29,25 @@ The encoder applies `Max_Frame_Width` and `Max_Frame_Height` to the image,
 `Max_Allocation_Bytes` to its row buffers and `Max_Output_Bytes` to the whole
 picture, measured by a dry run before anything is written.
 
-`Max_Canvas_Bytes` is reserved:
-the renderer draws into the caller's view and allocates no canvas.
+The renderer draws into the caller's view and allocates no canvas, so there is
+no canvas byte limit: `Max_Output_Bytes` bounds the view.
+
+## Fuzzing and the real-world corpus
+
+`pictlib_fuzz` mutates the fixture pictures and fresh encoder output and runs
+every mutant through enumeration and both lenient renders under tight limits:
+a 1024 x 1024 frame, 2^20 canvas and embedded pixels, 2^26 units of drawing
+work, 64 MiB of allocation. Any exception, or any input taking more than two
+seconds, is saved for replay and fails the run. `pictlib_real_world` holds
+LibreOffice's PICT filter test files, CVE reproductions among them, to their
+recorded outcomes.
+
+## Tasks
+
+Decoders and encoders share no state and may run in different tasks.
+textrender's rasterizer shares scratch buffers between all renderers, so pictlib
+calls it only under one process-wide lock: text drawn in parallel tasks takes
+turns; everything else runs in parallel.
 
 ## Memory
 

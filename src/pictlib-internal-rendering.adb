@@ -3,6 +3,7 @@ with Pictlib.Errors;
 package body Pictlib.Internal.Rendering is
    use type Geometry.Rect;
    use type Patterns.Pattern_Kind;
+   use type Transfer_Modes.Effect_Kind;
 
    procedure Start
      (P : in out Painter;
@@ -112,6 +113,39 @@ package body Pictlib.Internal.Rendering is
         (if P.Hilite_Next then Transfer_Modes.Hilite else How.Mode);
    begin
       P.Hilite_Next := False;
+      --  A uniform pattern whose result does not depend on the pixels under it paints one color, or nothing.
+      if How.Kind = Pattern_Paint then
+         declare
+            Sample : Images.RGB_Color;
+            Color : Images.RGB_Color;
+            Effect : Transfer_Modes.Effect_Kind := Transfer_Modes.Depends_On_Destination;
+         begin
+            if Patterns.Uniform (How.Source, Sample) then
+               Effect := Transfer_Modes.Effect (Kind, Sample, P.Colors, Colorize, Color);
+            end if;
+            if Effect = Transfer_Modes.Unchanged then
+               return Outcome;
+            elsif Effect = Transfer_Modes.Constant_Color then
+               for Y in P.Window.Top .. P.Window.Bottom - 1 loop
+                  exit when not Results.Succeeded (Outcome);
+                  P.Row_Spans := Coverage.Row (Shape, Y);
+                  if not P.Row_Spans.Is_Empty then
+                     Outcome := Clip_Row (P, S, Y);
+                     for Span of P.Row_Spans loop
+                        exit when not Results.Succeeded (Outcome);
+                        Outcome := Charge (P, S, Span.Right - Span.Left);
+                        if Results.Succeeded (Outcome) and then Span.Left < Span.Right then
+                           Canvas.Put_Span
+                             (P.Target, Span.Left - P.Window.Left, Span.Right - P.Window.Left,
+                              Y - P.Window.Top, Color);
+                        end if;
+                     end loop;
+                  end if;
+               end loop;
+               return Outcome;
+            end if;
+         end;
+      end if;
       for Y in P.Window.Top .. P.Window.Bottom - 1 loop
          exit when not Results.Succeeded (Outcome);
          P.Row_Spans := Coverage.Row (Shape, Y);

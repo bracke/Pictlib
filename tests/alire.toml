@@ -1,7 +1,7 @@
 name = "tests"
 description = "AUnit tests for pictlib"
 version = "0.1.0-dev"
-executables = ["pictlib_tests", "pictlib_conformance"]
+executables = ["pictlib_tests", "pictlib_conformance", "pictlib_real_world", "pictlib_prove", "pictlib_fuzz", "pictlib_check", "pictlib_benchmark", "pictlib_complete"]
 
 authors = ["Bent Bracke"]
 maintainers = ["Bent Bracke <bent@bracke.dk>"]

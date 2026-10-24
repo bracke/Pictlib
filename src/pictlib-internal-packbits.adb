@@ -1,19 +1,26 @@
-package body Pictlib.Internal.PackBits is
+package body Pictlib.Internal.PackBits
+  with SPARK_Mode => On
+is
    use type Streams.Byte_Array;
 
-   function Unpack
+   procedure Unpack
      (Packed : Streams.Byte_Array;
       Unit : Unit_Size;
       Output : out Streams.Byte_Array;
-      Written : out Natural) return Unpack_Status
+      Written : out Natural;
+      Status : out Unpack_Status)
    is
       Size : constant Natural := Natural (Unit);
-      Next : Natural := Packed'First;
-      Status : Unpack_Status := Exact;
+      --  An empty Packed may have any first bound.
+      Next : Integer := Packed'First;
    begin
       Output := [others => 0];
       Written := 0;
+      Status := Exact;
       while Next <= Packed'Last loop
+         pragma Loop_Invariant (Next >= Packed'First);
+         pragma Loop_Invariant (Written <= Output'Length);
+         pragma Loop_Invariant (Status in Exact | Overrun);
          declare
             Flag : constant Natural := Natural (Packed (Next));
          begin
@@ -25,41 +32,41 @@ package body Pictlib.Internal.PackBits is
                   Taken : constant Natural := Natural'Min (Bytes, Available);
                   Room : constant Natural := Natural'Min (Taken, Output'Length - Written);
                begin
-                  Output (Output'First + Written .. Output'First + Written + Room - 1) :=
-                    Packed (Next .. Next + Room - 1);
+                  if Room > 0 then
+                     Output (Output'First + Written .. Output'First + Written + Room - 1) :=
+                       Packed (Next .. Next + Room - 1);
+                  end if;
                   Written := Written + Room;
-                  Next := Next + Taken;
                   if Taken < Bytes then
-                     return Truncated;
+                     Status := Truncated;
+                     return;
                   elsif Room < Taken then
                      Status := Overrun;
                   end if;
+                  Next := Next + Taken;
                end;
             elsif Flag >= 129 then
                if Packed'Last - Next + 1 < Size then
-                  return Truncated;
+                  Status := Truncated;
+                  return;
                end if;
-               declare
-                  Count : constant Natural := 257 - Flag;
-               begin
-                  for Repeat in 1 .. Count loop
-                     if Written + Size > Output'Length then
-                        Status := Overrun;
-                        exit;
-                     end if;
-                     Output (Output'First + Written .. Output'First + Written + Size - 1) :=
-                       Packed (Next .. Next + Size - 1);
-                     Written := Written + Size;
-                  end loop;
-                  Next := Next + Size;
-               end;
+               for Repeat in 1 .. 257 - Flag loop
+                  pragma Loop_Invariant (Written <= Output'Length);
+                  if Output'Length - Written < Size then
+                     Status := Overrun;
+                     exit;
+                  end if;
+                  Output (Output'First + Written .. Output'First + Written + Size - 1) :=
+                    Packed (Next .. Next + Size - 1);
+                  Written := Written + Size;
+               end loop;
+               Next := Next + Size;
             end if;
          end;
       end loop;
       if Status = Exact and then Written < Output'Length then
-         return Underrun;
+         Status := Underrun;
       end if;
-      return Status;
    end Unpack;
 
    procedure Pack
@@ -67,6 +74,7 @@ package body Pictlib.Internal.PackBits is
       Unit : Unit_Size;
       Output : out Streams.Byte_Array;
       Written : out Natural)
+     with SPARK_Mode => Off
    is
       Size : constant Natural := Natural (Unit);
       Units : constant Natural := Row'Length / Size;

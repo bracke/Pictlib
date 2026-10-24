@@ -25,6 +25,14 @@ package Pictlib.Internal.Canvas is
    --  @param Color Opaque color.
    procedure Put (Target : in out Canvas; X, Y : Natural; Color : Images.RGB_Color)
      with Pre => X < Target.Width and then Y < Target.Height, Inline;
+   --  Put span.
+   --  @param Target Canvas to draw on.
+   --  @param Left First column.
+   --  @param Right One past the last column.
+   --  @param Y Row.
+   --  @param Color Opaque color for columns Left .. Right - 1.
+   procedure Put_Span (Target : in out Canvas; Left, Right, Y : Natural; Color : Images.RGB_Color)
+     with Pre => Left <= Right and then Right <= Target.Width and then Y < Target.Height;
    --  Get.
    --  @param Target Canvas to read.
    --  @param X Column.

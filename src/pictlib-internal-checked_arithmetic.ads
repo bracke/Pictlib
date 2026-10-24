@@ -1,6 +1,8 @@
 with Pictlib.Results;
 
-package Pictlib.Internal.Checked_Arithmetic is
+package Pictlib.Internal.Checked_Arithmetic
+  with SPARK_Mode => On
+is
    pragma Preelaborate;
 
    type Count_Result is record

@@ -1,4 +1,6 @@
-package body Pictlib.Opcodes is
+package body Pictlib.Opcodes
+  with SPARK_Mode => On
+is
    function Fixed (Length : Natural) return Length_Rule is ((Rule => Fixed_Data, Fixed_Length => Length));
 
    function Rule_For (Op : Opcode) return Length_Rule is
@@ -92,7 +94,9 @@ package body Pictlib.Opcodes is
          when 3 => "invert",
          when others => "fill");
 
-   function Shape_Opcode_Name (Op : Opcode; Shape : String) return String is
+   function Shape_Opcode_Name (Op : Opcode; Shape : String) return String
+     with Pre => Shape'Length <= 8
+   is
       Verb : constant Natural := Natural (Op mod 8);
       Same : constant Boolean := Op mod 16 >= 8;
    begin

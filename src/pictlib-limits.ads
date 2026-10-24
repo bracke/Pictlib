@@ -7,7 +7,6 @@ package Pictlib.Limits is
       Max_Frame_Width : Image_Width := 16_384;
       Max_Frame_Height : Image_Height := 16_384;
       Max_Canvas_Pixels : Pixel_Count := 268_435_456;
-      Max_Canvas_Bytes : Byte_Count := 1_073_741_824;
       Max_Picture_Bytes : Byte_Count := 1_073_741_824;
       Max_Opcodes : Opcode_Ordinal := 16_777_216;
       Max_Opcode_Bytes : Byte_Count := 268_435_456;

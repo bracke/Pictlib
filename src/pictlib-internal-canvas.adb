@@ -29,6 +29,31 @@ package body Pictlib.Internal.Canvas is
       end case;
    end Put;
 
+   procedure Put_Span (Target : in out Canvas; Left, Right, Y : Natural; Color : Images.RGB_Color) is
+      Size : constant Natural := Natural (Images.Bytes_Per_Pixel (Target.View.Descriptor.Format));
+      Storage : Streams.Byte_Array renames Target.View.Storage.all;
+   begin
+      if Left = Right then
+         return;
+      end if;
+      Put (Target, Left, Y, Color);
+      declare
+         First : constant Positive := Position (Target, Left, Y);
+         Filled : Natural := Size;
+         Total : constant Natural := (Right - Left) * Size;
+      begin
+         --  Double what is written until the span is full.
+         while Filled < Total loop
+            declare
+               Step : constant Natural := Natural'Min (Filled, Total - Filled);
+            begin
+               Storage (First + Filled .. First + Filled + Step - 1) := Storage (First .. First + Step - 1);
+               Filled := Filled + Step;
+            end;
+         end loop;
+      end;
+   end Put_Span;
+
    function Get (Target : Canvas; X, Y : Natural) return Images.RGB_Color is
       At_Pixel : constant Positive := Position (Target, X, Y);
       Storage : Streams.Byte_Array renames Target.View.Storage.all;
@@ -43,12 +68,25 @@ package body Pictlib.Internal.Canvas is
       end case;
    end Get;
 
+   --  The first row pixel by pixel, then every other row as a copy of it.
    procedure Fill (Target : in out Canvas; Color : Images.RGB_Color) is
+      Row_Bytes : constant Natural :=
+        Target.Width * Natural (Images.Bytes_Per_Pixel (Target.View.Descriptor.Format));
+      Storage : Streams.Byte_Array renames Target.View.Storage.all;
+      First : constant Positive := Position (Target, 0, 0);
    begin
-      for Y in 0 .. Target.Height - 1 loop
-         for X in 0 .. Target.Width - 1 loop
-            Put (Target, X, Y, Color);
-         end loop;
+      if Target.Width = 0 or else Target.Height = 0 then
+         return;
+      end if;
+      for X in 0 .. Target.Width - 1 loop
+         Put (Target, X, 0, Color);
+      end loop;
+      for Y in 1 .. Target.Height - 1 loop
+         declare
+            Start : constant Positive := Position (Target, 0, Y);
+         begin
+            Storage (Start .. Start + Row_Bytes - 1) := Storage (First .. First + Row_Bytes - 1);
+         end;
       end loop;
    end Fill;
 end Pictlib.Internal.Canvas;

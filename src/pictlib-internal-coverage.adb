@@ -271,49 +271,75 @@ package body Pictlib.Internal.Coverage is
    end Wedge;
 
    procedure Polygon (Item : in out Shape; Points : Point_Vectors.Vector) is
+      --  An edge crosses the centers of rows First .. Last: 2y + 1 in [Low, High) of its doubled ends.
+      type Edge is record
+         X0, Y0, X1, Y1 : Long_Long_Integer := 0;
+         First, Last : Long_Long_Integer := 0;
+      end record;
+
+      function Starts_Before (Left, Right : Edge) return Boolean is (Left.First < Right.First);
+
+      package Edge_Vectors is new Ada.Containers.Vectors (Positive, Edge);
+      package Edge_Sorting is new Edge_Vectors.Generic_Sorting (Starts_Before);
       package Boundary_Vectors is new Ada.Containers.Vectors (Positive, Long_Long_Integer);
       package Boundary_Sorting is new Boundary_Vectors.Generic_Sorting;
+
       Count : constant Natural := Natural (Points.Length);
-      Top : Integer := Integer'Last;
-      Bottom : Integer := Integer'First;
+      Edges, Active : Edge_Vectors.Vector;
+      Next_Edge : Positive := 1;
    begin
       if Count < 3 then
          return;
       end if;
-      for P of Points loop
-         Top := Integer'Min (Top, P.V);
-         Bottom := Integer'Max (Bottom, P.V);
-      end loop;
-      for Y in Integer'Max (Top, Item.Window.Top) .. Integer'Min (Bottom, Item.Window.Bottom) - 1 loop
+      for Index in 1 .. Count loop
          declare
-            Center : constant Long_Long_Integer := 2 * Long_Long_Integer (Y) + 1;
-            Boundaries : Boundary_Vectors.Vector;
+            P : constant Point := Points (Index);
+            Q : constant Point := Points (if Index = Count then 1 else Index + 1);
+            Y0 : constant Long_Long_Integer := 2 * Long_Long_Integer (P.V);
+            Y1 : constant Long_Long_Integer := 2 * Long_Long_Integer (Q.V);
+            Low : constant Long_Long_Integer := Long_Long_Integer'Min (Y0, Y1);
+            High : constant Long_Long_Integer := Long_Long_Integer'Max (Y0, Y1);
+            First : constant Long_Long_Integer := Ceiling_Divide (Low - 1, 2);
+            Last : constant Long_Long_Integer := Ceiling_Divide (High - 1, 2) - 1;
          begin
-            for Index in 1 .. Count loop
-               declare
-                  P : constant Point := Points (Index);
-                  Q : constant Point := Points (if Index = Count then 1 else Index + 1);
-                  Y0 : constant Long_Long_Integer := 2 * Long_Long_Integer (P.V);
-                  Y1 : constant Long_Long_Integer := 2 * Long_Long_Integer (Q.V);
-               begin
-                  if (Y0 <= Center and then Center < Y1) or else (Y1 <= Center and then Center < Y0) then
-                     declare
-                        Den : Long_Long_Integer := Y1 - Y0;
-                        Num : Long_Long_Integer :=
-                          2 * Long_Long_Integer (P.H) * Den
-                          + (Center - Y0) * (2 * Long_Long_Integer (Q.H) - 2 * Long_Long_Integer (P.H));
-                     begin
-                        if Den < 0 then
-                           Den := -Den;
-                           Num := -Num;
-                        end if;
-                        --  The first pixel whose center is at or right of the crossing.
-                        Boundaries.Append (Ceiling_Divide (Num - Den, 2 * Den));
-                     end;
-                  end if;
-               end;
+            if First <= Last then
+               Edges.Append (Edge'(2 * Long_Long_Integer (P.H), Y0, 2 * Long_Long_Integer (Q.H), Y1, First, Last));
+            end if;
+         end;
+      end loop;
+      Charge (Item, Count);
+      Edge_Sorting.Sort (Edges);
+
+      for Y in Item.Window.Top .. Item.Window.Bottom - 1 loop
+         declare
+            Row : constant Long_Long_Integer := Long_Long_Integer (Y);
+            Center : constant Long_Long_Integer := 2 * Row + 1;
+            Boundaries : Boundary_Vectors.Vector;
+            Kept : Edge_Vectors.Vector;
+         begin
+            while Next_Edge <= Natural (Edges.Length) and then Edges (Next_Edge).First <= Row loop
+               Active.Append (Edges (Next_Edge));
+               Next_Edge := Next_Edge + 1;
             end loop;
-            Charge (Item, Count);
+            exit when Active.Is_Empty and then Next_Edge > Natural (Edges.Length);
+            for E of Active loop
+               if E.Last >= Row then
+                  Kept.Append (E);
+                  declare
+                     Den : Long_Long_Integer := E.Y1 - E.Y0;
+                     Num : Long_Long_Integer := E.X0 * Den + (Center - E.Y0) * (E.X1 - E.X0);
+                  begin
+                     if Den < 0 then
+                        Den := -Den;
+                        Num := -Num;
+                     end if;
+                     --  The first pixel whose center is at or right of the crossing.
+                     Boundaries.Append (Ceiling_Divide (Num - Den, 2 * Den));
+                  end;
+               end if;
+            end loop;
+            Active.Move (Kept);
+            Charge (Item, Natural (Active.Length) + 1);
             Boundary_Sorting.Sort (Boundaries);
             declare
                Index : Positive := 1;

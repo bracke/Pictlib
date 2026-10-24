@@ -1,0 +1,120 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: library checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      ALIRE_NONINTERACTIVE: "true"
+    strategy:
+      fail-fast: false
+      matrix:
+        # Match jpeglib's runner set. macos-15-intel is deliberate: gnat_native=15.2.1 is pinned through Alire
+        # and is not available for the arm64 macOS runner.
+        os: [ubuntu-latest, macos-15-intel, windows-latest]
+    steps:
+      - name: Check out pictlib
+        uses: actions/checkout@v7
+        with:
+          path: pictlib
+
+      - name: Check out sibling crates (jpeglib, textrender, project_tools and their pins)
+        uses: bracke/project_tools/.github/actions/checkout-ada-siblings@main
+        with:
+          root: pictlib
+
+      - name: Set up Alire
+        uses: alire-project/setup-alire@v6
+        with:
+          toolchain: gnat_native=15.2.1 gprbuild=25.0.1
+
+      - name: Raise Alire solver timeout so slow runners get a complete solution
+        shell: bash
+        run: alr settings --global --set solver.timeout 600
+
+      - name: Refresh platform-local Alire locks
+        working-directory: pictlib
+        shell: bash
+        run: |
+          alr --non-interactive update gnat_native
+          cd tests
+          alr --non-interactive update gnat_native
+
+      - name: Build library
+        working-directory: pictlib
+        shell: bash
+        run: alr --non-interactive build
+
+      - name: Build tests and tools
+        working-directory: pictlib/tests
+        shell: bash
+        run: alr --non-interactive build
+
+      - name: Install GNATprove
+        shell: bash
+        run: |
+          alr install gnatprove
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "$(cygpath -w "$HOME/.alire/bin")" >> "$GITHUB_PATH"
+          else
+            echo "$HOME/.alire/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Source policy, unit tests, real-world corpus, fuzzing and proof
+        working-directory: pictlib/tests
+        shell: bash
+        run: |
+          exe=""
+          if [ "$RUNNER_OS" = "Windows" ]; then exe=".exe"; fi
+          for step in "pictlib_check" "pictlib_tests" "pictlib_real_world" "pictlib_fuzz 20000" "pictlib_prove"; do
+            set -- $step
+            tool="$1"; shift
+            echo "::group::$tool"
+            alr exec -- "./bin/$tool$exe" "$@"
+            echo "::endgroup::"
+          done
+
+  conformance:
+    name: encoder conformance (ImageMagick, LibreOffice)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ALIRE_NONINTERACTIVE: "true"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: pictlib
+      - uses: bracke/project_tools/.github/actions/checkout-ada-siblings@main
+        with:
+          root: pictlib
+      - uses: alire-project/setup-alire@v6
+        with:
+          toolchain: gnat_native=15.2.1 gprbuild=25.0.1
+      - name: Install the independent PICT readers
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends imagemagick libreoffice-draw
+          if ! command -v magick >/dev/null 2>&1; then
+            convert_path="$(command -v convert)"
+            printf '#!/usr/bin/env sh\nexec "%s" "$@"\n' "$convert_path" | sudo tee /usr/local/bin/magick >/dev/null
+            sudo chmod +x /usr/local/bin/magick
+          fi
+          magick -version
+          soffice --version
+      - name: Build and run conformance
+        working-directory: pictlib
+        shell: bash
+        run: |
+          alr --non-interactive update gnat_native
+          alr --non-interactive build
+          cd tests
+          alr --non-interactive update gnat_native
+          alr --non-interactive build
+          alr exec -- ./bin/pictlib_conformance --require

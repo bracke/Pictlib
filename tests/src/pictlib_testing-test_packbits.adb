@@ -21,6 +21,18 @@ package body Pictlib_Testing.Test_PackBits is
      [16#AA#, 16#AA#, 16#AA#, 16#80#, 16#00#, 16#2A#, 16#AA#, 16#AA#, 16#AA#, 16#AA#, 16#80#, 16#00#, 16#2A#,
       16#22#, 16#AA#, 16#AA#, 16#AA#, 16#AA#, 16#AA#, 16#AA#, 16#AA#, 16#AA#, 16#AA#, 16#AA#];
 
+   function Unpack
+     (Packed : Bytes;
+      Unit : PackBits.Unit_Size;
+      Output : out Bytes;
+      Written : out Natural) return PackBits.Unpack_Status
+   is
+      Status : PackBits.Unpack_Status;
+   begin
+      PackBits.Unpack (Packed, Unit, Output, Written, Status);
+      return Status;
+   end Unpack;
+
    procedure Apple_Example (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Word_Units (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Mismatches (T : in out AUnit.Test_Cases.Test_Case'Class);
@@ -47,7 +59,7 @@ package body Pictlib_Testing.Test_PackBits is
       Packed : Bytes (1 .. PackBits.Worst_Case (Apple_Unpacked'Length, 1));
       Written : Natural;
    begin
-      Assert (PackBits.Unpack (Apple_Packed, 1, Output, Written) = PackBits.Exact
+      Assert (Unpack (Apple_Packed, 1, Output, Written) = PackBits.Exact
               and then Written = Output'Length and then Output = Apple_Unpacked,
               "Apple's example did not unpack");
       PackBits.Pack (Apple_Unpacked, 1, Packed, Written);
@@ -61,7 +73,7 @@ package body Pictlib_Testing.Test_PackBits is
       --  A run of two words, then a literal of two words.
       Packed : constant Bytes := B (16#FF#) & W (16#1234#) & B (1) & W (16#ABCD#) & W (16#00FF#);
    begin
-      Assert (PackBits.Unpack (Packed, 2, Output, Written) = PackBits.Exact
+      Assert (Unpack (Packed, 2, Output, Written) = PackBits.Exact
               and then Output = W (16#1234#) & W (16#1234#) & W (16#ABCD#) & W (16#00FF#),
               "word runs and literals did not unpack");
    end Word_Units;
@@ -71,25 +83,25 @@ package body Pictlib_Testing.Test_PackBits is
       Output : Bytes (1 .. 4);
       Written : Natural;
    begin
-      Assert (PackBits.Unpack ([16#FD#, 7], 1, Output, Written) = PackBits.Exact and then Output = [7, 7, 7, 7],
+      Assert (Unpack ([16#FD#, 7], 1, Output, Written) = PackBits.Exact and then Output = [7, 7, 7, 7],
               "a run did not unpack");
-      Assert (PackBits.Unpack ([16#80#, 16#FD#, 7], 1, Output, Written) = PackBits.Exact,
+      Assert (Unpack ([16#80#, 16#FD#, 7], 1, Output, Written) = PackBits.Exact,
               "flag 128 is not a no-op");
-      Assert (PackBits.Unpack ([16#FE#, 7], 1, Output, Written) = PackBits.Underrun
+      Assert (Unpack ([16#FE#, 7], 1, Output, Written) = PackBits.Underrun
               and then Written = 3 and then Output = [7, 7, 7, 0],
               "a short row was not reported or not zero-filled");
-      Assert (PackBits.Unpack ([16#FC#, 7], 1, Output, Written) = PackBits.Overrun
+      Assert (Unpack ([16#FC#, 7], 1, Output, Written) = PackBits.Overrun
               and then Written = 4 and then Output = [7, 7, 7, 7],
               "a long run was not reported or overflowed");
-      Assert (PackBits.Unpack ([4, 1, 2, 3, 4, 5], 1, Output, Written) = PackBits.Overrun
+      Assert (Unpack ([4, 1, 2, 3, 4, 5], 1, Output, Written) = PackBits.Overrun
               and then Output = [1, 2, 3, 4],
               "a long literal was not reported or overflowed");
-      Assert (PackBits.Unpack ([3, 1, 2], 1, Output, Written) = PackBits.Truncated and then Written = 2,
+      Assert (Unpack ([3, 1, 2], 1, Output, Written) = PackBits.Truncated and then Written = 2,
               "a cut literal was not reported");
-      Assert (PackBits.Unpack ([16#FD#], 1, Output, Written) = PackBits.Truncated, "a cut run was not reported");
-      Assert (PackBits.Unpack ([16#FF#, 16#12#], 2, Output, Written) = PackBits.Truncated,
+      Assert (Unpack ([16#FD#], 1, Output, Written) = PackBits.Truncated, "a cut run was not reported");
+      Assert (Unpack ([16#FF#, 16#12#], 2, Output, Written) = PackBits.Truncated,
               "a cut word run was not reported");
-      Assert (PackBits.Unpack ([1 .. 0 => 0], 1, Output, Written) = PackBits.Underrun and then Written = 0,
+      Assert (Unpack ([1 .. 0 => 0], 1, Output, Written) = PackBits.Underrun and then Written = 0,
               "an empty packed row is not short");
    end Mismatches;
 
@@ -116,7 +128,7 @@ package body Pictlib_Testing.Test_PackBits is
                Row (Index) := (if Index mod 3 = 1 then Pictlib.Byte (Index mod 251) else 16#EE#);
             end loop;
             PackBits.Pack (Row, 1, Packed, Written);
-            Assert (PackBits.Unpack (Packed (1 .. Written), 1, Back, Unpacked) = PackBits.Exact and then Back = Row,
+            Assert (Unpack (Packed (1 .. Written), 1, Back, Unpacked) = PackBits.Exact and then Back = Row,
                     "alternating round trip failed at" & Length'Image);
          end;
       end loop;
@@ -133,7 +145,7 @@ package body Pictlib_Testing.Test_PackBits is
                   Item := Next_Byte;
                end loop;
                PackBits.Pack (Row, Size, Packed, Written);
-               Assert (PackBits.Unpack (Packed (1 .. Written), Size, Back, Unpacked) = PackBits.Exact
+               Assert (Unpack (Packed (1 .. Written), Size, Back, Unpacked) = PackBits.Exact
                        and then Back = Row,
                        "round trip failed at" & Length'Image & " units of" & Size'Image);
             end;

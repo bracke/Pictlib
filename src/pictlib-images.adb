@@ -1,13 +1,21 @@
 package body Pictlib.Images is
    function Bytes_Per_Pixel (Format : Pixel_Format) return Byte_Count is
-     (case Format is
-         when RGB_24 | BGR_24 => 3,
-         when RGBA_32 | BGRA_32 | ARGB_32 => 4);
+      pragma SPARK_Mode (On);
+   begin
+      case Format is
+         when RGB_24 | BGR_24 => return 3;
+         when RGBA_32 | BGRA_32 | ARGB_32 => return 4;
+      end case;
+   end Bytes_Per_Pixel;
 
    function Minimum_Row_Bytes (Width : Image_Width; Format : Pixel_Format) return Byte_Count is
-     (Byte_Count (Width) * Bytes_Per_Pixel (Format));
+      pragma SPARK_Mode (On);
+   begin
+      return Byte_Count (Width) * Bytes_Per_Pixel (Format);
+   end Minimum_Row_Bytes;
 
    function Descriptor_Is_Valid (Descriptor : Image_Descriptor; Storage_Length : Natural) return Boolean is
+      pragma SPARK_Mode (On);
       Row_Bytes : constant Byte_Count := Minimum_Row_Bytes (Descriptor.Width, Descriptor.Format);
       Stride_Bytes : constant Byte_Count := Byte_Count (Descriptor.Stride);
       Rows_Before_Last : constant Byte_Count := Byte_Count (Descriptor.Height) - 1;
@@ -22,8 +30,14 @@ package body Pictlib.Images is
    end Descriptor_Is_Valid;
 
    function Is_Valid (View : Image_View) return Boolean is
-     (View.Storage /= null and then Descriptor_Is_Valid (View.Descriptor, View.Storage'Length));
+      pragma SPARK_Mode (Off);
+   begin
+      return View.Storage /= null and then Descriptor_Is_Valid (View.Descriptor, View.Storage'Length);
+   end Is_Valid;
 
    function Is_Valid (View : Mutable_Image_View) return Boolean is
-     (View.Storage /= null and then Descriptor_Is_Valid (View.Descriptor, View.Storage'Length));
+      pragma SPARK_Mode (Off);
+   begin
+      return View.Storage /= null and then Descriptor_Is_Valid (View.Descriptor, View.Storage'Length);
+   end Is_Valid;
 end Pictlib.Images;

@@ -1,6 +1,8 @@
 with Pictlib.Errors;
 
-package body Pictlib.Internal.Checked_Arithmetic is
+package body Pictlib.Internal.Checked_Arithmetic
+  with SPARK_Mode => On
+is
    function Add (Left, Right : Byte_Count) return Count_Result is
    begin
       if Right > Byte_Count'Last - Left then

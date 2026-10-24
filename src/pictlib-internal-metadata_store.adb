@@ -18,7 +18,8 @@ package body Pictlib.Internal.Metadata_Store is
                 Actual => Byte_Count (Object.Infos.Length) + 1,
                 Limit => Metadata_Item_Limit,
                 others => <>)));
-      elsif Length > Budget.Max_Retained_Metadata_Bytes - Byte_Count'Min (Object.Bytes, Budget.Max_Retained_Metadata_Bytes)
+      elsif Length
+        > Budget.Max_Retained_Metadata_Bytes - Byte_Count'Min (Object.Bytes, Budget.Max_Retained_Metadata_Bytes)
       then
          return Results.Failure
            (Errors.Make

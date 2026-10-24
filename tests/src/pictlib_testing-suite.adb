@@ -12,6 +12,7 @@ with Pictlib_Testing.Test_PackBits;
 with Pictlib_Testing.Test_QuickTime;
 with Pictlib_Testing.Test_Rendering;
 with Pictlib_Testing.Test_Shapes;
+with Pictlib_Testing.Test_Stress;
 with Pictlib_Testing.Test_Text;
 with Pictlib_Testing.Test_Streams;
 
@@ -48,6 +49,8 @@ package body Pictlib_Testing.Suite is
         new Pictlib_Testing.Test_QuickTime.Test;
       Encoding : constant AUnit.Test_Cases.Test_Case_Access :=
         new Pictlib_Testing.Test_Encoding.Test;
+      Stress : constant AUnit.Test_Cases.Test_Case_Access :=
+        new Pictlib_Testing.Test_Stress.Test;
    begin
       Suite.Add_Test (Foundation);
       Suite.Add_Test (Streams);
@@ -64,6 +67,7 @@ package body Pictlib_Testing.Suite is
       Suite.Add_Test (Text);
       Suite.Add_Test (QuickTime);
       Suite.Add_Test (Encoding);
+      Suite.Add_Test (Stress);
       return Suite;
    end All_Tests;
 end Pictlib_Testing.Suite;
