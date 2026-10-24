@@ -27,20 +27,6 @@ package body Pictlib_Testing.Test_Hostile is
 
    package Errors renames Pictlib.Errors;
 
-   function Pic (Width, Height : Natural; Body_Bytes : Bytes) return Bytes is
-     (V2_Picture (0, 0, Height, Width, Body_Bytes));
-   function Op_Rect (Op, Top, Left, Bottom, Right : Integer) return Bytes is (W (Op) & Rect (Top, Left, Bottom, Right));
-   function Origin (Dh, Dv : Integer) return Bytes is (W (16#0C#) & W (Dh) & W (Dv));
-
-   function Repeat (Item : Bytes; Count : Natural) return Bytes is
-      Result : Bytes (1 .. Item'Length * Count);
-   begin
-      for Index in 0 .. Count - 1 loop
-         Result (Result'First + Index * Item'Length .. Result'First + (Index + 1) * Item'Length - 1) := Item;
-      end loop;
-      return Result;
-   end Repeat;
-
    Compatible : constant Pictlib.Decoding.Options := (Strictness => Pictlib.Compatible, others => <>);
 
 
@@ -156,12 +142,7 @@ package body Pictlib_Testing.Test_Hostile is
       procedure Over (Input : aliased Bytes; Budget : Pictlib.Limits.Limit_Set; Limit : Pictlib.Limit_Kind;
                       Label : String) is
       begin
-         Canvases.Render (Input, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Budget => Budget);
-         Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded
-                 and then Outcome.First_Error.Context.Limit = Limit
-                 and then Outcome.First_Error.Context.Op = 16#14#,
-                 Label & ": rendered with " & Outcome.First_Error.Code'Image & " "
-                 & Outcome.First_Error.Context.Limit'Image);
+         Canvases.Expect_Failure (Input, 8, 2, Errors.Limit_Exceeded, Label, 16#14#, Budget => Budget, Limit => Limit);
       end Over;
 
       procedure Both (Input : aliased Bytes; Code : Errors.Error_Code; Label : String) is

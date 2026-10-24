@@ -80,4 +80,26 @@ package body Pictlib_Testing.Builders is
      (W (0) & W (Pack_Type) & L (0) & L (72 * 16#1_0000#) & L (72 * 16#1_0000#)
       & W ((if Pixel_Size >= 16 then 16 else 0)) & W (Pixel_Size) & W (Component_Count) & W (Component_Size)
       & L (0) & L (0) & L (0));
+
+   function Pic (Width, Height : Natural; Body_Bytes : Bytes) return Bytes is
+     (V2_Picture (0, 0, Height, Width, Body_Bytes));
+
+   function Op_Rect (Op, Top, Left, Bottom, Right : Integer) return Bytes is (W (Op) & Rect (Top, Left, Bottom, Right));
+
+   function Origin (Dh, Dv : Integer) return Bytes is (W (16#0C#) & W (Dh) & W (Dv));
+
+   function Pen_Size (V, H : Integer) return Bytes is (W (16#07#) & W (V) & W (H));
+
+   function Pen_Mode (Mode : Natural) return Bytes is (W (16#08#) & W (Mode));
+
+   function RGB (Op, Red, Green, Blue : Natural) return Bytes is (W (Op) & W (Red) & W (Green) & W (Blue));
+
+   function Repeat (Item : Bytes; Count : Natural) return Bytes is
+      Result : Bytes (1 .. Item'Length * Count);
+   begin
+      for Index in 0 .. Count - 1 loop
+         Result (1 + Index * Item'Length .. (Index + 1) * Item'Length) := Item;
+      end loop;
+      return Result;
+   end Repeat;
 end Pictlib_Testing.Builders;

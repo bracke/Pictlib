@@ -32,7 +32,8 @@ package Pictlib_Testing.Canvases is
       Width, Height : Positive;
       Expected : String;
       Label : String;
-      Options : Pictlib.Decoding.Options := (others => <>));
+      Options : Pictlib.Decoding.Options := (others => <>);
+      Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last);
 
    --  Expect failure: rendering Input fails with Code, naming Op when Op is not 0.
    procedure Expect_Failure
@@ -42,7 +43,27 @@ package Pictlib_Testing.Canvases is
       Label : String;
       Op : Pictlib.Opcode := 0;
       Options : Pictlib.Decoding.Options := (others => <>);
-      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits);
+      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+      Limit : Pictlib.Limit_Kind := Pictlib.No_Limit);
+
+   --  Render leniently: success, Expected, and a warning with Code.
+   procedure Expect_Lenient
+     (Input : aliased Pictlib.Streams.Byte_Array;
+      Width, Height : Positive;
+      Expected : String;
+      Code : Pictlib.Errors.Warning_Code;
+      Label : String;
+      Strictness : Pictlib.Strictness_Mode := Pictlib.Compatible);
+
+   --  The least drawing budget Input renders under, found by bisection up to High; every budget below it must
+   --  fail on the drawing limit, so the search never stops on another error.
+   function Least_Drawing_Work
+     (Input : aliased Pictlib.Streams.Byte_Array;
+      Width, Height : Positive;
+      Label : String;
+      Options : Pictlib.Decoding.Options := (others => <>);
+      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+      High : Pictlib.Pixel_Count := 1_073_741_824) return Pictlib.Pixel_Count;
 
    --  Pixel.
    --  @return The color at X, Y of an RGB_24 view.

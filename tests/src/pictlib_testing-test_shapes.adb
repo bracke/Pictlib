@@ -20,12 +20,6 @@ package body Pictlib_Testing.Test_Shapes is
 
    --  Expected rasters follow the rules of the specification, section 3.2, worked out by hand.
 
-   function Pic (Width, Height : Natural; Body_Bytes : Bytes) return Bytes is
-     (V2_Picture (0, 0, Height, Width, Body_Bytes));
-   function Op_Rect (Op, Top, Left, Bottom, Right : Integer) return Bytes is (W (Op) & Rect (Top, Left, Bottom, Right));
-   function Pen_Size (V, H : Integer) return Bytes is (W (16#07#) & W (V) & W (H));
-   function Pen_Mode (Mode : Natural) return Bytes is (W (16#08#) & W (Mode));
-   function RGB (Op, Red, Green, Blue : Natural) return Bytes is (W (Op) & W (Red) & W (Green) & W (Blue));
 
    Checker : constant Bytes := [16#AA#, 16#55#, 16#AA#, 16#55#, 16#AA#, 16#55#, 16#AA#, 16#55#];
    Red_Foreground : constant Bytes := RGB (16#1A#, 16#FFFF#, 0, 0);

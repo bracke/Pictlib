@@ -189,6 +189,7 @@ package body Pictlib.Internal.Typesetting is
                         for Span of P.Row_Spans loop
                            exit when not Results.Succeeded (Outcome);
                            Outcome := Rendering.Charge (P, S, Natural'Max (0, Span.Right - Span.Left));
+                           exit when not Results.Succeeded (Outcome);
                            for X in Span.Left .. Span.Right - 1 loop
                               declare
                                  Ink : constant Boolean :=

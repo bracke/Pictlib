@@ -17,6 +17,7 @@ with Pictlib_Testing.Recorders;
 package body Pictlib_Testing.Test_Text is
    use AUnit.Assertions;
    use Pictlib_Testing.Builders;
+   use type Pictlib.Byte;
    use type Pictlib.Errors.Error_Code;
    use type Pictlib.Errors.Warning_Code;
    use type Pictlib.Limit_Kind;
@@ -442,20 +443,7 @@ package body Pictlib_Testing.Test_Text is
 
       --  The least drawing budget Input renders under.
       function Least (Input : aliased Bytes) return Pictlib.Pixel_Count is
-         Low : Pictlib.Pixel_Count := 0;
-         High : Pictlib.Pixel_Count := 2 ** 30;
-         Middle : Pictlib.Pixel_Count;
-      begin
-         while Low < High loop
-            Middle := (Low + High) / 2;
-            if Renders (Input, Middle) then
-               High := Middle;
-            else
-               Low := Middle + 1;
-            end if;
-         end loop;
-         return High;
-      end Least;
+        (Canvases.Least_Drawing_Work (Input, Width, Height, "text work", Options));
    begin
       --  A size 500 font costs its 16 MiB atlas before it is loaded, so a small budget never loads it.
       Assert (not Renders (Big_Font, 10_000_000), "a size 500 font was loaded on a budget below its atlas");
@@ -479,6 +467,20 @@ package body Pictlib_Testing.Test_Text is
                           (Pictlib.Limits.Default_Limits with delta Max_Total_Allocation_Bytes => 8_388_608));
          Assert (Pictlib.Results.Succeeded (Outcome), "a hundred text runs overran an 8 MiB allocation quota: "
                  & Outcome.First_Error.Code'Image);
+      end;
+      --  Nothing is painted past the budget: on black, copy-mode text whose budget ends right after its glyph is
+      --  asked for paints no cell pixel, not even the first row's white.
+      declare
+         Base : aliased constant Bytes := Pic (Black_Under & Mode_Op (0) & Size_Op (12));
+         Copy_H : aliased constant Bytes := Pic (Black_Under & Mode_Op (0) & Size_Op (12) & Long_Text (15, 2, "H"));
+         Before_Cells : constant Pictlib.Pixel_Count :=
+           Least (Base) + Pictlib.Internal.Text.Load_Work (12, Pictlib.Internal.Text.File_Bytes (Sans))
+           + Pictlib.Internal.Text.Glyph_Work (12);
+      begin
+         Assert (not Renders (Copy_H, Before_Cells), "copy-mode text fit a budget that ends before its cells");
+         for Index in Storage'Range loop
+            Assert (Storage (Index) = 0, "a glyph cell was painted past the budget");
+         end loop;
       end;
       --  An underline is painted pixels too, even where the characters above it are outside the frame: at
       --  size 4 the baseline one row above the frame puts every cell row out and the underline row in.

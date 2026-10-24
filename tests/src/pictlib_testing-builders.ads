@@ -52,4 +52,19 @@ package Pictlib_Testing.Builders is
      with Pre => Codec'Length = 4;
    --  The 36 PixMap bytes after rowBytes and bounds.
    function Pixmap_Tail (Pack_Type, Pixel_Size, Component_Count, Component_Size : Natural) return Bytes;
+
+   --  A version 2 picture of a Width x Height frame at the origin holding Body_Bytes, then the end opcode.
+   function Pic (Width, Height : Natural; Body_Bytes : Bytes) return Bytes;
+   --  An opcode followed by a Rect.
+   function Op_Rect (Op, Top, Left, Bottom, Right : Integer) return Bytes;
+   --  Origin (16#0C#): move the local system by Dh, Dv.
+   function Origin (Dh, Dv : Integer) return Bytes;
+   --  PnSize (16#07#): the pen V high and H wide.
+   function Pen_Size (V, H : Integer) return Bytes;
+   --  PnMode (16#08#).
+   function Pen_Mode (Mode : Natural) return Bytes;
+   --  An RGB color opcode (RGBFgCol 16#1A#, RGBBkCol 16#1B#, ...) with 16-bit components.
+   function RGB (Op, Red, Green, Blue : Natural) return Bytes;
+   --  Item, Count times over.
+   function Repeat (Item : Bytes; Count : Natural) return Bytes;
 end Pictlib_Testing.Builders;

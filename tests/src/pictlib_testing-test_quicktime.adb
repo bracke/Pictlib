@@ -224,19 +224,9 @@ package body Pictlib_Testing.Test_QuickTime is
          Decoder : Pictlib.Decoding.Decoder;
          Outcome : Pictlib.Results.Result;
          Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
-         Low : Pictlib.Pixel_Count := 0;
-         High : Pictlib.Pixel_Count := 1_000_000;
          use type Pictlib.Pixel_Count;
+         High : constant Pictlib.Pixel_Count := Canvases.Least_Drawing_Work (Alone, 8, 6, "the image alone");
       begin
-         while Low < High loop
-            Budget.Max_Drawing_Work := (Low + High) / 2;
-            Canvases.Render (Alone, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome, Budget => Budget);
-            if Pictlib.Results.Succeeded (Outcome) then
-               High := Budget.Max_Drawing_Work;
-            else
-               Low := Budget.Max_Drawing_Work + 1;
-            end if;
-         end loop;
          Budget.Max_Drawing_Work := High + 5;
          Canvases.Render (After_Image, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome, Budget => Budget);
          Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded, "the placeholder cost less than its rows");
@@ -400,20 +390,8 @@ package body Pictlib_Testing.Test_QuickTime is
          use type Pictlib.Pixel_Count;
          Off_Frame : aliased constant Bytes :=
            Image (QuickTime ("jpeg", Image_Width, Image_Height, JPEG, Move_H => 100 * 16#1_0000#), 8, 6);
-         Low : Pictlib.Pixel_Count := 0;
-         High : Pictlib.Pixel_Count := 1_000_000;
-         Middle : Pictlib.Pixel_Count;
+         High : constant Pictlib.Pixel_Count := Canvases.Least_Drawing_Work (Off_Frame, 8, 6, "an off-frame image");
       begin
-         while Low < High loop
-            Middle := (Low + High) / 2;
-            Canvases.Render (Off_Frame, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome,
-                             Budget => (Defaults with delta Max_Drawing_Work => Middle));
-            if Pictlib.Results.Succeeded (Outcome) then
-               High := Middle;
-            else
-               Low := Middle + 1;
-            end if;
-         end loop;
          Assert (High >= 48 + 6, "an image decoded off the frame cost" & High'Image);
       end;
       --  An aggregate allocation quota no larger than the per-allocation budget still decodes a small JPEG: an

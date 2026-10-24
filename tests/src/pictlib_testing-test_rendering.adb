@@ -12,6 +12,7 @@ with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Recorders;
 
 package body Pictlib_Testing.Test_Rendering is
+   package Errors renames Pictlib.Errors;
    use AUnit.Assertions;
    use Pictlib_Testing.Builders;
    use type Pictlib.Byte_Count;
@@ -163,76 +164,6 @@ package body Pictlib_Testing.Test_Rendering is
      V2_Picture (0, 0, 2, 8, Copy (16#98#, 2, Rect (0, 0, 2, 8), Rect (0, 0, 2, 8), Rect (0, 0, 0, 8))
                  & B (16#A5#) & B (0) & B (16#0F#) & B (0));
 
-   procedure Expect_Raster
-     (Input : aliased Bytes;
-      Width, Height : Positive;
-      Expected : String;
-      Label : String;
-      Options : Decoding.Options := (others => <>);
-      Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last)
-   is
-      Storage : aliased Bytes := [1 .. 3 * Width * Height => 16#EE#];
-      Output : constant Pictlib.Images.Mutable_Image_View := Canvases.View (Storage'Access, Width, Height);
-      Decoder : Decoding.Decoder;
-      Outcome : Pictlib.Results.Result;
-   begin
-      Canvases.Render (Input, Decoder, Output, Outcome, Options, Max_Transfer => Max_Transfer);
-      Assert (Pictlib.Results.Succeeded (Outcome),
-              Label & ": render failed with " & Outcome.First_Error.Code'Image & " at opcode"
-              & Outcome.First_Error.Context.Op'Image);
-      Assert (Decoding.State (Decoder) = Decoding.Finished, Label & ": the decoder did not finish");
-      Assert (Canvases.Picture_Of (Output) = Expected,
-              Label & ": rendered " & Canvases.Picture_Of (Output) & ", expected " & Expected);
-   end Expect_Raster;
-
-   procedure Expect_Render_Failure
-     (Input : aliased Bytes;
-      Width, Height : Positive;
-      Code : Pictlib.Errors.Error_Code;
-      Label : String;
-      Op : Pictlib.Opcode := 0;
-      Options : Decoding.Options := (others => <>);
-      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
-      Limit : Pictlib.Limit_Kind := Pictlib.No_Limit)
-   is
-      Storage : aliased Bytes := [1 .. 3 * Width * Height => 0];
-      Decoder : Decoding.Decoder;
-      Outcome : Pictlib.Results.Result;
-   begin
-      Canvases.Render (Input, Decoder, Canvases.View (Storage'Access, Width, Height), Outcome, Options, Budget);
-      Assert (Outcome.First_Error.Code = Code,
-              Label & ": expected " & Code'Image & ", got " & Outcome.First_Error.Code'Image);
-      if Op /= 0 then
-         Assert (Outcome.First_Error.Context.Has_Opcode and then Outcome.First_Error.Context.Op = Op,
-                 Label & ": the failing opcode was not recorded");
-      end if;
-      if Limit /= Pictlib.No_Limit then
-         Assert (Outcome.First_Error.Context.Limit = Limit, Label & ": wrong limit");
-      end if;
-   end Expect_Render_Failure;
-
-   --  Render leniently: success, Expected, and a warning with Code.
-   procedure Expect_Lenient
-     (Input : aliased Bytes;
-      Width, Height : Positive;
-      Expected : String;
-      Code : Pictlib.Errors.Warning_Code;
-      Label : String;
-      Strictness : Pictlib.Strictness_Mode := Pictlib.Compatible)
-   is
-      Storage : aliased Bytes := [1 .. 3 * Width * Height => 0];
-      Output : constant Pictlib.Images.Mutable_Image_View := Canvases.View (Storage'Access, Width, Height);
-      Decoder : Decoding.Decoder;
-      Outcome : Pictlib.Results.Result;
-   begin
-      Canvases.Render (Input, Decoder, Output, Outcome, (Strictness => Strictness, others => <>));
-      Assert (Pictlib.Results.Succeeded (Outcome), Label & ": lenient render failed with "
-              & Outcome.First_Error.Code'Image);
-      Assert (Recorders.Has_Warning (Decoder, Code), Label & ": no " & Code'Image & " warning");
-      Assert (Canvases.Picture_Of (Output) = Expected,
-              Label & ": rendered " & Canvases.Picture_Of (Output) & ", expected " & Expected);
-   end Expect_Lenient;
-
    procedure Bitmaps (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Indexed_Pixmaps (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Direct_Pixmaps (T : in out AUnit.Test_Cases.Test_Case'Class);
@@ -268,20 +199,20 @@ package body Pictlib_Testing.Test_Rendering is
    procedure Bitmaps (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
    begin
-      Expect_Raster (Unpacked_Bitmap, 8, 2, Bitmap_2x8_Raster, "unpacked BitMap");
-      Expect_Raster (Packed_Bitmap, 64, 1, [1 .. 32 => 'W'] & [1 .. 32 => 'B'], "packed BitMap");
-      Expect_Raster (Dither_Copy, 8, 2, Bitmap_2x8_Raster, "ditherCopy is srcCopy");
-      Expect_Raster (Unpacked_Bitmap, 8, 2, Bitmap_2x8_Raster, "one-byte reads", Max_Transfer => 1);
+      Canvases.Expect_Raster (Unpacked_Bitmap, 8, 2, Bitmap_2x8_Raster, "unpacked BitMap");
+      Canvases.Expect_Raster (Packed_Bitmap, 64, 1, [1 .. 32 => 'W'] & [1 .. 32 => 'B'], "packed BitMap");
+      Canvases.Expect_Raster (Dither_Copy, 8, 2, Bitmap_2x8_Raster, "ditherCopy is srcCopy");
+      Canvases.Expect_Raster (Unpacked_Bitmap, 8, 2, Bitmap_2x8_Raster, "one-byte reads", Max_Transfer => 1);
    end Bitmaps;
 
    procedure Indexed_Pixmaps (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
    begin
-      Expect_Raster (Sparse_Table, 4, 2, Indexed_Raster, "sparse color table");
-      Expect_Raster (Device_Table, 4, 2, Indexed_Raster, "device color table");
-      Expect_Raster (Four_Bit, 4, 1, "RGUW", "4-bit pixels");
-      Expect_Raster (Two_Bit, 8, 1, "WRGUUGRW", "2-bit pixels");
-      Expect_Raster (Packed_Indexed, 8, 1, "RRRRRRRR", "packed 8-bit row");
+      Canvases.Expect_Raster (Sparse_Table, 4, 2, Indexed_Raster, "sparse color table");
+      Canvases.Expect_Raster (Device_Table, 4, 2, Indexed_Raster, "device color table");
+      Canvases.Expect_Raster (Four_Bit, 4, 1, "RGUW", "4-bit pixels");
+      Canvases.Expect_Raster (Two_Bit, 8, 1, "WRGUUGRW", "2-bit pixels");
+      Canvases.Expect_Raster (Packed_Indexed, 8, 1, "RRRRRRRR", "packed 8-bit row");
    end Indexed_Pixmaps;
 
    procedure Expect_Colors (Input : aliased Bytes; First, Second : Pictlib.Images.RGB_Color; Label : String) is
@@ -299,38 +230,38 @@ package body Pictlib_Testing.Test_Rendering is
    procedure Direct_Pixmaps (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
    begin
-      Expect_Raster (Sixteen_Literal, 4, 1, "RGUW", "16-bit literal words");
-      Expect_Raster (Sixteen_Run, 4, 1, "RRRR", "16-bit word run");
+      Canvases.Expect_Raster (Sixteen_Literal, 4, 1, "RGUW", "16-bit literal words");
+      Canvases.Expect_Raster (Sixteen_Run, 4, 1, "RRRR", "16-bit word run");
       Expect_Colors (Planar_3, (16#10#, 16#30#, 16#50#), (16#20#, 16#40#, 16#60#), "32-bit planar");
       Expect_Colors (Planar_Default, (16#10#, 16#30#, 16#50#), (16#20#, 16#40#, 16#60#), "32-bit default pack");
       Expect_Colors (Planar_4, (16#10#, 16#30#, 16#50#), (16#20#, 16#40#, 16#60#), "32-bit planar with alpha");
-      Expect_Raster (Chunky, 2, 1, "RU", "32-bit unpacked");
-      Expect_Raster (Triplets, 2, 1, "RG", "32-bit pad dropped");
+      Canvases.Expect_Raster (Chunky, 2, 1, "RU", "32-bit unpacked");
+      Canvases.Expect_Raster (Triplets, 2, 1, "RG", "32-bit pad dropped");
    end Direct_Pixmaps;
 
    procedure Scaling_And_Placement (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
    begin
-      Expect_Raster (Upscaled, 4, 4, "WWBB/WWBB/BBWW/BBWW", "2x upscale");
-      Expect_Raster (Downscaled, 2, 1, "BB", "column downscale");
-      Expect_Raster (Squeezed_Rows, 1, 2, "B/W", "row downscale");
-      Expect_Raster (Offset_Frame, 4, 2, "BBWW/WWBB", "frame offset and srcRect");
-      Expect_Raster (Partly_Outside, 4, 2, "WWWW/WWBB", "destination partly outside the frame");
-      Expect_Raster (Empty_Destination, 8, 2, "WWWWWWWW/WWWWWWWW", "empty destination");
-      Expect_Raster (Partly_Outside, 4, 2, "RRRR/RRBB", "background",
-                     (Background => (16#FF#, 0, 0), others => <>));
+      Canvases.Expect_Raster (Upscaled, 4, 4, "WWBB/WWBB/BBWW/BBWW", "2x upscale");
+      Canvases.Expect_Raster (Downscaled, 2, 1, "BB", "column downscale");
+      Canvases.Expect_Raster (Squeezed_Rows, 1, 2, "B/W", "row downscale");
+      Canvases.Expect_Raster (Offset_Frame, 4, 2, "BBWW/WWBB", "frame offset and srcRect");
+      Canvases.Expect_Raster (Partly_Outside, 4, 2, "WWWW/WWBB", "destination partly outside the frame");
+      Canvases.Expect_Raster (Empty_Destination, 8, 2, "WWWWWWWW/WWWWWWWW", "empty destination");
+      Canvases.Expect_Raster (Partly_Outside, 4, 2, "RRRR/RRBB", "background",
+                              (Background => (16#FF#, 0, 0), others => <>));
    end Scaling_And_Placement;
 
    procedure Clip_And_Mask (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
    begin
-      Expect_Raster (Clipped, 8, 2, "BWBWWBWB/WWWWWWWW", "rectangular clip");
-      Expect_Raster (Masked, 4, 4, L_Raster, "BitsRgn mask");
-      Expect_Raster (Clipped_By_L, 4, 4, L_Raster, "region clip");
-      Expect_Raster (Masked, 4, 4, L_Raster, "BitsRgn mask, one-byte reads", Max_Transfer => 1);
-      Expect_Render_Failure (Unsorted_Mask, 4, 4, Pictlib.Errors.Region_Invalid, "unsorted inversion points", 16#91#);
-      Expect_Render_Failure (Odd_Mask, 4, 4, Pictlib.Errors.Region_Invalid, "odd inversion points", 16#91#);
-      Expect_Render_Failure (Unterminated_Mask, 4, 4, Pictlib.Errors.Region_Invalid, "unterminated region", 16#91#);
+      Canvases.Expect_Raster (Clipped, 8, 2, "BWBWWBWB/WWWWWWWW", "rectangular clip");
+      Canvases.Expect_Raster (Masked, 4, 4, L_Raster, "BitsRgn mask");
+      Canvases.Expect_Raster (Clipped_By_L, 4, 4, L_Raster, "region clip");
+      Canvases.Expect_Raster (Masked, 4, 4, L_Raster, "BitsRgn mask, one-byte reads", Max_Transfer => 1);
+      Canvases.Expect_Failure (Unsorted_Mask, 4, 4, Errors.Region_Invalid, "unsorted inversion points", 16#91#);
+      Canvases.Expect_Failure (Odd_Mask, 4, 4, Errors.Region_Invalid, "odd inversion points", 16#91#);
+      Canvases.Expect_Failure (Unterminated_Mask, 4, 4, Errors.Region_Invalid, "unterminated region", 16#91#);
    end Clip_And_Mask;
 
    procedure Output_Formats (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -369,34 +300,34 @@ package body Pictlib_Testing.Test_Rendering is
               and then Outcome.First_Error.Context.Expected = 8 and then Outcome.First_Error.Context.Actual = 4,
               "a short packed row was accepted");
       --  A row that unpacks short is never patched: Compatible fails, Recover_When_Safe keeps what came before.
-      Expect_Render_Failure (Short_Packed_Row, 64, 1, Pictlib.Errors.PackBits_Invalid, "short packed row, compatible",
-                             Op => 16#98#, Options => (Strictness => Pictlib.Compatible, others => <>));
-      Expect_Lenient (Short_Packed_Row, 64, 1, [1 .. 64 => 'W'], Pictlib.Errors.Partial_Picture,
-                      "short packed row", Pictlib.Recover_When_Safe);
+      Canvases.Expect_Failure (Short_Packed_Row, 64, 1, Errors.PackBits_Invalid, "short packed row, compatible",
+                               Op => 16#98#, Options => (Strictness => Pictlib.Compatible, others => <>));
+      Canvases.Expect_Lenient (Short_Packed_Row, 64, 1, [1 .. 64 => 'W'], Errors.Partial_Picture,
+                               "short packed row", Pictlib.Recover_When_Safe);
 
-      Expect_Render_Failure (Undefined_Index, 4, 2, Pictlib.Errors.Color_Table_Invalid, "undefined index", 16#98#);
-      Expect_Lenient (Undefined_Index, 4, 2, "RGBR/UUGR", Pictlib.Errors.Recovery_Applied, "undefined index");
+      Canvases.Expect_Failure (Undefined_Index, 4, 2, Errors.Color_Table_Invalid, "undefined index", 16#98#);
+      Canvases.Expect_Lenient (Undefined_Index, 4, 2, "RGBR/UUGR", Errors.Recovery_Applied, "undefined index");
 
-      Expect_Render_Failure (Wide_Source, 8, 2, Pictlib.Errors.Pixmap_Invalid, "srcRect outside bounds", 16#98#);
-      Expect_Lenient (Wide_Source, 8, 2, Bitmap_2x8_Raster, Pictlib.Errors.Recovery_Applied, "srcRect clamped");
+      Canvases.Expect_Failure (Wide_Source, 8, 2, Errors.Pixmap_Invalid, "srcRect outside bounds", 16#98#);
+      Canvases.Expect_Lenient (Wide_Source, 8, 2, Bitmap_2x8_Raster, Errors.Recovery_Applied, "srcRect clamped");
 
-      Expect_Render_Failure (Truncated_Pixels, 8, 2, Pictlib.Errors.Source_Unexpected_End, "truncated pixels", 16#98#);
-      Expect_Render_Failure (Truncated_Pixels, 8, 2, Pictlib.Errors.Source_Unexpected_End, "truncated pixels",
-                             Options => (Strictness => Pictlib.Compatible, others => <>));
-      Expect_Lenient (Truncated_Pixels, 8, 2, "BWBWWBWB/WWWWWWWW", Pictlib.Errors.Partial_Picture,
-                      "truncated pixels", Pictlib.Recover_When_Safe);
+      Canvases.Expect_Failure (Truncated_Pixels, 8, 2, Errors.Source_Unexpected_End, "truncated pixels", 16#98#);
+      Canvases.Expect_Failure (Truncated_Pixels, 8, 2, Errors.Source_Unexpected_End, "truncated pixels",
+                               Options => (Strictness => Pictlib.Compatible, others => <>));
+      Canvases.Expect_Lenient (Truncated_Pixels, 8, 2, "BWBWWBWB/WWWWWWWW", Errors.Partial_Picture,
+                               "truncated pixels", Pictlib.Recover_When_Safe);
    end Malformed_Pixels;
 
    procedure Unsupported_Drawing (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
    begin
-      Expect_Render_Failure (With_QuickTime, 8, 2, Pictlib.Errors.Unsupported_Feature, "CompressedQuickTime", 16#8200#);
-      Expect_Lenient (With_QuickTime, 8, 2, Bitmap_2x8_Raster, Pictlib.Errors.Approximated_Rendering,
-                      "CompressedQuickTime");
-      Expect_Render_Failure (Unknown_Planar, 8, 2, Pictlib.Errors.Unsupported_Feature, "unknown planar color", 16#0E#);
-      Expect_Render_Failure (Unknown_Mode, 8, 2, Pictlib.Errors.Transfer_Mode_Invalid, "transfer mode 20", 16#98#);
-      Expect_Lenient (Unknown_Mode, 8, 2, Bitmap_2x8_Raster, Pictlib.Errors.Recovery_Applied, "transfer mode 20");
-      Expect_Raster (Default_Colors, 8, 2, Bitmap_2x8_Raster, "default colors and origin");
+      Canvases.Expect_Failure (With_QuickTime, 8, 2, Errors.Unsupported_Feature, "CompressedQuickTime", 16#8200#);
+      Canvases.Expect_Lenient (With_QuickTime, 8, 2, Bitmap_2x8_Raster, Errors.Approximated_Rendering,
+                               "CompressedQuickTime");
+      Canvases.Expect_Failure (Unknown_Planar, 8, 2, Errors.Unsupported_Feature, "unknown planar color", 16#0E#);
+      Canvases.Expect_Failure (Unknown_Mode, 8, 2, Errors.Transfer_Mode_Invalid, "transfer mode 20", 16#98#);
+      Canvases.Expect_Lenient (Unknown_Mode, 8, 2, Bitmap_2x8_Raster, Errors.Recovery_Applied, "transfer mode 20");
+      Canvases.Expect_Raster (Default_Colors, 8, 2, Bitmap_2x8_Raster, "default colors and origin");
    end Unsupported_Drawing;
 
    procedure Views_And_Limits (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -418,18 +349,18 @@ package body Pictlib_Testing.Test_Rendering is
                        Outcome);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_Argument, "a view without storage was accepted");
 
-      Expect_Render_Failure (Unpacked_Bitmap, 8, 2, Pictlib.Errors.Limit_Exceeded, "canvas pixels",
-                             Budget => (Defaults with delta Max_Canvas_Pixels => 15),
-                             Limit => Pictlib.Canvas_Pixel_Limit);
-      Expect_Render_Failure (Unpacked_Bitmap, 8, 2, Pictlib.Errors.Limit_Exceeded, "output bytes",
-                             Budget => (Defaults with delta Max_Output_Bytes => 47),
-                             Limit => Pictlib.Output_Byte_Limit);
-      Expect_Render_Failure (Unpacked_Bitmap, 8, 2, Pictlib.Errors.Limit_Exceeded, "drawing work", 16#98#,
-                             Budget => (Defaults with delta Max_Drawing_Work => 15),
-                             Limit => Pictlib.Drawing_Work_Limit);
-      Expect_Render_Failure (Packed_Bitmap, 64, 1, Pictlib.Errors.Limit_Exceeded, "row buffers", 16#98#,
-                             Budget => (Defaults with delta Max_Allocation_Bytes => 100),
-                             Limit => Pictlib.Allocation_Byte_Limit);
+      Canvases.Expect_Failure (Unpacked_Bitmap, 8, 2, Errors.Limit_Exceeded, "canvas pixels",
+                               Budget => (Defaults with delta Max_Canvas_Pixels => 15),
+                               Limit => Pictlib.Canvas_Pixel_Limit);
+      Canvases.Expect_Failure (Unpacked_Bitmap, 8, 2, Errors.Limit_Exceeded, "output bytes",
+                               Budget => (Defaults with delta Max_Output_Bytes => 47),
+                               Limit => Pictlib.Output_Byte_Limit);
+      Canvases.Expect_Failure (Unpacked_Bitmap, 8, 2, Errors.Limit_Exceeded, "drawing work", 16#98#,
+                               Budget => (Defaults with delta Max_Drawing_Work => 15),
+                               Limit => Pictlib.Drawing_Work_Limit);
+      Canvases.Expect_Failure (Packed_Bitmap, 64, 1, Errors.Limit_Exceeded, "row buffers", 16#98#,
+                               Budget => (Defaults with delta Max_Allocation_Bytes => 100),
+                               Limit => Pictlib.Allocation_Byte_Limit);
    end Views_And_Limits;
 
    procedure Render_States (T : in out AUnit.Test_Cases.Test_Case'Class) is

@@ -124,20 +124,20 @@ are retained, never interpreted.
   shape, "same" draws nothing.
 - Patterns tile from picture coordinate (0, 0). A bit pattern's 1 bits are the foreground and its
   0 bits the background; a color `PixPat` (type 1) is drawn with its own colors and is not
-  colorized; a dither `PixPat` (type 2) is drawn as its RGB color. Pattern opcodes are read, then
-  charged, like every other opcode: a unit of drawing work for every pattern, and for a color
-  `PixPat` a unit per pixel and per row of the tile it decodes. A tile of more than 2^31 − 1
-  pixels, more than a tile can index, is never decoded, so no budget applies to it: in `Strict`
-  it is `Unsupported_Feature` before its rows are read, so no limit on reading them hides it;
-  otherwise its rows are read past and, once the pattern's unit is charged, it is an
-  `Approximated_Rendering` warning, its 1-bit pattern standing in; either diagnostic gives the bound as Expected and
-  the tile's pixels as Actual. Any other
-  color `PixPat` is decoded only once the drawing budget admits that work and then the allocation
-  budget its tile and row buffers. A pattern
-  opcode that fails, in reading or in its charge, leaves that pattern QuickDraw's default (white
-  background, black pen and fill); since a failure ends rendering, nothing draws with it.
-  Limits apply only to rendering, so enumeration accepts such a picture; format errors are
-  reported by both.
+  colorized; a dither `PixPat` (type 2) is drawn as its RGB color.
+  - A pattern opcode is read, then charged, like every other opcode (section 9).
+  - A color `PixPat` tile is decoded only once the drawing budget admits its work and then the
+    allocation budget its tile and row buffers.
+  - A tile of more than 2^31 − 1 pixels, more than a tile can index, is never decoded, so no
+    budget applies to it. In `Strict` it is `Unsupported_Feature` before its rows are read, so no
+    limit on reading them hides it. Otherwise its rows are read past and, once the pattern is
+    charged, an `Approximated_Rendering` warning is recorded and its 1-bit pattern stands in.
+    Either diagnostic gives the bound as Expected and the tile's pixels as Actual.
+  - A pattern opcode that fails, in reading or in its charge, leaves that pattern QuickDraw's
+    default (white background, black pen and fill); since a failure ends rendering, nothing draws
+    with it.
+  - Limits apply only to rendering, so enumeration accepts a picture a limit stops; format errors
+    are reported by both.
 - Transfer modes act on 8-bit components. For the boolean modes, each source component `s` (a
   copied pixel, or a pattern's black-or-white sample) says how near to black the source is:
   `copy = mix (fg, bk, s)`, `or = mix (fg, dst, s)`, `bic = mix (bk, dst, s)`,
@@ -438,19 +438,28 @@ otherwise.
 
 ## 9. Resource limits and security
 
-`Limits.Limit_Set` bounds: frame width/height, canvas pixels and bytes, opcode count, bytes per
-opcode, region bytes, polygon points, total picture bytes, total drawing work (pixels touched,
-counting every shape and scaled copy), retained metadata, per-allocation and monotonic aggregate
-decoder-allocation bytes, output bytes, embedded image bytes and pixels, warnings. Every input-derived size is checked with `Checked_Arithmetic` before
-allocation, indexing or a loop bound. Drawing work is the guard against tiny pictures with huge
-repeated fills. It counts a unit for every shape opcode and every row a shape holds and
-painting walks, every font text loads (its atlas and its file) and every glyph it asks for
-(wherever the glyph lands), every pixel and row a QuickTime image decodes, drawn or not,
-every pixel row a copy converts, drawn or not, a unit for every row a copy skips
-(a QuickTime image's placeholder included), a unit for every pattern and every pixel and row of a
-PixPat decoded, and the work of building each shape, which stops as soon as it would exceed what is left of the
-budget; a shape that stops covers nothing. Only the path rows a line's pen can bring into the
-frame are held.
+`Limits.Limit_Set` bounds the frame width and height, canvas pixels, opcode count, bytes per
+opcode, region bytes, polygon points, picture bytes, drawing work, retained metadata items and
+bytes, each allocation and, optionally, all allocations of a session together, output bytes,
+embedded image bytes and pixels, and warnings. `docs/limits_and_safety.md` says where each is
+checked. Every input-derived size is checked before it bounds an allocation, an index or a loop.
+
+`Max_Drawing_Work` is the guard against small pictures that ask for a lot of work. It is charged
+before or as the work is done, whether or not anything is drawn, and nothing is drawn past it:
+
+| Work | Units |
+| --- | --- |
+| a shape opcode | 1, plus every row its shape holds and every row painting walks |
+| building a shape | every row walked and every unit of span, region, polygon and line work; building stops at the budget left, and a shape that stops covers nothing |
+| painting | every pixel painted, underlines included |
+| a copied pixmap | every pixel of every row converted and every destination row walked; 1 for every row a copy skips, a QuickTime placeholder's included |
+| a pattern | 1, plus every pixel and row of a color `PixPat` tile decoded |
+| a QuickTime image | every pixel and row decoded |
+| text | every font loaded: its atlas bytes, its file bytes and 65 536; every glyph asked for, wherever it lands: 16 per pixel of its cell |
+| a region walk | every inversion point and line passed |
+
+A unit is meant to be about one pixel's work; measured, it is 50–150 ns, so the default of 2^30
+bounds a picture to about a minute.
 
 ## 10. Errors and diagnostics
 
