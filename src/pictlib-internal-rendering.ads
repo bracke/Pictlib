@@ -36,6 +36,10 @@ package Pictlib.Internal.Rendering is
    --  @return True when Value is within Origin_Reach.
    function Origin_Within_Reach (Value : Integer) return Boolean is (Value in -Origin_Reach .. Origin_Reach);
 
+   --  The port's three patterns.
+   type Pattern_Slot is (Back_Slot, Pen_Slot, Fill_Slot);
+   type Port_Patterns is array (Pattern_Slot) of Patterns.Pattern;
+
    type Painter is limited record
       Target : Canvas.Canvas;
       --  The canvas in picture coordinates.
@@ -49,9 +53,9 @@ package Pictlib.Internal.Rendering is
       Pen_Width : Integer := 1;
       Pen_Height : Integer := 1;
       Pen_Mode : Transfer_Modes.Mode_Kind := Transfer_Modes.Copy;
-      Pen_Pattern : Patterns.Pattern := Patterns.From_Bits (Patterns.Black);
-      Fill_Pattern : Patterns.Pattern := Patterns.From_Bits (Patterns.Black);
-      Back_Pattern : Patterns.Pattern := Patterns.From_Bits (Patterns.White);
+      Patterns : Port_Patterns :=
+        [Back_Slot => Pictlib.Internal.Patterns.From_Bits (Pictlib.Internal.Patterns.White),
+         others => Pictlib.Internal.Patterns.From_Bits (Pictlib.Internal.Patterns.Black)];
       --  Pen location in picture coordinates.
       Pen_H : Integer := 0;
       Pen_V : Integer := 0;
@@ -79,10 +83,11 @@ package Pictlib.Internal.Rendering is
 
    type Paint_Kind is (Pattern_Paint, Invert_Paint);
 
-   --  How covered pixels change: a pattern through a transfer mode, or inversion.
+   --  How covered pixels change: one of the port's patterns, named rather than copied, through a transfer mode,
+   --  or inversion.
    type Paint is record
       Kind : Paint_Kind := Pattern_Paint;
-      Source : Patterns.Pattern;
+      Source : Pattern_Slot := Pen_Slot;
       Mode : Transfer_Modes.Mode_Kind := Transfer_Modes.Copy;
    end record;
 

@@ -23,9 +23,8 @@ package body Pictlib.Internal.Rendering is
       P.Pen_Width := 1;
       P.Pen_Height := 1;
       P.Pen_Mode := Transfer_Modes.Copy;
-      P.Pen_Pattern := Patterns.From_Bits (Patterns.Black);
-      P.Fill_Pattern := Patterns.From_Bits (Patterns.Black);
-      P.Back_Pattern := Patterns.From_Bits (Patterns.White);
+      P.Patterns :=
+        [Back_Slot => Patterns.From_Bits (Patterns.White), others => Patterns.From_Bits (Patterns.Black)];
       P.Pen_H := 0;
       P.Pen_V := 0;
       P.Oval_Width := 0;
@@ -120,7 +119,8 @@ package body Pictlib.Internal.Rendering is
       Outcome : Results.Result :=
         (if Coverage.Exhausted (Shape) then Over_Budget (P, S, Coverage.Work (Shape))
          else Charge (P, S, Coverage.Work (Shape)));
-      Colorize : constant Boolean := Patterns.Kind (How.Source) = Patterns.Bit_Pattern;
+      Source : Patterns.Pattern renames P.Patterns (How.Source);
+      Colorize : constant Boolean := Patterns.Kind (Source) = Patterns.Bit_Pattern;
       Kind : constant Transfer_Modes.Mode_Kind :=
         (if P.Hilite_Next then Transfer_Modes.Hilite else How.Mode);
    begin
@@ -132,7 +132,7 @@ package body Pictlib.Internal.Rendering is
             Color : Images.RGB_Color;
             Effect : Transfer_Modes.Effect_Kind := Transfer_Modes.Depends_On_Destination;
          begin
-            if Patterns.Uniform (How.Source, Sample) then
+            if Patterns.Uniform (Source, Sample) then
                Effect := Transfer_Modes.Effect (Kind, Sample, P.Colors, Colorize, Color);
             end if;
             if Effect = Transfer_Modes.Unchanged then
@@ -173,7 +173,7 @@ package body Pictlib.Internal.Rendering is
                      else
                         Put (P, X, Y,
                              Transfer_Modes.Compose
-                               (Kind, Patterns.Sample (How.Source, X, Y), Get (P, X, Y), P.Colors, Colorize));
+                               (Kind, Patterns.Sample (Source, X, Y), Get (P, X, Y), P.Colors, Colorize));
                      end if;
                   end loop;
                end if;

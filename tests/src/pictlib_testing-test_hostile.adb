@@ -143,8 +143,8 @@ package body Pictlib_Testing.Test_Hostile is
         Pic (8, 2, W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 26) & Rect (0, 0, 200, 200)
                    & Pixmap_Tail (0, 1, 1, 1) & Table_Header (16#8000#, 2) & Table_Entry (0, 0, 0, 0)
                    & Table_Entry (1, 0, 0, 0) & Repeat (B (2) & B (16#E7#) & B (0), 200));
-      --  An 18000 x 18000 PixPat that ends at once: under the allocation budget, but not the drawing budget, so
-      --  nothing is set aside for it.
+      --  An 18000 x 18000 PixPat that ends at once. Under budgets too small both to allocate and to decode it,
+      --  the drawing limit is reported: decoding is checked first, before anything is set aside.
       Unaffordable_Tile : aliased constant Bytes :=
         V2_Prefix (0, 0, 2, 8) & W (16#14#) & W (1) & Zeros (8) & W (16#8000# + 2_250) & Rect (0, 0, 18_000, 18_000)
         & Pixmap_Tail (0, 1, 1, 1) & Table_Header (16#8000#, 2) & Table_Entry (0, 0, 0, 0)
@@ -189,9 +189,13 @@ package body Pictlib_Testing.Test_Hostile is
       Both (Cut_Tile, Errors.Source_Unexpected_End, "PixPat cut after its type");
       Over (Huge_Tile, Pictlib.Limits.Default_Limits, Pictlib.Allocation_Byte_Limit, "20000 x 20000 PixPat");
       Tight.Max_Drawing_Work := 100;
-      Over (Unaffordable_Tile, Tight, Pictlib.Drawing_Work_Limit, "18000 x 18000 PixPat on a small budget");
+      Tight.Max_Allocation_Bytes := 1_000;
+      Over (Unaffordable_Tile, Tight, Pictlib.Drawing_Work_Limit, "18000 x 18000 PixPat on small budgets");
       Tight := Pictlib.Limits.Default_Limits;
-      Canvases.Expect_Failure (Unindexable_Tile, 8, 2, Errors.Pattern_Invalid, "65535 x 65535 PixPat", 16#14#);
+      --  A resource bound, not a malformed picture: whatever the budget, a tile indexes at most 2^31 - 1 pixels.
+      Tight.Max_Allocation_Bytes := Pictlib.Byte_Count'Last;
+      Over (Unindexable_Tile, Tight, Pictlib.Allocation_Byte_Limit, "65535 x 65535 PixPat");
+      Tight := Pictlib.Limits.Default_Limits;
       Tight.Max_Allocation_Bytes := 120_880;
       Over (Grown_Tile, Tight, Pictlib.Allocation_Byte_Limit, "a tile and its row buffers over the budget");
       Tight.Max_Allocation_Bytes := 120_881;
@@ -302,6 +306,8 @@ package body Pictlib_Testing.Test_Hostile is
       Missing : aliased constant Bytes :=
         Pic (16, 1, Repeat (W (16#98#) & W (2) & Rect (0, 0, 1, 16) & Rect (0, 0, 1, 16) & Rect (100, 100, 101, 116)
                             & W (0) & Zeros (2), 20));
+      Pen_Bits : aliased constant Bytes := Pic (4, 4, W (16#09#) & Zeros (8));
+      Cut_Pen_Bits : aliased constant Bytes := V2_Prefix (0, 0, 4, 4) & W (16#09#) & Zeros (3);
       Started : constant Ada.Real_Time.Time := Ada.Real_Time.Clock;
    begin
       Canvases.Expect_Failure (Empty_Rows, 64, 1_000, Errors.PackBits_Invalid, "empty packed rows", 16#98#,
@@ -317,6 +323,12 @@ package body Pictlib_Testing.Test_Hostile is
       Canvases.Expect_Failure (Wide, 16, 1, Errors.Limit_Exceeded, "row conversion over budget", 16#98#,
                                Budget => Small);
       Canvases.Expect_Failure (Missing, 16, 1, Errors.Limit_Exceeded, "skipped rows over budget", 16#98#,
+                               Budget => Small);
+      --  A bit pattern past the budget reports the limit, complete or cut short.
+      Small.Max_Drawing_Work := 0;
+      Canvases.Expect_Failure (Pen_Bits, 4, 4, Errors.Limit_Exceeded, "PnPat past the budget", 16#09#,
+                               Budget => Small);
+      Canvases.Expect_Failure (Cut_Pen_Bits, 4, 4, Errors.Limit_Exceeded, "cut PnPat past the budget", 16#09#,
                                Budget => Small);
       Check_Time (Started, "pixel work");
    end Pixel_Work;

@@ -130,10 +130,17 @@ package body Pictlib.Internal.Drawing is
    --  How frame and paint (pen), erase (background pattern), invert and fill (fill pattern) change pixels.
    function Paint_For (P : Rendering.Painter; Verb : Natural) return Rendering.Paint is
      (case Verb is
-         when 0 | 1 => (Rendering.Pattern_Paint, P.Pen_Pattern, P.Pen_Mode),
-         when 2 => (Rendering.Pattern_Paint, P.Back_Pattern, Transfer_Modes.Copy),
-         when 3 => (Rendering.Invert_Paint, P.Pen_Pattern, Transfer_Modes.Copy),
-         when others => (Rendering.Pattern_Paint, P.Fill_Pattern, Transfer_Modes.Copy));
+         when 0 | 1 => (Rendering.Pattern_Paint, Rendering.Pen_Slot, P.Pen_Mode),
+         when 2 => (Rendering.Pattern_Paint, Rendering.Back_Slot, Transfer_Modes.Copy),
+         when 3 => (Rendering.Invert_Paint, Rendering.Pen_Slot, Transfer_Modes.Copy),
+         when others => (Rendering.Pattern_Paint, Rendering.Fill_Slot, Transfer_Modes.Copy));
+
+   --  The port pattern a pattern opcode sets: BkPat and BkPixPat, PnPat and PnPixPat, FillPat and FillPixPat.
+   function Slot_Of (Op : Opcode) return Rendering.Pattern_Slot is
+     (case Op is
+         when 16#0002# | 16#0012# => Rendering.Back_Slot,
+         when 16#0009# | 16#0013# => Rendering.Pen_Slot,
+         when others => Rendering.Fill_Slot);
 
    --  The pixels a shape verb changes, for the rect, round rect, oval and arc groups.
    procedure Rect_Like
@@ -267,7 +274,7 @@ package body Pictlib.Internal.Drawing is
       Coverage.Line (Shape, From, To, P.Pen_Width, P.Pen_Height);
       P.Pen_H := To.H;
       P.Pen_V := To.V;
-      return Rendering.Fill (P, S, Shape, (Rendering.Pattern_Paint, P.Pen_Pattern, P.Pen_Mode));
+      return Rendering.Fill (P, S, Shape, (Rendering.Pattern_Paint, Rendering.Pen_Slot, P.Pen_Mode));
    end Draw_Line;
 
    function Consume_Line
@@ -372,15 +379,18 @@ package body Pictlib.Internal.Drawing is
          when 16#0001# =>  --  Clip, kept in local coordinates
             Outcome := Regions.Read (S, P.Clip);
             P.Has_Clip := Results.Succeeded (Outcome);
-         --  Every pattern is read, then charged: at least a unit of drawing work.
+         --  Every pattern costs at least a unit of drawing work. Past the budget a bit pattern leaves the port
+         --  alone and still takes its 8 bytes, so the error is the limit and the stream stays on opcode bounds.
          when 16#0002# | 16#0009# | 16#000A# =>
-            case Event.Op is
-               when 16#0002# => Outcome := Patterns.Read_Bit_Pattern (S, P.Back_Pattern);
-               when 16#0009# => Outcome := Patterns.Read_Bit_Pattern (S, P.Pen_Pattern);
-               when others => Outcome := Patterns.Read_Bit_Pattern (S, P.Fill_Pattern);
-            end case;
+            Outcome := Rendering.Charge (P, S, Natural'(1));
             if Results.Succeeded (Outcome) then
-               Outcome := Rendering.Charge (P, S, Natural'(1));
+               Outcome := Patterns.Read_Bit_Pattern (S, P.Patterns (Slot_Of (Event.Op)));
+            else
+               declare
+                  Ignored : constant Results.Result := Sessions.Skip_Data (S, 8);
+               begin
+                  null;
+               end;
             end if;
          when 16#0012# .. 16#0014# =>
             --  Decoded straight into the port's pattern, whose old tile goes first: a tile is held once.
@@ -388,11 +398,7 @@ package body Pictlib.Internal.Drawing is
                Allowed : constant Pixel_Count := Rendering.Allowance (P, S);
                Work : Pixel_Count;
             begin
-               case Event.Op is
-                  when 16#0012# => Outcome := Patterns.Read_Pixel_Pattern (S, P.Back_Pattern, Allowed, Work);
-                  when 16#0013# => Outcome := Patterns.Read_Pixel_Pattern (S, P.Pen_Pattern, Allowed, Work);
-                  when others => Outcome := Patterns.Read_Pixel_Pattern (S, P.Fill_Pattern, Allowed, Work);
-               end case;
+               Outcome := Patterns.Read_Pixel_Pattern (S, P.Patterns (Slot_Of (Event.Op)), Allowed, Work);
                if Results.Succeeded (Outcome) then
                   Outcome := Rendering.Charge (P, S, Work);
                end if;

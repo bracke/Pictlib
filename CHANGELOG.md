@@ -2,6 +2,14 @@
 
 ## 0.1.0-dev
 
+- Fixes from the sixth review. A tile too large to index is
+  `Limit_Exceeded`, a resource bound, not `Pattern_Invalid`; a pattern
+  opcode that fails always leaves the default pattern; a bit pattern past the
+  budget reports the limit, leaves the port alone and still takes its bytes.
+  The port's patterns are an array indexed by slot, and a paint names its
+  slot instead of copying the pattern, so a shape no longer copies a color
+  tile. Tests check that decoding work is checked before allocation and the
+  bit-pattern limit.
 - Fixes from the fifth review. A PixPat's decoding work is checked against
   the drawing budget before its tile is set aside, and the port's old tile
   is released before the new one is decoded, so only one tile is held per

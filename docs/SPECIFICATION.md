@@ -121,7 +121,11 @@ are retained, never interpreted.
   shape, "same" draws nothing.
 - Patterns tile from picture coordinate (0, 0). A bit pattern's 1 bits are the foreground and its
   0 bits the background; a color `PixPat` (type 1) is drawn with its own colors and is not
-  colorized; a dither `PixPat` (type 2) is drawn as its RGB color.
+  colorized; a dither `PixPat` (type 2) is drawn as its RGB color. A pattern opcode that fails
+  leaves the default pattern in the port. A color `PixPat` is decoded only once the drawing
+  budget admits its pixels and the allocation budget its tile and row buffers; a tile of more
+  than 2^31 − 1 pixels is `Limit_Exceeded`, whatever the budget. Limits apply only to
+  rendering, so enumeration accepts such a picture; format errors are reported by both.
 - Transfer modes act on 8-bit components. For the boolean modes, each source component `s` (a
   copied pixel, or a pattern's black-or-white sample) says how near to black the source is:
   `copy = mix (fg, bk, s)`, `or = mix (fg, dst, s)`, `bic = mix (bk, dst, s)`,
