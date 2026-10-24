@@ -241,6 +241,7 @@ package body Pictlib_Testing.Test_Stress is
       Decode ((Defaults with delta Max_Retained_Metadata_Bytes => 3), Retained, False);
       Decode ((Defaults with delta Max_Metadata_Items => 0), Retained, False);
       Decode ((Defaults with delta Max_Allocation_Bytes => 100), Retained, True);
+      Decode ((Defaults with delta Max_Total_Allocation_Bytes => 0), Retained, False);
       Decode ((Defaults with delta Max_Output_Bytes => 100), Retained, True);
       Decode ((Defaults with delta Max_Embedded_Image_Bytes => 100), Retained, True);
       Decode ((Defaults with delta Max_Embedded_Image_Pixels => 10), Retained, True);

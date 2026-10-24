@@ -212,6 +212,16 @@ package body Pictlib.Internal.QuickTime is
          end if;
 
          declare
+            Admission : constant Results.Result :=
+              Sessions.Admit_Allocation
+                (S, S.Budget.Max_Allocation_Bytes);
+         begin
+            if not Results.Succeeded (Admission) then
+               return Admission;
+            end if;
+         end;
+
+         declare
             --  jpeglib reads the JPEG straight from the picture, at most Data_Size bytes.
             type Embedded_Source is limited new Jpeglib.Streams.Source with record
                Remaining : Byte_Count := Byte_Count (Data_Size);

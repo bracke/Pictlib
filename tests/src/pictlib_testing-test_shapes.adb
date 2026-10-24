@@ -80,6 +80,13 @@ package body Pictlib_Testing.Test_Shapes is
      Pic (4, 2, Op_Rect (16#31#, 0, 0, 2, 4) & RGB (16#1B#, 16#FFFF#, 0, 0) & RGB (16#1A#, 0, 0, 16#FFFF#)
                 & Pen_Mode (36) & W (16#09#) & [16#FF#, 0, 16#FF#, 0, 16#FF#, 0, 16#FF#, 0]
                 & Op_Rect (16#31#, 0, 0, 2, 4));
+   --  Transparent, red background, copying white and green 32-bit pixels: a copied pixel is itself, so both
+   --  are drawn; only a red one would be left out.
+   Transparent_Copy : aliased constant Bytes :=
+     Pic (2, 1, Op_Rect (16#31#, 0, 0, 1, 2) & RGB (16#1B#, 16#FFFF#, 0, 0)
+                & W (16#9A#) & L (16#FF#) & W (16#8000# + 8) & Rect (0, 0, 1, 2) & Pixmap_Tail (1, 32, 3, 8)
+                & Rect (0, 0, 1, 2) & Rect (0, 0, 1, 2) & W (36)
+                & [0, 16#FF#, 16#FF#, 16#FF#, 0, 0, 16#FF#, 0]);
    Source_Mode_As_Pen : aliased constant Bytes :=
      Pic (4, 2, Op_Rect (16#31#, 0, 0, 2, 4) & Pen_Mode (2) & Op_Rect (16#31#, 0, 0, 1, 4));
 
@@ -217,6 +224,7 @@ package body Pictlib_Testing.Test_Shapes is
       Canvases.Expect_Raster (White_Or, 4, 2, "RRRR/RRRR", "patOr, white");
       Canvases.Expect_Raster (Solid_Bic, 4, 2, "WWWW/RRRR", "patBic, solid black");
       Canvases.Expect_Raster (Transparent_Bits, 4, 2, "UUUU/BBBB", "transparent with a colored background");
+      Canvases.Expect_Raster (Transparent_Copy, 2, 1, "WG", "a transparent copy is not colorized");
    end Patterns_And_Modes;
 
    procedure Expect_Color (Input : aliased Bytes; Width, Height : Positive; Color : Pictlib.Images.RGB_Color;

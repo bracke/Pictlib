@@ -2,6 +2,19 @@
 
 ## 0.1.0-dev
 
+- Fixes from the second full-project review. Rects, ovals and round rects
+  wholly left or right of the frame walk no rows, and every row a shape,
+  a pen or a scaled copy walks is charged, in the frame or not: off-frame
+  shapes, tall pens and copies stretched past the frame were each a few
+  units for a window height of work. Copied pixels are themselves again in
+  transparent and the arithmetic modes; only bit patterns and text are
+  colorized there (part 3 colorized copies too). A strict missing HeaderOp
+  carries HeaderOp's ordinal, a retained file header is not held to the
+  per-opcode budget, and a fontName is checked whatever the retention
+  policy. The specification no longer promises lenient odd padding: the pad
+  byte after odd version 2 data is always skipped.
+- Add a monotonic aggregate decoder-allocation quota alongside the existing
+  per-allocation limit. Released or replaced buffers do not replenish it.
 - Fixes from the full-project review, part 3. Transparent and the
   arithmetic transfer modes see a bit pattern's 1 bits as the foreground and
   its 0 bits as the background. Pack type and `cmpCount` are checked for

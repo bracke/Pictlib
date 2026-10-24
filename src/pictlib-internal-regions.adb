@@ -133,6 +133,16 @@ package body Pictlib.Internal.Regions is
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
+      --  The payload remains live while scanline and inversion-point vectors
+      --  are built. Four payload bytes per retained byte conservatively covers
+      --  vector elements, capacity growth and node bookkeeping.
+      Outcome :=
+        Sessions.Admit_Aggregate
+          (S, 4 * (Byte_Count (Size) - Smallest_Region));
+      if not Results.Succeeded (Outcome) then
+         Sessions.Free (Data);
+         return Outcome;
+      end if;
       Item.Rectangular := False;
       if not Parse (Data.all, Item) then
          Sessions.Free (Data);

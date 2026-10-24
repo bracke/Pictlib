@@ -170,11 +170,14 @@ package body Pictlib.Internal.Coverage is
       end;
    end Add;
 
+   --  The window rows Bounds covers; none when Bounds lies wholly left or right of the window, so a shape
+   --  there walks no rows.
    function Row_Range (Item : Shape; Bounds : Area; First, Last : out Integer) return Boolean is
    begin
       First := Integer'Max (Bounds.Top, Item.Window.Top);
       Last := Integer'Min (Bounds.Bottom, Item.Window.Bottom) - 1;
-      return First <= Last and then not Regions.Is_Empty (Bounds);
+      return First <= Last and then not Regions.Is_Empty (Bounds)
+        and then Bounds.Left < Item.Window.Right and then Item.Window.Left < Bounds.Right;
    end Row_Range;
 
    procedure Rectangle (Item : in out Shape; Bounds : Area) is
@@ -183,6 +186,7 @@ package body Pictlib.Internal.Coverage is
       if Row_Range (Item, Bounds, First, Last) then
          for Y in First .. Last loop
             exit when Item.Spent;
+            Charge (Item, 1);
             Add (Item, Y, Bounds.Left, Bounds.Right);
          end loop;
       end if;
@@ -223,6 +227,8 @@ package body Pictlib.Internal.Coverage is
       if Row_Range (Item, Bounds, First, Last) then
          for Y in First .. Last loop
             exit when Item.Spent;
+            --  Every row walked is charged, whether or not any of it lands in the window.
+            Charge (Item, 1);
             if Oval_Row (Bounds, Y, Left, Right) then
                Add (Item, Y, Left, Right);
             end if;
@@ -246,6 +252,7 @@ package body Pictlib.Internal.Coverage is
       begin
          for Y in First .. Last loop
             exit when Item.Spent;
+            Charge (Item, 1);
             declare
                Oval_Y : constant Integer :=
                  (if Y < Bounds.Top + Height / 2 then Y - Bounds.Top
@@ -470,6 +477,8 @@ package body Pictlib.Internal.Coverage is
       --  Row Y is covered by the pen at every path row from Y - Pen_Height + 1 to Y, the extremes at the ends.
       for Y in Integer'Max (Kept_Top, Item.Window.Top) .. Integer'Min (Kept_Bottom + Pen_Height, Item.Window.Bottom) - 1
       loop
+         exit when Item.Spent;
+         Charge (Item, 1);
          declare
             First : constant Integer := Integer'Max (Kept_Top, Y - Pen_Height + 1) - Kept_Top;
             Last : constant Integer := Integer'Min (Kept_Bottom, Y) - Kept_Top;

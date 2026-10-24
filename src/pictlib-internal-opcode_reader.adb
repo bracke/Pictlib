@@ -169,6 +169,11 @@ package body Pictlib.Internal.Opcode_Reader is
            Interfaces.Shift_Left (Interfaces.Unsigned_16 (Data (1)), 8) or Interfaces.Unsigned_16 (Data (2));
       begin
          if Paint /= null then
+            Outcome := Sessions.Admit_Aggregate (S, Byte_Count (Name_Length) + 128);
+            if not Results.Succeeded (Outcome) then
+               Sessions.Free (Data);
+               return Outcome;
+            end if;
             declare
                Name : String (1 .. Name_Length);
             begin
@@ -205,7 +210,9 @@ package body Pictlib.Internal.Opcode_Reader is
       elsif Event.Op = Opcodes.Compressed_QuickTime and then Paint /= null then
          --  Rendering reads the image; its payload is not retained as well.
          return QuickTime.Draw (Paint.all, S, Event, Length);
-      elsif Event.Op = Opcodes.Font_Name and then (S.Retention.Font_Names or else Paint /= null) then
+      elsif Event.Op = Opcodes.Font_Name then
+         --  Its structure is checked whatever the retention policy, so the policy never changes which pictures
+         --  are malformed.
          return Consume_Font_Name (S, Event, Length, Paint);
       elsif Event.Op in Opcodes.Compressed_QuickTime | Opcodes.Uncompressed_QuickTime
         and then S.Retention.QuickTime_Payloads and then Paint = null

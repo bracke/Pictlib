@@ -98,6 +98,12 @@ package body Pictlib.Internal.Drawing is
            (S, Polygon_Point_Limit, Byte_Count (S.Budget.Max_Polygon_Points),
             Byte_Count (Size - Smallest_Polygon) / 4);
       end if;
+      Outcome :=
+        Sessions.Admit_Aggregate
+          (S, Byte_Count (Size - Smallest_Polygon) * 8);
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
       Outcome := Sessions.Read_Bounds (S, Box);
       for Index in 1 .. Natural (Size - Smallest_Polygon) / 4 loop
          exit when not Results.Succeeded (Outcome);
@@ -204,7 +210,7 @@ package body Pictlib.Internal.Drawing is
                if not Results.Succeeded (Outcome) then
                   return Outcome;
                end if;
-               Coverage.Start (Shape, P.Window, Rendering.Allowance (P, S));
+               Coverage.Start (Shape, P.Window, Rendering.Shape_Allowance (P, S));
                Rect_Like (P, Group, Verb, Rendering.To_Picture (P, P.Last_Rect), Start_Angle, Arc_Angle, Shape);
             end;
          when 7 =>
@@ -217,7 +223,7 @@ package body Pictlib.Internal.Drawing is
             declare
                Points : Coverage.Point_Vectors.Vector;
             begin
-               Coverage.Start (Shape, P.Window, Rendering.Allowance (P, S));
+               Coverage.Start (Shape, P.Window, Rendering.Shape_Allowance (P, S));
                for Item of P.Last_Polygon loop
                   Points.Append (Point'(H => Item.H - P.Origin_H, V => Item.V - P.Origin_V));
                end loop;
@@ -245,7 +251,7 @@ package body Pictlib.Internal.Drawing is
             declare
                Region : Regions.Region := P.Last_Region;
             begin
-               Coverage.Start (Shape, P.Window, Rendering.Allowance (P, S));
+               Coverage.Start (Shape, P.Window, Rendering.Shape_Allowance (P, S));
                Regions.Translate (Region, -P.Origin_H, -P.Origin_V);
                if Verb = 0 then
                   Coverage.Region_Frame (Shape, Region, P.Pen_Width, P.Pen_Height);
@@ -259,7 +265,7 @@ package body Pictlib.Internal.Drawing is
 
    function Draw_Line
      (P : in out Rendering.Painter;
-      S : Sessions.Session;
+      S : in out Sessions.Session;
       Event : Pictures.Opcode_Event;
       From, To : Point) return Results.Result
    is
@@ -270,7 +276,7 @@ package body Pictlib.Internal.Drawing is
       elsif not Rendering.Within_Reach (To.V) then
          return Out_Of_Reach (Event, To.V);
       end if;
-      Coverage.Start (Shape, P.Window, Rendering.Allowance (P, S));
+      Coverage.Start (Shape, P.Window, Rendering.Shape_Allowance (P, S));
       Coverage.Line (Shape, From, To, P.Pen_Width, P.Pen_Height);
       P.Pen_H := To.H;
       P.Pen_V := To.V;

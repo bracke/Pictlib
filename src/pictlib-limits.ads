@@ -15,6 +15,9 @@ package Pictlib.Limits is
       Max_Drawing_Work : Pixel_Count := 2 ** 30;
       Max_Retained_Metadata_Bytes : Byte_Count := 64 * 1024 * 1024;
       Max_Metadata_Items : Natural := 65_536;
+      --  Monotonic aggregate admission for decoder-owned storage during one
+      --  Initialize/Reset session. Released storage does not replenish it.
+      Max_Total_Allocation_Bytes : Byte_Count := Byte_Count'Last;
       Max_Allocation_Bytes : Byte_Count := 1_073_741_824;
       Max_Output_Bytes : Byte_Count := 1_073_741_824;
       Max_Embedded_Image_Bytes : Byte_Count := 268_435_456;

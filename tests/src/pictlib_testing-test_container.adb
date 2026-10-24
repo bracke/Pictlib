@@ -231,8 +231,9 @@ package body Pictlib_Testing.Test_Container is
    begin
       Read_Only_Header (No_Header_Op, Decoder, Outcome);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Header_Invalid
-              and then Outcome.First_Error.Context.Op = 16#001E#,
-              "a version 2 picture without HeaderOp was accepted strictly");
+              and then Outcome.First_Error.Context.Op = 16#001E#
+              and then Outcome.First_Error.Context.Ordinal = 1,
+              "a version 2 picture without HeaderOp was accepted strictly, or misattributed");
 
       Recorders.Decode (No_Header_Op, Decoder, Events, Outcome, (Strictness => Pictlib.Compatible, others => <>));
       Assert (Pictlib.Results.Succeeded (Outcome), "a compatible decoder rejected a missing HeaderOp");
@@ -346,6 +347,30 @@ package body Pictlib_Testing.Test_Container is
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
               and then Outcome.First_Error.Context.Limit = Pictlib.Picture_Byte_Limit,
               "a byte budget that cuts the look-ahead short: " & Outcome.First_Error.Code'Image);
+
+      --  The file header is not an opcode: retaining it is not bounded by the per-opcode byte budget.
+      declare
+         Keep : Decoding.Options;
+         Small : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+      begin
+         Keep.Retention.File_Headers := True;
+         Small.Max_Opcode_Bytes := 256;
+         Recorders.Decode (V2_In_File, Decoder, Events, Outcome, Keep, Small);
+         Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.Metadata_Count (Decoder) = 1,
+                 "a retained file header was held to the per-opcode budget: " & Outcome.First_Error.Code'Image);
+      end;
+
+      --  A fontName too short for its own name is malformed whatever the retention policy.
+      declare
+         Short_Name : aliased constant Bytes :=
+           V2_Prefix (0, 0, 10, 20) & W (16#2C#) & W (2) & W (1) & W (16#00FF#);
+         Drop : Decoding.Options;
+      begin
+         Drop.Retention.Font_Names := False;
+         Recorders.Decode (Short_Name, Decoder, Events, Outcome, Drop);
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Opcode_Length_Invalid,
+                 "a short fontName passed when font names are not retained: " & Outcome.First_Error.Code'Image);
+      end;
 
       --  A HeaderOp cut short names HeaderOp and its ordinal.
       Recorders.Decode (Truncated_Header_Op, Decoder, Events, Outcome);

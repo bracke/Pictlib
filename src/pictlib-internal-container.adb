@@ -2,6 +2,7 @@ with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Geometry;
 with Pictlib.Internal.Bytes;
+with Pictlib.Internal.Metadata_Store;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Metadata;
 with Pictlib.Opcodes;
@@ -41,13 +42,31 @@ package body Pictlib.Internal.Container is
      return Results.Result is
      (Results.Failure (Errors.Make (Code, (Source => S.Stream.Offset, Op => Op, Has_Opcode => Has_Op, others => <>))));
 
+   --  The file header is not an opcode: retained or skipped, the per-opcode byte budget does not apply to it.
    function Read_File_Header (S : in out Sessions.Session) return Results.Result is
+      Keep : Boolean := False;
+      Outcome : Results.Result := Results.Success;
+      Data : Streams.Byte_Array_Access;
+      Offset : constant Source_Offset := S.Stream.Offset;
    begin
       if S.Retention.File_Headers then
-         return Sessions.Retain
-           (S, (Kind => Metadata.File_Header, Offset => S.Stream.Offset, others => <>), File_Header_Bytes);
+         Outcome := Sessions.Admit_Item (S, File_Header_Bytes, Keep);
       end if;
-      return Streams.Skip_Exact (S.Stream, File_Header_Bytes);
+      if Results.Succeeded (Outcome) and then Keep then
+         Outcome := Sessions.Admit_Allocation (S, File_Header_Bytes);
+      end if;
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      elsif not Keep then
+         return Streams.Skip_Exact (S.Stream, File_Header_Bytes);
+      end if;
+      Data := new Streams.Byte_Array (1 .. File_Header_Bytes);
+      Outcome := Streams.Read_Exact (S.Stream, Data.all);
+      if Results.Succeeded (Outcome) then
+         Metadata_Store.Append (S.Store, (Kind => Metadata.File_Header, Offset => Offset, others => <>), Data.all);
+      end if;
+      Sessions.Free (Data);
+      return Outcome;
    end Read_File_Header;
 
    function Check_Frame (S : Sessions.Session; Frame : Geometry.Rect) return Results.Result is
@@ -277,7 +296,10 @@ package body Pictlib.Internal.Container is
             return Outcome;
          elsif Opcode (Word) /= Opcodes.Header_Op then
             if not Sessions.Is_Lenient (S) then
-               return Fail (S, Errors.Header_Invalid, Opcode (Word), True);
+               --  The opcode found where HeaderOp belongs, with the ordinal HeaderOp would have had.
+               return Attributed
+                 (Fail (S, Errors.Header_Invalid, Opcode (Word), True),
+                  (Op => Opcode (Word), Ordinal => Events (1).Ordinal + 1, others => <>));
             end if;
             Sessions.Warn (S, Errors.Compatibility_Issue, Errors.Compatibility,
                                 (Source => Header_Offset, Op => Opcode (Word), Has_Opcode => True, others => <>));

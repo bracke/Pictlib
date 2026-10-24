@@ -34,14 +34,15 @@ package body Pictlib.Internal.Transfer_Modes is
       Source : Images.RGB_Color;
       Destination : Images.RGB_Color;
       Colors : Port_Colors;
-      Colorize : Boolean := True) return Images.RGB_Color
+      Colorize : Boolean := True;
+      Bit_Source : Boolean := False) return Images.RGB_Color
    is
       Fore : constant Images.RGB_Color := (if Colorize then Colors.Foreground else Images.Black);
       Back : constant Images.RGB_Color := (if Colorize then Colors.Background else Images.White);
       --  What the arithmetic modes and transparent work on: a bit pattern's 1 bits are the foreground and its 0
       --  bits the background, as for every mode; a copied pixel is itself. Worked out only for those modes.
       function Painted return Images.RGB_Color is
-        (if Colorize
+        (if Colorize and then Bit_Source
          then (Mix (Component (Fore.Red), Component (Back.Red), Component (Source.Red)),
                Mix (Component (Fore.Green), Component (Back.Green), Component (Source.Green)),
                Mix (Component (Fore.Blue), Component (Back.Blue), Component (Source.Blue)))
@@ -113,7 +114,7 @@ package body Pictlib.Internal.Transfer_Modes is
       Shade : constant Images.RGB_Color :=
         (if Kind in Not_Copy .. Not_Bic then (not Source.Red, not Source.Green, not Source.Blue) else Source);
    begin
-      Color := Compose (Kind, Source, Images.White, Colors, Colorize);
+      Color := Compose (Kind, Source, Images.White, Colors, Colorize, Bit_Source => Colorize);
       case Kind is
          when Copy | Not_Copy =>
             return Constant_Color;

@@ -100,6 +100,11 @@ package Pictlib.Decoding is
    function Warning_At (Object : Decoder; Index : Positive) return Errors.Warning
      with Pre => Index <= Warning_Count (Object);
 
+   --  Total decoder-owned allocation bytes admitted during this session.
+   --  @param Object Decoder.
+   --  @return Monotonic allocation admission for the current session.
+   function Total_Allocation_Bytes (Object : Decoder) return Byte_Count;
+
    --  Metadata count.
    --  @param Object Decoder.
    --  @return Items retained so far.

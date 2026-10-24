@@ -68,12 +68,13 @@ package body Pictlib.Internal.Typesetting is
             return Outcome;
          end if;
       end if;
-      if Text.Atlas_Bytes (Size) > S.Budget.Max_Allocation_Bytes then
-         return Sessions.Over_Limit (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Text.Atlas_Bytes (Size));
-      end if;
       --  Loading a font is drawing work, charged before it is done, so a picture that keeps evicting fonts
       --  from the cache runs out of budget.
       if not Text.Cached (P.Font_Cache, Path, Size) then
+         Outcome := Sessions.Admit_Allocation (S, Text.Atlas_Bytes (Size));
+         if not Results.Succeeded (Outcome) then
+            return Outcome;
+         end if;
          Outcome := Rendering.Charge (P, S, Text.Load_Work (Size));
          if not Results.Succeeded (Outcome) then
             return Outcome;
@@ -109,6 +110,20 @@ package body Pictlib.Internal.Typesetting is
       Size : constant Natural := (if State.Size = 0 then Default_Size else State.Size);
       Outcome : Results.Result := Results.Success;
    begin
+      declare
+         Glyph_Rows : constant Byte_Count :=
+           (if Byte_Count (Characters'Length) > Byte_Count'Last / Byte_Count (Size)
+            then Byte_Count'Last
+            else Byte_Count (Characters'Length) * Byte_Count (Size));
+         Storage : constant Byte_Count :=
+           (if Glyph_Rows > Byte_Count'Last / 128
+            then Byte_Count'Last else Glyph_Rows * 128);
+      begin
+         Outcome := Sessions.Admit_Aggregate (S, Storage);
+         if not Results.Succeeded (Outcome) then
+            return Outcome;
+         end if;
+      end;
       declare
          Font : constant not null access Textrender.Renderer := Text.Renderer (P.Font_Cache, Slot);
          Style : constant Textrender.Font_Style :=
@@ -193,7 +208,7 @@ package body Pictlib.Internal.Typesetting is
                                    (P, X, Y,
                                     Transfer_Modes.Compose
                                       (Kind, (if Ink then Images.Black else Images.White), Rendering.Get (P, X, Y),
-                                       P.Colors));
+                                       P.Colors, Bit_Source => True));
                               end;
                            end loop;
                         end loop;
@@ -217,7 +232,8 @@ package body Pictlib.Internal.Typesetting is
                for X in Span.Left .. Span.Right - 1 loop
                   Rendering.Put
                     (P, X, Baseline + 1,
-                     Transfer_Modes.Compose (Kind, Images.Black, Rendering.Get (P, X, Baseline + 1), P.Colors));
+                     Transfer_Modes.Compose
+                       (Kind, Images.Black, Rendering.Get (P, X, Baseline + 1), P.Colors, Bit_Source => True));
                end loop;
             end loop;
          end if;

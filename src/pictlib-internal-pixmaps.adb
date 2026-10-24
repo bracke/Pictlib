@@ -284,7 +284,7 @@ package body Pictlib.Internal.Pixmaps is
      (Byte_Count (Stored_Length (Header)) + Byte_Count (Unpacked_Length (Header)) + 3 * Byte_Count (Header.Width));
 
    function Start
-     (S : Sessions.Session;
+     (S : in out Sessions.Session;
       Decoder : in out Row_Decoder;
       Header : Bits_Header;
       Extra : Byte_Count := 0) return Results.Result
@@ -293,9 +293,14 @@ package body Pictlib.Internal.Pixmaps is
       Total : constant Byte_Count := (if Extra > Byte_Count'Last - Buffers then Byte_Count'Last else Buffers + Extra);
    begin
       Finish (Decoder);
-      if Total > S.Budget.Max_Allocation_Bytes then
-         return Sessions.Over_Limit (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Total);
-      end if;
+      declare
+         Admission : constant Results.Result :=
+           Sessions.Admit_Allocation (S, Total);
+      begin
+         if not Results.Succeeded (Admission) then
+            return Admission;
+         end if;
+      end;
       Decoder.Header := Header;
       Decoder.Stored := new Streams.Byte_Array (1 .. Stored_Length (Header));
       Decoder.Unpacked := new Streams.Byte_Array (1 .. Unpacked_Length (Header));

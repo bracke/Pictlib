@@ -264,6 +264,9 @@ package body Pictlib.Decoding is
    function Warning_At (Object : Decoder; Index : Positive) return Errors.Warning is
      (Internal.Diagnostics.Element (Object.Session.Log, Index));
 
+   function Total_Allocation_Bytes (Object : Decoder) return Byte_Count is
+     (Object.Session.Total_Allocation_Bytes);
+
    function Metadata_Count (Object : Decoder) return Natural is
      (Internal.Metadata_Store.Count (Object.Session.Store));
 

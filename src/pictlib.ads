@@ -41,6 +41,7 @@ package Pictlib is
       Retained_Metadata_Byte_Limit,
       Metadata_Item_Limit,
       Allocation_Byte_Limit,
+      Total_Allocation_Byte_Limit,
       Output_Byte_Limit,
       Embedded_Image_Byte_Limit,
       Embedded_Image_Pixel_Limit,

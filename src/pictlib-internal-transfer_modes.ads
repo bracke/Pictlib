@@ -34,13 +34,17 @@ package Pictlib.Internal.Transfer_Modes is
    --  @param Destination Pixel already there.
    --  @param Colors Port colors.
    --  @param Colorize False for color patterns, which QuickDraw draws without the foreground and background.
+   --  @param Bit_Source True when Source is a bit pattern's or text's black-or-white sample: transparent and the
+   --  arithmetic modes then see its black as the foreground and its white as the background; a copied pixel is
+   --  itself in those modes.
    --  @return The resulting pixel.
    function Compose
      (Kind : Mode_Kind;
       Source : Images.RGB_Color;
       Destination : Images.RGB_Color;
       Colors : Port_Colors;
-      Colorize : Boolean := True) return Images.RGB_Color;
+      Colorize : Boolean := True;
+      Bit_Source : Boolean := False) return Images.RGB_Color;
 
    type Effect_Kind is
      (Depends_On_Destination,  --  each pixel must be composed

@@ -14,6 +14,7 @@ bounds a read, a skip, an allocation or a loop.
 | `Max_Region_Bytes`, `Max_Polygon_Points` | each region and polygon size word | `Limit_Exceeded` |
 | `Max_Metadata_Items`, `Max_Retained_Metadata_Bytes` | before an item is retained | strict: `Limit_Exceeded`; lenient: dropped, `Data_Loss` warning |
 | `Max_Allocation_Bytes` | each heap buffer for a retained payload | `Limit_Exceeded` |
+| `Max_Total_Allocation_Bytes` | monotonic decoder-owned allocation admission during one initialize/reset session | `Limit_Exceeded`; releases do not replenish the quota |
 | `Max_Warning_Records` | the warning log | last slot becomes `Warnings_Suppressed` |
 
 | `Max_Canvas_Pixels` | the frame, when `Render` starts | `Limit_Exceeded` |

@@ -116,7 +116,7 @@ package body Pictlib.Internal.Rendering is
 
    function Fill
      (P : in out Painter;
-      S : Sessions.Session;
+      S : in out Sessions.Session;
       Shape : Coverage.Shape;
       How : Paint) return Results.Result
    is
@@ -133,6 +133,18 @@ package body Pictlib.Internal.Rendering is
       Kind : constant Transfer_Modes.Mode_Kind :=
         (if P.Hilite_Next then Transfer_Modes.Hilite else How.Mode);
    begin
+      if Results.Succeeded (Outcome) then
+         declare
+            Units : constant Pixel_Count := Coverage.Work (Shape);
+            Storage : constant Byte_Count :=
+              (if Units > Pixel_Count
+                 (Byte_Count'Last / Coverage_Storage_Per_Work_Unit)
+               then Byte_Count'Last
+               else Byte_Count (Units) * Coverage_Storage_Per_Work_Unit);
+         begin
+            Outcome := Sessions.Admit_Aggregate (S, Storage);
+         end;
+      end if;
       P.Hilite_Next := False;
       --  A uniform pattern whose result does not depend on the pixels under it paints one color, or nothing.
       if How.Kind = Pattern_Paint then
@@ -183,7 +195,8 @@ package body Pictlib.Internal.Rendering is
                      else
                         Put (P, X, Y,
                              Transfer_Modes.Compose
-                               (Kind, Patterns.Sample (Source, X, Y), Get (P, X, Y), P.Colors, Colorize));
+                               (Kind, Patterns.Sample (Source, X, Y), Get (P, X, Y), P.Colors, Colorize,
+                                Bit_Source => Colorize));
                      end if;
                   end loop;
                end if;
@@ -225,6 +238,11 @@ package body Pictlib.Internal.Rendering is
          declare
             Y : constant Integer := Destination.Top + Integer (K);
          begin
+            --  Every destination row a copy walks costs a unit, in the frame or not.
+            Outcome := Charge (P, S, Natural'(1));
+            if not Results.Succeeded (Outcome) then
+               return Outcome;
+            end if;
             if Y in P.Window.Top .. P.Window.Bottom - 1 then
                P.Row_Spans.Clear;
                P.Row_Spans.Append

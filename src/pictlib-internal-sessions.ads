@@ -21,6 +21,7 @@ package Pictlib.Internal.Sessions is
       Budget : Limits.Limit_Set := Limits.Default_Limits;
       Store : Metadata_Store.Store;
       Log : Diagnostics.Warning_Log;
+      Total_Allocation_Bytes : Byte_Count := 0;
       Next_Ordinal : Opcode_Ordinal := 0;
       --  Picture offset where the current opcode's data begins.
       Data_Start : Byte_Count := 0;
@@ -82,6 +83,16 @@ package Pictlib.Internal.Sessions is
    --  @param Units Work asked for on top of it.
    --  @return The Limit_Exceeded failure for drawing work, Used + Units saturated: the one report of it.
    function Over_Work (S : Session; Used, Units : Pixel_Count) return Results.Result;
+
+   function Admit_Allocation
+     (S : in out Session;
+      Length : Byte_Count) return Results.Result;
+   function Admit_Aggregate
+     (S : in out Session;
+      Length : Byte_Count) return Results.Result;
+   function Allocation_Allowance
+     (S : Session;
+      Bytes_Per_Unit : Positive) return Pixel_Count;
 
    --  Claim ordinal.
    --  @param S Session counting opcodes.

@@ -9,6 +9,7 @@ package body Pictlib.Internal.Sessions is
       S.Version := Version_1;
       Metadata_Store.Clear (S.Store);
       Diagnostics.Clear (S.Log);
+      S.Total_Allocation_Bytes := 0;
       S.Next_Ordinal := 0;
       S.Data_Start := 0;
       S.Has_Pending := False;
@@ -23,9 +24,16 @@ package body Pictlib.Internal.Sessions is
       Context : Errors.Diagnostic_Context := (others => <>))
    is
       Item : Errors.Diagnostic_Context := Context;
+      Admission : Results.Result;
    begin
       if Item.Source = 0 then
          Item.Source := S.Stream.Offset;
+      end if;
+      if Diagnostics.Count (S.Log) < S.Budget.Max_Warning_Records then
+         Admission := Admit_Aggregate (S, 256);
+         if not Results.Succeeded (Admission) then
+            return;
+         end if;
       end if;
       Diagnostics.Add (S.Log, Errors.Make_Warning (Code, Severity, Item), S.Budget.Max_Warning_Records);
    end Warn;
@@ -45,6 +53,46 @@ package body Pictlib.Internal.Sessions is
      (Over_Limit
         (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
          (if Units > Pixel_Count'Last - Used then Byte_Count'Last else Byte_Count (Used + Units))));
+
+   function Admit_Allocation
+     (S : in out Session;
+      Length : Byte_Count) return Results.Result is
+   begin
+      if Length > S.Budget.Max_Allocation_Bytes then
+         return Over_Limit
+           (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Length);
+      end if;
+      return Admit_Aggregate (S, Length);
+   end Admit_Allocation;
+
+   function Admit_Aggregate
+     (S : in out Session;
+      Length : Byte_Count) return Results.Result
+   is
+      Total : constant Byte_Count :=
+        (if Length > Byte_Count'Last - S.Total_Allocation_Bytes
+         then Byte_Count'Last else S.Total_Allocation_Bytes + Length);
+   begin
+      if Total > S.Budget.Max_Total_Allocation_Bytes then
+         return Over_Limit
+           (S, Total_Allocation_Byte_Limit,
+            S.Budget.Max_Total_Allocation_Bytes, Total);
+      end if;
+      S.Total_Allocation_Bytes := Total;
+      return Results.Success;
+   end Admit_Aggregate;
+
+   function Allocation_Allowance
+     (S : Session;
+      Bytes_Per_Unit : Positive) return Pixel_Count
+   is
+      Remaining : constant Byte_Count :=
+        (if S.Total_Allocation_Bytes >= S.Budget.Max_Total_Allocation_Bytes
+         then 0
+         else S.Budget.Max_Total_Allocation_Bytes - S.Total_Allocation_Bytes);
+   begin
+      return Pixel_Count (Remaining / Byte_Count (Bytes_Per_Unit));
+   end Allocation_Allowance;
 
    function Claim_Ordinal (S : in out Session; Ordinal : out Opcode_Ordinal) return Results.Result is
    begin
@@ -90,8 +138,10 @@ package body Pictlib.Internal.Sessions is
          return Outcome;
       elsif Length > Byte_Count (Natural'Last) then
          return Over_Limit (S, Allocation_Byte_Limit, Byte_Count (Natural'Last), Length);
-      elsif Length > S.Budget.Max_Allocation_Bytes then
-         return Over_Limit (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Length);
+      end if;
+      Outcome := Admit_Allocation (S, Length);
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
       end if;
       Data := new Streams.Byte_Array (1 .. Natural (Length));
       Outcome := Streams.Read_Exact (S.Stream, Data.all);
@@ -104,9 +154,16 @@ package body Pictlib.Internal.Sessions is
    --  Decide whether an item of Length bytes may be kept: a strict session fails when it does not fit,
    --  a lenient one records Data_Loss and sets Keep to False.
    function Admit_Item (S : in out Session; Length : Byte_Count; Keep : out Boolean) return Results.Result is
-      Admission : constant Results.Result := Metadata_Store.Admits (S.Store, Length, S.Budget);
+      Admission : Results.Result := Metadata_Store.Admits (S.Store, Length, S.Budget);
    begin
       Keep := Results.Succeeded (Admission);
+      if Keep then
+         Admission :=
+           Admit_Aggregate
+             (S, (if Length > Byte_Count'Last - 128
+                  then Byte_Count'Last else Length + 128));
+         Keep := Results.Succeeded (Admission);
+      end if;
       if Keep then
          return Admission;
       elsif not Is_Lenient (S) then

@@ -33,7 +33,7 @@ are retained, never interpreted.
 - Expected invalid input never raises: every public operation reports an `Errors.Error` inside a
   `Results.Result`. An exception escaping the public API is a defect.
 - Default strictness is `Strict`. `Compatible` accepts documented deviations seen in real files
-  (missing end opcode at EOF, odd padding). `Recover_When_Safe` additionally
+  (a missing end opcode at EOF). `Recover_When_Safe` additionally
   renders what was decoded before a recoverable failure and reports `Partial_Picture`. Each
   accepted deviation records a `Warning`.
 - Behavior is deterministic: the same bytes, options and limits produce the same pixels,
@@ -61,7 +61,9 @@ are retained, never interpreted.
   bottom — the order Netpbm's `ppmtopict` writes — and four reserved bytes (version 2); `-2` carries `hRes`, `vRes`
   (Fixed, 72 dpi default) and an integer source rectangle (extended version 2). Opcodes are two
   bytes and every opcode starts on an even offset from the start of the opcode stream, so odd
-  data lengths are followed by one pad byte. End opcode `16#00FF#`.
+  data lengths are followed by one pad byte, skipped whatever its value in every mode: a writer
+  that leaves it out cannot be told from one that does not, so there is no lenient guess. End
+  opcode `16#00FF#`.
 - Every opcode shall be parsed against the length rules of Inside Macintosh: *Imaging With
   QuickDraw*, Appendix A, including the reserved ranges, which shall be skipped by their defined
   lengths. Reserved opcodes inside a shape group take the data length of that group (for example
@@ -438,8 +440,8 @@ otherwise.
 
 `Limits.Limit_Set` bounds: frame width/height, canvas pixels and bytes, opcode count, bytes per
 opcode, region bytes, polygon points, total picture bytes, total drawing work (pixels touched,
-counting every shape and scaled copy), retained metadata, allocation, output bytes, embedded image
-bytes and pixels, warnings. Every input-derived size is checked with `Checked_Arithmetic` before
+counting every shape and scaled copy), retained metadata, per-allocation and monotonic aggregate
+decoder-allocation bytes, output bytes, embedded image bytes and pixels, warnings. Every input-derived size is checked with `Checked_Arithmetic` before
 allocation, indexing or a loop bound. Drawing work is the guard against tiny pictures with huge
 repeated fills. It counts a unit for every shape opcode and every row a shape holds and
 painting walks, every font text loads and every glyph it asks for (wherever the glyph lands),

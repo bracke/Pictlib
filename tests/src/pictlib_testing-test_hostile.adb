@@ -366,6 +366,23 @@ package body Pictlib_Testing.Test_Hostile is
                  and then Coverage.Work (Small) < 10,
                  "a one-row shape holds rows" & Coverage.First_Row (Small)'Image & " .."
                  & Coverage.Last_Row (Small)'Image);
+         --  Every row a shape walks is charged, whether or not any of it lands in the window: a tall oval whose
+         --  edge just reaches the window's one column, and a tall pen far left of it.
+         declare
+            Edge, Pen, Away : Coverage.Shape;
+         begin
+            Coverage.Start (Edge, Tall);
+            Coverage.Oval (Edge, (Top => 0, Left => -100, Bottom => 16_384, Right => 1));
+            Assert (Coverage.Work (Edge) >= 16_384, "an oval's walked rows were not charged:"
+                    & Coverage.Work (Edge)'Image);
+            Coverage.Start (Pen, Tall);
+            Coverage.Line (Pen, (H => -30_000, V => 0), (H => -30_000, V => 0), 1, 16_384);
+            Assert (Coverage.Work (Pen) >= 16_384, "a tall pen's rows were not charged:" & Coverage.Work (Pen)'Image);
+            --  Wholly left of the window: no rows are walked at all.
+            Coverage.Start (Away, Tall);
+            Coverage.Oval (Away, (Top => 0, Left => -30_000, Bottom => 16_384, Right => -29_000));
+            Assert (Coverage.Work (Away) = 0, "an oval left of the window walked its rows");
+         end;
          --  10,000 paintSameRect before any rect: a unit each.
          Budget.Max_Drawing_Work := 10_000;
          Canvases.Render (Same_Rects, Decoder, Canvases.View (Tall_Storage'Access, 1, 16_384), Outcome,
@@ -389,6 +406,10 @@ package body Pictlib_Testing.Test_Hostile is
       Decoder : Pictlib.Decoding.Decoder;
       Outcome : Pictlib.Results.Result;
       Small : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+      --  A 1 x 1 BitMap stretched over 65,535 rows, all left of the frame: each destination row walked costs.
+      Stretched : aliased constant Bytes :=
+        Pic (16, 1, W (16#90#) & W (2) & Rect (0, 0, 1, 1) & Rect (0, 0, 1, 1)
+                    & Rect (-32_768, -30_000, 32_767, -29_999) & W (0) & Zeros (2));
       Wide : aliased constant Bytes :=
         Pic (16, 1, W (16#98#) & W (2) & Rect (0, 0, 1, 16) & Rect (0, 0, 1, 16) & Rect (0, 0, 1, 16) & W (0)
                     & Zeros (2));
@@ -414,6 +435,10 @@ package body Pictlib_Testing.Test_Hostile is
                                Budget => Small);
       Canvases.Expect_Failure (Missing, 16, 1, Errors.Limit_Exceeded, "skipped rows over budget", 16#98#,
                                Budget => Small);
+      Small.Max_Drawing_Work := 10_000;
+      Canvases.Expect_Failure (Stretched, 16, 1, Errors.Limit_Exceeded, "a copy's off-frame rows over budget",
+                               16#90#, Budget => Small);
+      Small.Max_Drawing_Work := 10;
       --  Pattern opcodes are read, then charged, like every other opcode: a complete one past the budget reports
       --  the limit, one cut short the truncation, as a PixPat does.
       Small.Max_Drawing_Work := 0;

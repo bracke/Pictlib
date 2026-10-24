@@ -115,7 +115,7 @@ package Pictlib.Internal.Pixmaps is
    --  @param Extra Bytes the opcode allocates besides the row buffers, counted with them.
    --  @return Success, or Limit_Exceeded when the row buffers and Extra exceed the allocation budget.
    function Start
-     (S : Sessions.Session;
+     (S : in out Sessions.Session;
       Decoder : in out Row_Decoder;
       Header : Bits_Header;
       Extra : Byte_Count := 0) return Results.Result;

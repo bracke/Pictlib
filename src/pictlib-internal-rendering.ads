@@ -126,6 +126,14 @@ package Pictlib.Internal.Rendering is
    --  Drawing work still allowed: what a shape may spend being built.
    function Allowance (P : Painter; S : Sessions.Session) return Pixel_Count is
      (S.Budget.Max_Drawing_Work - Pixel_Count'Min (P.Work, S.Budget.Max_Drawing_Work));
+   Coverage_Storage_Per_Work_Unit : constant := 256;
+   function Shape_Allowance
+     (P : Painter;
+      S : Sessions.Session) return Pixel_Count is
+     (Pixel_Count'Min
+        (Allowance (P, S),
+         Sessions.Allocation_Allowance
+           (S, Coverage_Storage_Per_Work_Unit)));
    --  The drawing work still allowed, as a region walk's allowance.
    function Walk_Allowance (P : Painter; S : Sessions.Session) return Natural is
      (Natural (Pixel_Count'Min (Allowance (P, S), Pixel_Count (Natural'Last))));
@@ -180,7 +188,7 @@ package Pictlib.Internal.Rendering is
    --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
    function Fill
      (P : in out Painter;
-      S : Sessions.Session;
+      S : in out Sessions.Session;
       Shape : Coverage.Shape;
       How : Paint) return Results.Result;
 
