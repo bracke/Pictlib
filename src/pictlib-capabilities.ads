@@ -11,5 +11,5 @@ package Pictlib.Capabilities is
    Text_Rendering : constant Boolean := True;
    QuickTime_JPEG_Decoding : constant Boolean := True;
    Metadata_Retention : constant Boolean := True;
-   Raster_Encoding : constant Boolean := False;
+   Raster_Encoding : constant Boolean := True;
 end Pictlib.Capabilities;

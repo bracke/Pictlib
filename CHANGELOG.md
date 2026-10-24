@@ -2,6 +2,15 @@
 
 ## 0.1.0-dev
 
+- Gate M6: `Pictlib.Encoding` writes raster PICT version 2. `Direct_32`
+  (DirectBitsRect, PackBits over component planes, alpha optional),
+  `Indexed_8` (PackBitsRect with an exact color table), `Mono_1` (a BitMap
+  under a luminance threshold) or `Auto`; extended version 2 header with the
+  chosen resolution, optional 512-byte file header, picSize measured by a dry
+  run so the destination stays forward-only, rows stored as QuickDraw stores
+  them. The new `pictlib_conformance` tool has LibreOffice's PICT import read
+  every conformance picture exactly and ImageMagick every one its reader
+  handles. 103 AUnit tests.
 - Gate M5: `CompressedQuickTime` images with JPEG data render. jpeglib
   reads the JPEG straight from the picture, at most the stated data size,
   under the embedded byte, pixel and allocation budgets; the image is drawn

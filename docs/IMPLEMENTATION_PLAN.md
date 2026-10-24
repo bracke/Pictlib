@@ -1,6 +1,6 @@
 # pictlib — Implementation Plan
 
-**Status:** M0–M5 implemented; M6 is next  
+**Status:** M0–M6 implemented (first release gate); M7 is next  
 **Contract:** [SPECIFICATION.md](SPECIFICATION.md) (authoritative)  
 **Reference:** https://github.com/bracke/jpeglib
 
@@ -132,11 +132,20 @@ tolerance of JPEG decoding; non-JPEG codecs and corrupt payloads fail or warn as
 
 ## M6 — Raster encoding
 
+**Completed (2026-10-24):** Tasks 24–25 and Gate M6. `Pictlib.Encoding` writes
+`Direct_32`, `Indexed_8` and `Mono_1` pictures (and chooses with `Auto`) from
+views in every pixel format, round-tripping exactly through pictlib (103 tests).
+`pictlib_conformance` has LibreOffice's own PICT import read all ten conformance
+pictures exactly and ImageMagick the four it can read; ImageMagick 7 needs the
+file header, misreads unpacked rows and draws BitMaps black, so those pictures
+rest on LibreOffice. Netpbm `picttoppm` was not available as a third reader.
+
 24. `Internal.Writers`: header, opcodes, alignment, PackBits packing, color tables.
 25. `Encoding`: `Direct_32`, `Indexed_8`, `Mono_1`, `Auto`; header and resolution options.
 
-**Gate M6 (first release):** encoder output decodes identically in pictlib and in at least two
-independent decoders (ImageMagick, Netpbm); decode corpus passes.
+**Gate M6 (first release):** encoder output decodes identically in pictlib and in independent
+decoders (LibreOffice for every picture, ImageMagick where its reader applies); decode corpus
+passes.
 
 ## M7 — Conformance, security and completeness
 

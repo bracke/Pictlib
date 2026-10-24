@@ -15,8 +15,9 @@ lines, rectangles, round rects, ovals, arcs, polygons and regions with
 patterns, colors, transfer modes and clipping. Since Gate M4 it draws text
 with TrueType fonts the caller maps to the picture's font names and IDs
 (`Pictlib.Fonts`); pictlib ships no fonts. Since Gate M5 it draws JPEG images
-embedded through QuickTime, decoded by jpeglib. Encoding is not available
-yet. `Pictlib.Capabilities` lists what is
+embedded through QuickTime, decoded by jpeglib. Since Gate M6 it writes raster
+PICT version 2 (`Pictlib.Encoding`): 32-bit direct, 8-bit indexed or 1-bit
+pictures from any view. `Pictlib.Capabilities` lists what is
 implemented; everything else is unavailable until its implementation-plan gate
 passes.
 
@@ -42,6 +43,13 @@ alr --chdir tests exec -- ./bin/pictlib_tests
 
 `./scripts/check_all.sh` runs the same sequence. AUnit failures produce a
 nonzero process exit status.
+
+Encoder conformance against independent readers (ImageMagick and LibreOffice,
+test-time only):
+
+```sh
+alr --chdir tests exec -- ./bin/pictlib_conformance --require
+```
 
 ## License
 

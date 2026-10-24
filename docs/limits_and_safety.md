@@ -25,6 +25,10 @@ bounds a read, a skip, an allocation or a loop.
 | `Max_Embedded_Image_Bytes` | a QuickTime image's dataSize, before decoding | `Limit_Exceeded` |
 | `Max_Embedded_Image_Pixels` | a QuickTime image's width × height, before decoding, and jpeglib's pixel limit | `Limit_Exceeded` |
 
+The encoder applies `Max_Frame_Width` and `Max_Frame_Height` to the image,
+`Max_Allocation_Bytes` to its row buffers and `Max_Output_Bytes` to the whole
+picture, measured by a dry run before anything is written.
+
 `Max_Canvas_Bytes` is reserved:
 the renderer draws into the caller's view and allocates no canvas.
 

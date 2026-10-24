@@ -83,7 +83,7 @@ package body Pictlib_Testing.Test_Foundation is
       Assert (Pictlib.Capabilities.Text_Rendering, "text rendering is implemented");
       Assert (Pictlib.Capabilities.QuickTime_JPEG_Decoding, "QuickTime JPEG is implemented");
       Assert (Pictlib.Capabilities.Metadata_Retention, "metadata retention is implemented");
-      Assert (not Pictlib.Capabilities.Raster_Encoding, "raster encoding is not implemented yet");
+      Assert (Pictlib.Capabilities.Raster_Encoding, "raster encoding is implemented");
    end Capabilities_Match_Implementation;
 
    procedure Results_Preserve_First_Error (T : in out AUnit.Test_Cases.Test_Case'Class) is

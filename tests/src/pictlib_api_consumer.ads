@@ -1,6 +1,7 @@
 with Pictlib;
 with Pictlib.Capabilities;
 with Pictlib.Decoding;
+with Pictlib.Encoding;
 with Pictlib.Errors;
 with Pictlib.Fonts;
 with Pictlib.Geometry;
@@ -35,6 +36,8 @@ package Pictlib_API_Consumer is
    subtype Output_View is Pictlib.Images.Mutable_Image_View;
    No_Fonts : constant Pictlib.Fonts.Font_Table := Pictlib.Fonts.Empty;
    subtype Font_ID is Pictlib.Fonts.Font_ID;
+   subtype Encoder is Pictlib.Encoding.Encoder;
+   Default_Encode_Options : constant Pictlib.Encoding.Options := (others => <>);
    function Render (Object : in out Decoder; Output : Output_View) return Pictlib.Results.Result
      renames Pictlib.Decoding.Render;
 end Pictlib_API_Consumer;

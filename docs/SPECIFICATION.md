@@ -374,13 +374,36 @@ last entry becomes `Warnings_Suppressed`.
 
 ## 7. Encoder contract
 
-`Initialize (Object, Output, Options, Limits)`, `Encode (Image_View)`, `Finish`, `Cancel`,
-`Finalize`. Options: write the 512-byte zero header (default on), resolution (default 72 dpi),
-`Layout`: `Direct_32` (`DirectBitsRect`, pack type 4, `cmpCount` 3 or 4 with alpha), `Indexed_8`
-(`PackBitsRect` with an exact color table, fails with `Too_Many_Colors` above 256), `Mono_1`
-(`PackBitsRect` BitMap, threshold policy explicit), and `Auto` (smallest exact layout). The
-encoder writes extended version 2 headers, the `picSize` low word, `DefHilite`, `Clip` of the
-frame and `OpEndPic`, with even alignment.
+States: `Created`, `Ready`, `Encoded`, `Finished`, `Failed`, `Cancelled`. `Initialize (Object,
+Output, Options, Limits)`, `Encode (Image_View)` (Ready → Encoded), `Finish` (flushes; Encoded →
+Finished), `Layout_Used`, `Bytes_Written`, `Last_Error`, `Cancel`, `Finalize` (idempotent). Calls
+in the wrong state fail with `Invalid_State` (`Operation_Cancelled` after `Cancel`). An invalid
+view or a non-positive resolution is `Invalid_Argument` and leaves the encoder `Ready`.
+
+One image becomes one extended version 2 picture: the 512-byte zero file header (option, on by
+default), `picSize` (the low 16 bits of the picture's length; the encoder measures the picture in a
+dry run first, so the destination stays forward-only), `picFrame` `(0, 0, height, width)`,
+`VersionOp`, `HeaderOp` (version −2, the options' resolution, the frame), `DefHilite`, a clip of the
+frame, one bits opcode copied with `srcCopy` from and to the frame, and `OpEndPic`, with version 2
+alignment.
+
+Layouts:
+- `Direct_32`: `DirectBitsRect`, pixel type 16, 32 bits, `rowBytes = 4 × width`, pack type 4 —
+  PackBits over the red, green and blue planes, with the alpha plane first when `Keep_Alpha` asks
+  for it on a 32-bit view (`cmpCount` 4).
+- `Indexed_8`: `PackBitsRect`, an 8-bit PixMap with `rowBytes` the width rounded up to even, and a
+  color table of the image's exact colors in the order they first appear (entry values are their
+  indexes, components widened by × 257). More than 256 colors is `Too_Many_Colors`.
+- `Mono_1`: `PackBitsRect`, a BitMap with `rowBytes` the bit width in bytes rounded up to even;
+  a pixel is black when its luminance `(299 R + 587 G + 114 B) / 1000` is below `Mono_Threshold`.
+- `Auto`: `Mono_1` when every pixel is black or white, `Indexed_8` for at most 256 colors,
+  `Direct_32` otherwise or when alpha is kept.
+
+Rows are stored as QuickDraw stores them: unpacked when `rowBytes < 8`, otherwise PackBits behind a
+byte count (a word count when `rowBytes > 250`). `rowBytes` above `16#3FFE#` cannot be written
+(`Invalid_Argument`): 4095 pixels wide for `Direct_32`, 16382 for `Indexed_8`. `Max_Frame_Width`,
+`Max_Frame_Height`, `Max_Output_Bytes` (checked by the dry run before a byte is written) and
+`Max_Allocation_Bytes` (row buffers) apply.
 
 ## 8. Metadata policy
 
@@ -424,8 +447,10 @@ pictlib/
 
 Root `alire.toml`: `name = "pictlib"`, `0.1.0-dev`, MIT, `gnat_native = "^15"`, `jpeglib` and
 `textrender` pinned by path (`../jpeglib`, `../textrender`). Child crate `tests` depends on `pictlib`, `aunit ^26.0.0` and
-`project_tools`. Test binaries: `pictlib_tests`, later `pictlib_check`, `pictlib_conformance`,
-`pictlib_fuzz`, `pictlib_benchmark`.
+`project_tools`. Test binaries: `pictlib_tests`, `pictlib_conformance` (encoder output read by ImageMagick and by
+LibreOffice's own PICT import, exact), later `pictlib_check`, `pictlib_fuzz`, `pictlib_benchmark`.
+ImageMagick 7 reads only pictures with the file header, misreads rows stored unpacked and draws
+1-bit BitMaps black, so those pictures are judged by LibreOffice alone.
 
 ## 12. Testing matrix
 
@@ -441,7 +466,7 @@ Root `alire.toml`: `name = "pictlib"`, `0.1.0-dev`, MIT, `gnat_native = "^15"`, 
 | Text | each text opcode, origins, font resolution by name, ID, classic name and default, Mac Roman, face bits, sizes, modes, spacing, clipping, missing fonts |
 | QuickTime | JPEG with identity/translated/scaled matrix, srcRect, origin, matte, mask, clip, modes, placeholder bitmap, non-JPEG codec, skewing matrix, truncated/garbage/mis-sized JPEG, description and data sizes, embedded limits; independent QuickTime PICTs within decoder tolerance of libjpeg |
 | I/O | fragmented reads/writes, EOF, zero progress, destination failure |
-| Encoder | each layout, alpha, >256 colors, header on/off, decode by independent decoders |
+| Encoder | each layout and pixel format, alpha, thresholds, unpacked rows, byte and word counts, widest rows, >256 colors, header on/off, resolution, picSize, limits, short and full destinations, states; decode by independent decoders (`pictlib_conformance`) |
 | Stress | huge frames with tight limits, many opcodes, repeated large fills, cancellation, reset |
 
 Fixtures are independent: hand-assembled byte literals with documented provenance, real-world
