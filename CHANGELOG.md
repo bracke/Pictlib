@@ -2,6 +2,13 @@
 
 ## 0.1.0-dev
 
+- Fixes from the tenth review. A PixPat tile too large to index is checked
+  first and never decoded, so no budget gates it: strictly it is
+  `Unsupported_Feature` at once, its rows unread; leniently its rows are
+  skipped for the pattern's unit under any budget. Its diagnostic gives the
+  bound and the tile's pixels, and the fallback warning comes only after the
+  pattern's charge has succeeded. The allocation check runs once, in
+  `Pixmaps.Start`, and decoding work is counted only once `Start` succeeds.
 - Fixes from the ninth review. A PixPat tile too large to index is skipped
   at no cost beyond its pattern's unit, where it was charged its full
   decoding, and reported through `Rendering.Unsupported` with its opcode.

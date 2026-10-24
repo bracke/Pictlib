@@ -21,6 +21,7 @@ package body Pictlib_Testing.Test_Hostile is
    use type Ada.Real_Time.Time;
    use type Ada.Real_Time.Time_Span;
    use type Pictlib.Streams.Byte_Array;
+   use type Pictlib.Byte_Count;
    use type Pictlib.Errors.Error_Code;
    use type Pictlib.Images.RGB_Color;
    use type Pictlib.Limit_Kind;
@@ -192,17 +193,20 @@ package body Pictlib_Testing.Test_Hostile is
       Tight.Max_Allocation_Bytes := 1_000;
       Over (Unaffordable_Tile, Tight, Pictlib.Drawing_Work_Limit, "18000 x 18000 PixPat on small budgets");
       Tight := Pictlib.Limits.Default_Limits;
-      --  A 65535 x 65535 tile meets the drawing budget, then the allocation budget, then the 2^31 - 1 pixels a tile
-      --  can index, which no budget raises: unsupported, strictly; skipped with a warning otherwise.
+      --  A tile of more than the 2^31 - 1 pixels a tile can index is never decoded, so no budget applies: strictly
+      --  it is unsupported at once, its rows unread, whatever the budgets; leniently its rows are skipped, so this
+      --  one, which has none, is cut short.
       Tight.Max_Drawing_Work := 100;
-      Over (Unindexable_Tile, Tight, Pictlib.Drawing_Work_Limit, "65535 x 65535 PixPat on a small drawing budget");
-      Over (Unindexable_Tile, Pictlib.Limits.Default_Limits, Pictlib.Allocation_Byte_Limit,
-            "65535 x 65535 PixPat on the default budgets");
-      Tight := Pictlib.Limits.Default_Limits;
-      Tight.Max_Allocation_Bytes := Pictlib.Byte_Count'Last;
-      --  Its rows are skipped before anything else is decided, so this one, which has none, is cut short.
+      Tight.Max_Allocation_Bytes := 1_000;
+      Canvases.Render (Unindexable_Tile, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Budget => Tight);
+      Assert (Outcome.First_Error.Code = Errors.Unsupported_Feature
+              and then Outcome.First_Error.Context.Op = 16#14#
+              and then Outcome.First_Error.Context.Expected = 2 ** 31 - 1
+              and then Outcome.First_Error.Context.Actual = 65_535 * 65_535,
+              "65535 x 65535 PixPat, strictly on small budgets: " & Outcome.First_Error.Code'Image);
       Canvases.Expect_Failure (Unindexable_Tile, 8, 2, Errors.Source_Unexpected_End, "65535 x 65535 PixPat",
-                               Options => Compatible, Budget => Tight);
+                               Options => Compatible);
+      Tight := Pictlib.Limits.Default_Limits;
       --  The same skip with every row present: drawing goes on, with the black pat1Data in the tile's place.
       declare
          Rows : constant := 32_769;
@@ -229,18 +233,13 @@ package body Pictlib_Testing.Test_Hostile is
          Assert (Canvases.Picture_Of (Canvases.View (Storage'Access, 8, 2)) = "BBBBBBBB/BBBBBBBB",
                  "65535 x 32769 PixPat: pat1Data did not stand in, drew "
                  & Canvases.Picture_Of (Canvases.View (Storage'Access, 8, 2)));
-         --  The skip costs only the pattern's unit: a budget just above the tile's decoding check leaves the
-         --  rest of the picture plenty, which charging the skipped decoding would not.
-         declare
-            use type Pictlib.Pixel_Count;
-            Close : Pictlib.Limits.Limit_Set := Tight;
-         begin
-            Close.Max_Drawing_Work := 65_536 * Pictlib.Pixel_Count (Rows) + 3;
-            Canvases.Render (Whole.all, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Compatible,
-                             Budget => Close);
-            Assert (Pictlib.Results.Succeeded (Outcome),
-                    "the skipped tile was charged its decoding: " & Outcome.First_Error.Code'Image);
-         end;
+         --  The skip costs only the pattern's unit, under any budget: 100 units draw the whole picture.
+         Tight.Max_Drawing_Work := 100;
+         Canvases.Render (Whole.all, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Compatible,
+                          Budget => Tight);
+         Assert (Pictlib.Results.Succeeded (Outcome),
+                 "the skipped tile was charged more than its unit: " & Outcome.First_Error.Code'Image);
+         Tight := Pictlib.Limits.Default_Limits;
          Canvases.Render (Whole.all, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome,
                           (Strictness => Pictlib.Strict, others => <>), Budget => Tight);
          Assert (Outcome.First_Error.Code = Errors.Unsupported_Feature

@@ -130,8 +130,13 @@ package Pictlib.Internal.Rendering is
    --  Unsupported.
    --  @param S Session whose strictness decides.
    --  @param Event The opcode that cannot be rendered yet.
+   --  @param Expected What a release supports, when a count says why, as the diagnostic's Expected.
+   --  @param Actual What the picture asks for, as the diagnostic's Actual.
    --  @return Unsupported_Feature strictly; success with an Approximated_Rendering warning otherwise.
-   function Unsupported (S : in out Sessions.Session; Event : Pictures.Opcode_Event) return Results.Result;
+   function Unsupported
+     (S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event;
+      Expected, Actual : Byte_Count := 0) return Results.Result;
 
    --  Mode.
    --  @param S Session whose strictness decides.

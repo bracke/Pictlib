@@ -57,12 +57,18 @@ package body Pictlib.Internal.Rendering is
    function Context_Of (Event : Pictures.Opcode_Event) return Errors.Diagnostic_Context is
      ((Source => Event.Offset, Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal, others => <>));
 
-   function Unsupported (S : in out Sessions.Session; Event : Pictures.Opcode_Event) return Results.Result is
+   function Unsupported
+     (S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event;
+      Expected, Actual : Byte_Count := 0) return Results.Result
+   is
+      Context : constant Errors.Diagnostic_Context :=
+        (Context_Of (Event) with delta Expected => Expected, Actual => Actual);
    begin
       if not Sessions.Is_Lenient (S) then
-         return Results.Failure (Errors.Make (Errors.Unsupported_Feature, Context_Of (Event)));
+         return Results.Failure (Errors.Make (Errors.Unsupported_Feature, Context));
       end if;
-      Sessions.Warn (S, Errors.Approximated_Rendering, Errors.Data_Loss, Context_Of (Event));
+      Sessions.Warn (S, Errors.Approximated_Rendering, Errors.Data_Loss, Context);
       return Results.Success;
    end Unsupported;
 

@@ -1,3 +1,4 @@
+with Ada.Containers;
 with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Geometry;
@@ -385,21 +386,23 @@ package body Pictlib.Internal.Drawing is
             declare
                Slot : constant Rendering.Pattern_Slot := Slot_Of (Event.Op);
                Work : Pixel_Count := 1;
-               Too_Large : Boolean := False;
+               Too_Large : Byte_Count := 0;
             begin
                if Event.Op in 16#0012# .. 16#0014# then
                   --  Decoded straight into the port's pattern, whose old tile goes first: a tile is held once.
                   Outcome :=
                     Patterns.Read_Pixel_Pattern (S, P.Pattern_Set (Slot), Rendering.Allowance (P, S), Work, Too_Large);
-                  --  A tile too large to index: unsupported, its 1-bit pattern standing in when lenient.
-                  if Results.Succeeded (Outcome) and then Too_Large then
-                     Outcome := Rendering.Unsupported (S, Event);
-                  end if;
                else
                   Outcome := Patterns.Read_Bit_Pattern (S, P.Pattern_Set (Slot));
                end if;
                if Results.Succeeded (Outcome) then
                   Outcome := Rendering.Charge (P, S, Work);
+               end if;
+               --  Charged first, so a fallback is only reported when it stands: a tile too large to index is
+               --  unsupported, its 1-bit pattern standing in when lenient.
+               if Results.Succeeded (Outcome) and then Too_Large > 0 then
+                  Outcome := Rendering.Unsupported
+                    (S, Event, Expected => Byte_Count (Ada.Containers.Count_Type'Last), Actual => Too_Large);
                end if;
                if not Results.Succeeded (Outcome) then
                   P.Pattern_Set (Slot) := Rendering.Default_Pattern (Slot);
