@@ -9,7 +9,7 @@ with Ada.Directories;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Project_Tools.Ada_Source;
-with GNAT.OS_Lib;
+with Pictlib_Testing.Tools;
 with Project_Tools.Files;
 with Project_Tools.Processes;
 
@@ -112,20 +112,19 @@ begin
             if Alr'Length = 0 then
                Fail ("alr is not on PATH");
             else
-               Run ("library build", Root, Alr, [Project_Tools.Processes.Argument ("build")]);
+               Run ("library build", Root, Alr,
+                    [Project_Tools.Processes.Argument ("--non-interactive"),
+                     Project_Tools.Processes.Argument ("build")]);
             end if;
          end;
       end if;
       Check_Tree (Root & "/src", Production => True);
       Check_Tree (Root & "/tests/src", Production => False);
-      if not Policy_Only and then Failures = 0 then
-         declare
-            Suffix : GNAT.OS_Lib.String_Access := GNAT.OS_Lib.Get_Executable_Suffix;
-            Tests : constant String := Root & "/tests/bin/pictlib_tests" & Suffix.all;
-         begin
-            GNAT.OS_Lib.Free (Suffix);
-            Run ("unit tests", Root & "/tests", Tests, [1 .. 0 => Null_Unbounded_String]);
-         end;
+      --  The suite runs whatever the policy found, so a policy finding never hides a failing test.
+      if not Policy_Only then
+         Run ("unit tests", Root & "/tests",
+              Root & "/tests/bin/pictlib_tests" & Pictlib_Testing.Tools.Executable_Suffix,
+              [1 .. 0 => Null_Unbounded_String]);
       end if;
    end if;
    if Failures > 0 then

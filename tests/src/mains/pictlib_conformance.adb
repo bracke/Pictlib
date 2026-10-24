@@ -1,7 +1,8 @@
 --  Encoder conformance: encode sample images, have independent PICT decoders read the pictures, and require
 --  the source pixels exactly. Decoders:
---  * ImageMagick (`magick`). ImageMagick 7 reads only pictures with the 512-byte file header, misreads rows
---    stored unpacked (rowBytes below 8) and draws 1-bit BitMaps black; those pictures are not applicable.
+--  * ImageMagick: version 7's `magick`, or version 6's `convert` (Pictlib_Testing.Tools.ImageMagick). Its PICT
+--    reader reads only pictures with the 512-byte file header, misreads rows stored unpacked (rowBytes below 8)
+--    and draws 1-bit BitMaps black; those pictures are not applicable.
 --  * LibreOffice (`soffice`), through its own PICT import: the picture is exported as SVG, whose embedded PNG
 --    is the decoded bitmap at its own size; ImageMagick only turns that PNG into a PPM.
 --  A decoder that is not installed is reported as skipped; --require fails the run unless every decoder ran.
@@ -17,6 +18,7 @@ with Pictlib.Images;
 with Pictlib.Results;
 with Pictlib.Streams;
 with Pictlib_Testing.Samples;
+with Pictlib_Testing.Tools;
 with Project_Tools.Processes;
 
 procedure Pictlib_Conformance is
@@ -224,14 +226,7 @@ procedure Pictlib_Conformance is
       return True;
    end Encode;
 
-   --  ImageMagick 7 is `magick`; ImageMagick 6 calls the same tool `convert`.
-   function ImageMagick return String is
-      Seven : constant String := Processes.Locate_Command ("magick");
-   begin
-      return (if Seven'Length > 0 then Seven else Processes.Locate_Command ("convert"));
-   end ImageMagick;
-
-   Magick : constant String := ImageMagick;
+   Magick : constant String := Pictlib_Testing.Tools.ImageMagick;
    Office : constant String := Processes.Locate_Command ("soffice");
    Failures : Natural := 0;
    Skipped : Natural := 0;
@@ -253,11 +248,11 @@ procedure Pictlib_Conformance is
 begin
    Ada.Directories.Create_Path (Directory);
    if Magick'Length = 0 then
-      Ada.Text_IO.Put_Line ("SKIP ImageMagick: neither magick nor convert is installed");
+      Ada.Text_IO.Put_Line ("SKIP ImageMagick: neither magick nor ImageMagick 6's convert is installed");
       Skipped := Skipped + 1;
    end if;
    if Office'Length = 0 or else Magick'Length = 0 then
-      Ada.Text_IO.Put_Line ("SKIP LibreOffice: soffice (and magick, to read its PNG) are needed");
+      Ada.Text_IO.Put_Line ("SKIP LibreOffice: soffice (and ImageMagick, to read its PNG) are needed");
       Skipped := Skipped + 1;
    end if;
    for Item of Cases loop

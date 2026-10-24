@@ -5,7 +5,7 @@
 with Ada.Command_Line;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
-with GNAT.OS_Lib;
+with Pictlib_Testing.Tools;
 with Project_Tools.Processes;
 
 procedure Pictlib_Complete is
@@ -28,27 +28,23 @@ procedure Pictlib_Complete is
       Step_Of ("pictlib_conformance", [Processes.Argument ("--require")])];
 
    Without_Conformance : constant Boolean := Processes.Has_Argument ("--without-conformance");
-   Suffix_Access : GNAT.OS_Lib.String_Access := GNAT.OS_Lib.Get_Executable_Suffix;
-   Suffix : constant String := Suffix_Access.all;
+   Suffix : constant String := Pictlib_Testing.Tools.Executable_Suffix;
    Failed, Ran : Natural := 0;
 begin
-   GNAT.OS_Lib.Free (Suffix_Access);
    for Item of Steps loop
       declare
          Name : constant String := To_String (Item.Program);
-         Status : constant Integer :=
-           (if Without_Conformance and then Name = "pictlib_conformance" then 0
-            else Processes.Run_Status (Name, ".", "./bin/" & Name & Suffix, Item.Arguments, Quiet => True));
       begin
          if Without_Conformance and then Name = "pictlib_conformance" then
             Ada.Text_IO.Put_Line ("SKIP " & Name);
-         elsif Status = 0 then
-            Ran := Ran + 1;
-            Ada.Text_IO.Put_Line ("PASS " & Name);
          else
             Ran := Ran + 1;
-            Failed := Failed + 1;
-            Ada.Text_IO.Put_Line ("FAIL " & Name & " (status" & Status'Image & ")");
+            if Processes.Run_Status (Name, ".", "./bin/" & Name & Suffix, Item.Arguments, Quiet => True) = 0 then
+               Ada.Text_IO.Put_Line ("PASS " & Name);
+            else
+               Failed := Failed + 1;
+               Ada.Text_IO.Put_Line ("FAIL " & Name);
+            end if;
          end if;
       end;
    end loop;

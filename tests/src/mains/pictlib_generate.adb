@@ -1,40 +1,58 @@
 --  Regenerates the external-oracle fixtures: source rasters drawn by ImageMagick, written as PICT by two
 --  independent encoders (Netpbm ppmtopict and ImageMagick), QuickTime pictures with embedded JPEGs and libjpeg's
---  decodings of those JPEGs. Test-time tooling only; the tools are run directly, never through a shell.
+--  decodings of those JPEGs. Test-time tooling only; the tools are run directly, never through a shell. Everything
+--  is made in a staging directory first and copied into place only when every step succeeded.
 --  Arguments: [--output DIR], fixtures/external by default. Run from the tests directory.
 with Ada.Command_Line;
 with Ada.Directories;
-with Ada.Streams.Stream_IO;
+with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with GNAT.OS_Lib;
-with Pictlib.Streams;
+with Pictlib_Testing.Tools;
+with Project_Tools.Files;
 with Project_Tools.Processes;
 
 procedure Pictlib_Generate is
    use Ada.Strings.Unbounded;
-   use type Pictlib.Byte;
    package Processes renames Project_Tools.Processes;
 
-   function Output_Directory return String is
-   begin
-      for Index in 1 .. Ada.Command_Line.Argument_Count - 1 loop
-         if Ada.Command_Line.Argument (Index) = "--output" then
-            return Ada.Command_Line.Argument (Index + 1);
-         end if;
-      end loop;
-      return "fixtures/external";
-   end Output_Directory;
+   Staging : constant String := "artifacts/generate-staging";
 
-   Directory : constant String := Output_Directory;
-   Magick : constant String := Processes.Locate_Command ("magick");
+   --  The files this tool makes, in the order it makes them.
+   type Words is array (Positive range <>) of Unbounded_String;
+   function "+" (Item : String) return Unbounded_String renames To_Unbounded_String;
+   Products : constant Words :=
+     [+"palette.ppm", +"truecolor.ppm", +"mono.pbm", +"palette_netpbm.pict", +"palette_magick.pict",
+      +"truecolor_magick.pict", +"mono_magick.pict", +"truecolor_jpeg.pict", +"palette_jpeg.pict",
+      +"truecolor_embedded.ppm", +"palette_embedded.ppm", +"small.jpg", +"small_decoded.ppm"];
+
+   Target : Unbounded_String := +"fixtures/external";
+   Magick : constant String := Pictlib_Testing.Tools.ImageMagick;
    Ppmtopict : constant String := Processes.Locate_Command ("ppmtopict");
    Failed : Boolean := False;
 
-   function Path (Name : String) return String is (Directory & "/" & Name);
+   procedure Fail (Message : String) is
+   begin
+      Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "pictlib_generate: " & Message);
+      Failed := True;
+   end Fail;
 
-   type Words is array (Positive range <>) of Unbounded_String;
-   function "+" (Item : String) return Unbounded_String renames To_Unbounded_String;
+   procedure Read_Arguments is
+      Index : Positive := 1;
+   begin
+      while Index <= Ada.Command_Line.Argument_Count loop
+         if Ada.Command_Line.Argument (Index) = "--output" and then Index < Ada.Command_Line.Argument_Count then
+            Target := +Ada.Command_Line.Argument (Index + 1);
+            Index := Index + 2;
+         else
+            Fail ("usage: pictlib_generate [--output DIR]");
+            return;
+         end if;
+      end loop;
+   end Read_Arguments;
+
+   function Path (Name : String) return String is (Staging & "/" & Name);
 
    procedure Magick_Run (Arguments : Words) is
       Items : Processes.Argument_Vectors.Vector;
@@ -45,77 +63,61 @@ procedure Pictlib_Generate is
       for Item of Arguments loop
          Items.Append (Item);
       end loop;
-      if Processes.Run_Status ("magick", Directory, Magick, Items, Quiet => True) /= 0 then
-         Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "pictlib_generate: magick failed");
-         Failed := True;
+      if Processes.Run_Status ("magick", Staging, Magick, Items, Quiet => True) /= 0 then
+         Fail ("ImageMagick failed");
       end if;
    end Magick_Run;
 
    --  ppmtopict writes the picture to standard output.
-   procedure Netpbm_Run (Source, Target : String) is
+   procedure Netpbm_Run (Source, Product : String) is
       Arguments : GNAT.OS_Lib.Argument_List := [1 => new String'(Path (Source))];
       Success : Boolean;
       Status : Integer;
    begin
       if Failed then
+         GNAT.OS_Lib.Free (Arguments (1));
          return;
       end if;
-      GNAT.OS_Lib.Spawn (Ppmtopict, Arguments, Path (Target), Success, Status, Err_To_Out => False);
+      GNAT.OS_Lib.Spawn (Ppmtopict, Arguments, Path (Product), Success, Status, Err_To_Out => False);
       GNAT.OS_Lib.Free (Arguments (1));
       if not Success or else Status /= 0 then
-         Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "pictlib_generate: ppmtopict failed");
-         Failed := True;
+         Fail ("ppmtopict failed");
       end if;
    end Netpbm_Run;
 
    --  The JPEG inside a QuickTime picture: from its first start-of-image marker to its last end-of-image marker.
-   procedure Extract_JPEG (Picture, Target : String) is
-      use Ada.Streams.Stream_IO;
-      File : File_Type;
-      Data : Pictlib.Streams.Byte_Array (1 .. Natural (Ada.Directories.Size (Path (Picture))));
-      First, Last : Natural := 0;
+   procedure Extract_JPEG (Picture, Product : String) is
+      Start_Of_Image : constant String := [Character'Val (16#FF#), Character'Val (16#D8#), Character'Val (16#FF#)];
+      End_Of_Image : constant String := [Character'Val (16#FF#), Character'Val (16#D9#)];
    begin
       if Failed then
          return;
       end if;
-      Open (File, In_File, Path (Picture));
-      Pictlib.Streams.Byte_Array'Read (Stream (File), Data);
-      Close (File);
-      for Index in Data'First .. Data'Last - 2 loop
-         if Data (Index) = 16#FF# and then Data (Index + 1) = 16#D8# and then Data (Index + 2) = 16#FF# then
-            First := Index;
-            exit;
+      declare
+         Data : constant String := Project_Tools.Files.Read_Raw_File (Path (Picture));
+         First : constant Natural := Ada.Strings.Fixed.Index (Data, Start_Of_Image);
+         Last : constant Natural := Ada.Strings.Fixed.Index (Data, End_Of_Image, Going => Ada.Strings.Backward);
+      begin
+         if First = 0 or else Last <= First then
+            Fail ("no JPEG in " & Picture);
+            return;
          end if;
-      end loop;
-      for Index in reverse Data'First .. Data'Last - 1 loop
-         if Data (Index) = 16#FF# and then Data (Index + 1) = 16#D9# then
-            Last := Index + 1;
-            exit;
-         end if;
-      end loop;
-      if First = 0 or else Last <= First then
-         Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "pictlib_generate: no JPEG in " & Picture);
-         Failed := True;
-         return;
-      end if;
-      Create (File, Out_File, Path (Target));
-      Pictlib.Streams.Byte_Array'Write (Stream (File), Data (First .. Last));
-      Close (File);
+         Project_Tools.Files.Write_Raw_File (Path (Product), Data (First .. Last + 1));
+      end;
    end Extract_JPEG;
 
    procedure Remove (Name : String) is
    begin
-      if Ada.Directories.Exists (Path (Name)) then
-         Ada.Directories.Delete_File (Path (Name));
-      end if;
+      Project_Tools.Files.Delete_File_If_Present (Path (Name));
    end Remove;
 begin
-   if Magick'Length = 0 or else Ppmtopict'Length = 0 then
-      Ada.Text_IO.Put_Line (Ada.Text_IO.Standard_Error, "pictlib_generate: needs magick and ppmtopict");
-      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-      return;
+   Read_Arguments;
+   if not Failed and then (Magick'Length = 0 or else Ppmtopict'Length = 0) then
+      Fail ("needs ImageMagick (magick, or ImageMagick 6's convert) and Netpbm's ppmtopict");
    end if;
-   Ada.Directories.Create_Path (Directory);
+   if not Failed then
+      Ada.Directories.Create_Path (Staging);
+   end if;
 
    --  Source rasters.
    Magick_Run ([+"-size", +"21x9", +"xc:white", +"-fill", +"red", +"-draw", +"rectangle 2,1 8,5",
@@ -152,9 +154,25 @@ begin
    Magick_Run ([+"small.jpg", +"-depth", +"8", +"small_decoded.ppm"]);
    Remove ("small.ppm");
 
+   --  Into place, all or nothing.
+   if not Failed then
+      for Product of Products loop
+         if not Ada.Directories.Exists (Path (To_String (Product))) then
+            Fail ("missing " & To_String (Product));
+         end if;
+      end loop;
+   end if;
+   if not Failed then
+      Ada.Directories.Create_Path (To_String (Target));
+      for Product of Products loop
+         Ada.Directories.Copy_File (Path (To_String (Product)), To_String (Target) & "/" & To_String (Product));
+      end loop;
+      Ada.Text_IO.Put_Line ("generated the external fixtures in " & To_String (Target));
+   end if;
+   if Ada.Directories.Exists (Staging) then
+      Ada.Directories.Delete_Tree (Staging);
+   end if;
    if Failed then
       Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-   else
-      Ada.Text_IO.Put_Line ("generated the external fixtures in " & Directory);
    end if;
 end Pictlib_Generate;

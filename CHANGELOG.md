@@ -2,6 +2,16 @@
 
 ## 0.1.0-dev
 
+- Tooling fixes from code review. `pictlib_generate` makes everything in a
+  staging directory and copies it into place only when every step succeeded,
+  refuses `--output` without a value, and no longer raises on a missing
+  picture after an earlier failure. ImageMagick, gnatprove and the
+  executable suffix are looked up in one place (`Pictlib_Testing.Tools`):
+  ImageMagick 6's `convert` is taken only when it reports itself as
+  ImageMagick (never Windows' convert.exe), and the Alire-installed gnatprove
+  wins over one on `PATH`. `pictlib_check` builds and `pictlib_prove` runs
+  `alr exec` non-interactively, and the AUnit suite runs even when the source
+  policy finds something, so a policy finding cannot hide a failing test.
 - All tooling and scripting is Ada. `scripts/check_all.sh` is replaced by
   `pictlib_check`, now the day-to-day gate (library build, source policy,
   AUnit suite; `--policy-only` for the policy alone), which `alr test` runs.
