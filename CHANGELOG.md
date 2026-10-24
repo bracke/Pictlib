@@ -2,6 +2,17 @@
 
 ## 0.1.0-dev
 
+- Gate M3: the renderer draws QuickDraw's vector opcodes. Port state — origin,
+  clip, pen size, mode and location, bit patterns, color and dither pixel
+  patterns, planar and RGB foreground and background, OpColor, highlight,
+  oval size — follows the picture; lines, rects, round rects, ovals, arcs,
+  polygons and regions are framed, painted, erased, inverted and filled,
+  with the "same" opcodes. Transfer modes, boolean and arithmetic, apply to
+  shapes and copies alike; copies are colorized by the foreground and
+  background colors and move with the origin. Shapes are computed in
+  integers only, identically on every platform, under the drawing budget.
+  Text and QuickTime images remain unsupported until M4 and M5. 80 AUnit
+  tests.
 - Gate M2: `Pictlib.Decoding.Render` draws a picture's bitmaps and pixmaps
   into a caller-owned view (`Pictlib.Images`, five pixel formats, any stride),
   filled first with a background color. BitMaps and 1-, 2-, 4- and 8-bit

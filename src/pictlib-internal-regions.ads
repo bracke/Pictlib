@@ -16,16 +16,46 @@ package Pictlib.Internal.Regions is
 
    package Span_Vectors is new Ada.Containers.Vectors (Positive, Span);
 
+   --  A rectangle in picture coordinates, which the Origin opcode can move beyond QuickDraw's 16 bits.
+   type Area is record
+      Top : Integer := 0;
+      Left : Integer := 0;
+      Bottom : Integer := 0;
+      Right : Integer := 0;
+   end record;
+
+   --  To area.
+   --  @param Item QuickDraw rectangle.
+   --  @param DX Added to the horizontal coordinates.
+   --  @param DY Added to the vertical coordinates.
+   --  @return Item moved by DX, DY.
+   function To_Area (Item : Geometry.Rect; DX, DY : Integer := 0) return Area is
+     ((Top => Integer (Item.Top) + DY, Left => Integer (Item.Left) + DX,
+       Bottom => Integer (Item.Bottom) + DY, Right => Integer (Item.Right) + DX));
+   --  Is empty.
+   --  @param Item Area.
+   --  @return True when Item encloses no pixel.
+   function Is_Empty (Item : Area) return Boolean is (Item.Right <= Item.Left or else Item.Bottom <= Item.Top);
+
    type Region is private;
 
    --  Rectangle.
    --  @param Bounds Rectangle.
    --  @return The rectangular region Bounds.
-   function Rectangle (Bounds : Geometry.Rect) return Region;
+   function Rectangle (Bounds : Area) return Region;
    --  Bounds.
    --  @param Item Region.
    --  @return Its bounding box.
-   function Bounds (Item : Region) return Geometry.Rect;
+   function Bounds (Item : Region) return Area;
+   --  Is rectangular.
+   --  @param Item Region.
+   --  @return True when Item is its bounding box.
+   function Is_Rectangular (Item : Region) return Boolean;
+   --  Translate.
+   --  @param Item Region to move.
+   --  @param DX Added to every horizontal coordinate.
+   --  @param DY Added to every vertical coordinate.
+   procedure Translate (Item : in out Region; DX, DY : Integer);
 
    --  Skip.
    --  @param S Session positioned at a region.
@@ -62,7 +92,7 @@ private
    package Scanline_Vectors is new Ada.Containers.Vectors (Positive, Scanline);
 
    type Region is record
-      Box : Geometry.Rect;
+      Box : Area;
       Rectangular : Boolean := True;
       Lines : Scanline_Vectors.Vector;
       Points : Integer_Vectors.Vector;

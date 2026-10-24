@@ -9,9 +9,25 @@ package body Pictlib.Internal.Regions is
    Smallest_Region : constant := 10;
    End_Mark : constant := 16#7FFF#;
 
-   function Rectangle (Bounds : Geometry.Rect) return Region is ((Box => Bounds, others => <>));
+   function Rectangle (Bounds : Area) return Region is ((Box => Bounds, others => <>));
 
-   function Bounds (Item : Region) return Geometry.Rect is (Item.Box);
+   function Bounds (Item : Region) return Area is (Item.Box);
+
+   function Is_Rectangular (Item : Region) return Boolean is (Item.Rectangular);
+
+   procedure Translate (Item : in out Region; DX, DY : Integer) is
+   begin
+      Item.Box := (Item.Box.Top + DY, Item.Box.Left + DX, Item.Box.Bottom + DY, Item.Box.Right + DX);
+      for Line of Item.Lines loop
+         Line.Y := Line.Y + DY;
+      end loop;
+      for Point of Item.Points loop
+         Point := Point + DX;
+      end loop;
+      Item.Active.Clear;
+      Item.Next_Line := 1;
+      Item.Cursor_Y := Integer'First;
+   end Translate;
 
    function Read_Size (S : in out Sessions.Session; Size : out Interfaces.Unsigned_16) return Results.Result is
       Outcome : constant Results.Result := Sessions.Read_Word (S, Size);
@@ -63,7 +79,7 @@ package body Pictlib.Internal.Regions is
          begin
             Index := Index + 1;
             exit when Y = End_Mark;
-            if Y <= Previous_Y or else Y < Integer (Item.Box.Top) or else Y > Integer (Item.Box.Bottom) then
+            if Y <= Previous_Y or else Y < Item.Box.Top or else Y > Item.Box.Bottom then
                return False;
             end if;
             Previous_Y := Y;
@@ -77,7 +93,7 @@ package body Pictlib.Internal.Regions is
                begin
                   Index := Index + 1;
                   exit when X = End_Mark;
-                  if X <= Previous_X or else X < Integer (Item.Box.Left) or else X > Integer (Item.Box.Right) then
+                  if X <= Previous_X or else X < Item.Box.Left or else X > Item.Box.Right then
                      return False;
                   end if;
                   Previous_X := X;
@@ -96,18 +112,18 @@ package body Pictlib.Internal.Regions is
 
    function Read (S : in out Sessions.Session; Item : out Region) return Results.Result is
       Size : Interfaces.Unsigned_16;
-      Box : Geometry.Rect;
+      Rect : Geometry.Rect;
       Data : Streams.Byte_Array_Access;
       Outcome : Results.Result := Read_Size (S, Size);
    begin
       Item := (others => <>);
       if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Read_Bounds (S, Box);
+         Outcome := Sessions.Read_Bounds (S, Rect);
       end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
-      Item.Box := Box;
+      Item.Box := To_Area (Rect);
       if Size = Smallest_Region then
          return Results.Success;
       end if;
@@ -153,14 +169,14 @@ package body Pictlib.Internal.Regions is
    end Invert;
 
    procedure Row_Spans (Item : in out Region; Y : Integer; Spans : in out Span_Vectors.Vector; Work : out Natural) is
-      Box : constant Geometry.Rect := Item.Box;
+      Box : constant Area := Item.Box;
    begin
       Spans.Clear;
       Work := 1;
-      if Y < Integer (Box.Top) or else Y >= Integer (Box.Bottom) or else Geometry.Is_Empty (Box) then
+      if Y < Box.Top or else Y >= Box.Bottom or else Is_Empty (Box) then
          return;
       elsif Item.Rectangular then
-         Spans.Append (Span'(Integer (Box.Left), Integer (Box.Right)));
+         Spans.Append (Span'(Box.Left, Box.Right));
          return;
       end if;
 
@@ -180,8 +196,8 @@ package body Pictlib.Internal.Regions is
       begin
          while Index + 1 <= Natural (Item.Active.Length) loop
             declare
-               Left : constant Integer := Integer'Max (Item.Active (Index), Integer (Box.Left));
-               Right : constant Integer := Integer'Min (Item.Active (Index + 1), Integer (Box.Right));
+               Left : constant Integer := Integer'Max (Item.Active (Index), Box.Left);
+               Right : constant Integer := Integer'Min (Item.Active (Index + 1), Box.Right);
             begin
                if Left < Right then
                   Spans.Append (Span'(Left, Right));

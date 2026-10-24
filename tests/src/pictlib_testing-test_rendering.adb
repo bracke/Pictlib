@@ -148,17 +148,16 @@ package body Pictlib_Testing.Test_Rendering is
    Truncated_Pixels : aliased constant Bytes :=
      V2_Prefix (0, 0, 2, 8) & Copy (16#98#, 2, Rect (0, 0, 2, 8), Rect (0, 0, 2, 8), Rect (0, 0, 2, 8))
      & B (16#A5#) & B (0) & B (16#0F#);
-   With_Rectangle : aliased constant Bytes := V2_Picture (0, 0, 2, 8, W (16#31#) & Rect (0, 0, 1, 1) & Bitmap_2x8);
-   Source_Or : aliased constant Bytes := V2_Picture (0, 0, 2, 8, Bitmap_2x8 (Mode => 1));
+   --  LongText at (0, 0), one character; text renders from M4.
+   With_Text : aliased constant Bytes :=
+     V2_Picture (0, 0, 2, 8, W (16#28#) & W (0) & W (0) & B (1) & Text ("a") & Bitmap_2x8);
    Dither_Copy : aliased constant Bytes := V2_Picture (0, 0, 2, 8, Bitmap_2x8 (Mode => 16#40#));
-   Red_Foreground : aliased constant Bytes :=
-     V2_Picture (0, 0, 2, 8, W (16#1A#) & W (16#FFFF#) & W (0) & W (0) & Bitmap_2x8);
    Default_Colors : aliased constant Bytes :=
      V2_Picture (0, 0, 2, 8, W (16#1A#) & W (0) & W (0) & W (0) & W (16#1B#) & W (16#FFFF#) & W (16#FFFF#)
                  & W (16#FFFF#) & W (16#0E#) & L (33) & W (16#0F#) & L (30) & W (16#0C#) & W (0) & W (0)
                  & Bitmap_2x8);
-   Planar_Foreground : aliased constant Bytes := V2_Picture (0, 0, 2, 8, W (16#0E#) & L (205) & Bitmap_2x8);
-   Moved_Origin : aliased constant Bytes := V2_Picture (0, 0, 2, 8, W (16#0C#) & W (1) & W (0) & Bitmap_2x8);
+   Unknown_Planar : aliased constant Bytes := V2_Picture (0, 0, 2, 8, W (16#0E#) & L (1234) & Bitmap_2x8);
+   Unknown_Mode : aliased constant Bytes := V2_Picture (0, 0, 2, 8, Bitmap_2x8 (Mode => 20));
    Wide_Source : aliased constant Bytes := V2_Picture (0, 0, 2, 8, Bitmap_2x8 (Source => Rect (0, 0, 2, 9)));
    Empty_Destination : aliased constant Bytes :=
      V2_Picture (0, 0, 2, 8, Copy (16#98#, 2, Rect (0, 0, 2, 8), Rect (0, 0, 2, 8), Rect (0, 0, 0, 8))
@@ -388,13 +387,11 @@ package body Pictlib_Testing.Test_Rendering is
    procedure Unsupported_Drawing (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
    begin
-      Expect_Render_Failure (With_Rectangle, 8, 2, Pictlib.Errors.Unsupported_Feature, "paintRect", 16#31#);
-      Expect_Lenient (With_Rectangle, 8, 2, Bitmap_2x8_Raster, Pictlib.Errors.Approximated_Rendering, "paintRect");
-      Expect_Render_Failure (Source_Or, 8, 2, Pictlib.Errors.Unsupported_Feature, "srcOr", 16#98#);
-      Expect_Lenient (Source_Or, 8, 2, Bitmap_2x8_Raster, Pictlib.Errors.Approximated_Rendering, "srcOr");
-      Expect_Render_Failure (Red_Foreground, 8, 2, Pictlib.Errors.Unsupported_Feature, "colorized copy", 16#98#);
-      Expect_Render_Failure (Planar_Foreground, 8, 2, Pictlib.Errors.Unsupported_Feature, "planar colorized", 16#98#);
-      Expect_Render_Failure (Moved_Origin, 8, 2, Pictlib.Errors.Unsupported_Feature, "Origin", 16#0C#);
+      Expect_Render_Failure (With_Text, 8, 2, Pictlib.Errors.Unsupported_Feature, "LongText", 16#28#);
+      Expect_Lenient (With_Text, 8, 2, Bitmap_2x8_Raster, Pictlib.Errors.Approximated_Rendering, "LongText");
+      Expect_Render_Failure (Unknown_Planar, 8, 2, Pictlib.Errors.Unsupported_Feature, "unknown planar color", 16#0E#);
+      Expect_Render_Failure (Unknown_Mode, 8, 2, Pictlib.Errors.Transfer_Mode_Invalid, "transfer mode 20", 16#98#);
+      Expect_Lenient (Unknown_Mode, 8, 2, Bitmap_2x8_Raster, Pictlib.Errors.Recovery_Applied, "transfer mode 20");
       Expect_Raster (Default_Colors, 8, 2, Bitmap_2x8_Raster, "default colors and origin");
    end Unsupported_Drawing;
 
@@ -464,7 +461,7 @@ package body Pictlib_Testing.Test_Rendering is
       Outcome := Decoding.Render (Decoder, Output);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Operation_Cancelled, "a cancelled decoder rendered");
 
-      Canvases.Render (With_Rectangle, Decoder, Output, Outcome);
+      Canvases.Render (With_Text, Decoder, Output, Outcome);
       Assert (Decoding.State (Decoder) = Decoding.Failed
               and then Decoding.Last_Error (Decoder).Code = Pictlib.Errors.Unsupported_Feature,
               "an unsupported opcode did not fail the decoder");

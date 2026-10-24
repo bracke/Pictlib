@@ -82,17 +82,62 @@ are retained, never interpreted.
   oval size (`16#000B#`), foreground/background/op/hilite colors (`16#000E#`, `16#000F#`,
   `16#001A#`, `16#001B#`, `16#001D#`, `16#001F#`), and text state (`16#0003#..16#0006#`,
   `16#000D#`, `16#0010#`, `16#0016#`, `16#002C#..16#002E#`).
-- Version 1 colors (`16#000E#`, `16#000F#`) map the eight QuickDraw planar colors to RGB.
+- Version 1 colors (`16#000E#`, `16#000F#`) map the eight QuickDraw planar colors to RGB as
+  Color QuickDraw shows them (whiteColor 30, blackColor 33, yellowColor 69 `FC F3 05`,
+  magentaColor 137 `F2 08 84`, redColor 205 `DD 08 06`, cyanColor 273 `02 AB EA`, greenColor
+  341 `00 80 11`, blueColor 409 `00 00 D4`); any other value is `Unsupported_Feature` in
+  `Strict` and leaves the color unchanged with a warning otherwise. RGB colors keep the high byte
+  of each 16-bit component.
+- Coordinates read from the picture are local. `Origin` (`dh`, `dv`) moves the local system and
+  accumulates; a local point `p` is picture point `p − origin`. The clip region keeps its local
+  coordinates when the origin moves, as `SetOrigin` leaves `clipRgn` alone. Pen location is kept
+  in picture coordinates.
+- Pixel model: pixel `(x, y)` is the unit square from `(x, y)` to `(x + 1, y + 1)`; a rectangle
+  covers columns `left .. right − 1` and rows `top .. bottom − 1`. The pen is `pnSize`
+  (`v`, `h` = height, width) and hangs below and right of its location. A zero or negative pen
+  dimension draws no lines and no frames.
+- Shapes, where QuickDraw documents no exact rule, use these, with all arithmetic in integers:
+  - oval: the pixels whose centres lie inside the ellipse inscribed in the rectangle;
+  - round rect: the rectangle with each corner cut by a quarter of the `OvSize` oval (clamped to
+    the rectangle); a zero oval size is a rectangle;
+  - arc: the oval's pixels whose centres lie in the sweep from `startAngle` through `arcAngle`
+    degrees (0 at 12 o'clock, clockwise, negative sweeps backward, 360 or more is the whole oval),
+    the angles stretched so that 45° passes through the rectangle's corner; tested with a table
+    of `sin (k°) × 2³⁰` and exact cross products, so results are identical on every platform;
+  - polygon: even-odd at pixel centres, closed automatically;
+  - line: the pen rectangle at every point of the Bresenham line between the endpoints, both
+    included;
+  - frame: the shape less the shape inset by the pen (`pnSize` width horizontally, height
+    vertically); a framed round rect's inner oval is `OvSize` less twice the pen; `framePoly`
+    draws the polygon's lines without closing it; `frameRgn` erodes the region by the pen,
+    separably.
+- Verbs: `frame` and `paint` use the pen pattern and pen mode (a source mode `0 .. 7` acts as the
+  matching pattern mode), `erase` the background pattern with `patCopy`, `fill` the fill pattern
+  with `patCopy`, and `invert` inverts each component. One last rectangle serves the "same"
+  opcodes of rects, round rects, ovals and arcs; polygons and regions keep their own. Before any
+  shape, "same" draws nothing.
+- Patterns tile from picture coordinate (0, 0). A bit pattern's 1 bits are the foreground and its
+  0 bits the background; a color `PixPat` (type 1) is drawn with its own colors and is not
+  colorized; a dither `PixPat` (type 2) is drawn as its RGB color.
+- Transfer modes act on 8-bit components. For the boolean modes, each source component `s` (a
+  copied pixel, or a pattern's black-or-white sample) says how near to black the source is:
+  `copy = mix (fg, bk, s)`, `or = mix (fg, dst, s)`, `bic = mix (bk, dst, s)`,
+  `xor = dst xor (255 − s)`, the `not` modes use `255 − s`, where `mix (a, b, s)` is
+  `(a (255 − s) + b s + 127) / 255`. With a black foreground and white background this is
+  QuickDraw's black-and-white arithmetic and `copy` reproduces the source exactly; otherwise it is
+  Color QuickDraw's colorizing, for copies of every depth. Arithmetic modes use `OpColor`: blend
+  weights by it, `addPin`/`subPin` pin to it, `addOver`/`subOver` wrap, `addMax`/`adMin` take the
+  larger or smaller component, `transparent` leaves pixels equal to the background color alone.
+  `hilite` (and the drawing operation after `HiliteMode`) swaps the background and highlight
+  colors under dark source pixels; `DefHilite` resets the highlight to black. `grayishTextOr`
+  acts as `srcOr`. Unknown modes fail with `Transfer_Mode_Invalid` in `Strict` and act as copy
+  with a warning otherwise.
+- A real QuickDraw reference renderer was not available when these rules were written; comparing
+  them against one is an M7 conformance task, and the rules change only through this document.
 - Shapes: `frame`, `paint`, `erase`, `invert`, `fill` for rect (`16#0030#..`), rounded rect
   (`16#0040#..`), oval (`16#0050#..`), arc (`16#0060#..`), polygon (`16#0070#..`) and region
-  (`16#0080#..`), plus each "same" variant reusing the last shape of that kind. Lines:
-  `16#0020#..16#0023#`. Pixel coverage follows QuickDraw's pen-hangs-below-right model; tests
-  compare against reference rasters, not antialiased approximations. QuickDraw draws without
-  antialiasing and so shall the renderer.
-- Transfer modes: the 16 boolean modes (`srcCopy` .. `notPatBic`), the arithmetic modes
-  (`blend`, `addPin`, `addOver`, `subPin`, `transparent`, `addMax`, `subOver`, `adMin`),
-  `hilite` and `ditherCopy` (rendered as `srcCopy`, with a warning). Unknown modes fail in
-  `Strict`, render as `srcCopy` with a warning otherwise.
+  (`16#0080#..`), plus each "same" variant. Lines: `16#0020#..16#0023#`. QuickDraw draws without
+  antialiasing and so does the renderer.
 - Regions: 16-bit size, bounding rect, then the inversion-point scanline encoding terminated by
   `16#7FFF#`. Rectangular regions have size 10. A pixel is inside when an odd number of inversion
   points lie at or above it and at or left of it. Scanline `y` values must increase strictly and
@@ -137,11 +182,8 @@ are retained, never interpreted.
   or 32. 16-bit pixels allow pack types 0, 1, 3; 32-bit pixels 0, 1, 2, 4 with `cmpCount` 3 or 4.
   A 5-bit component `v` expands to `v * 8 + v / 4`. Source alpha (`cmpCount = 4`) is ignored, as
   QuickDraw ignores it; every pixel written is opaque.
-- A BitMap's 1 bits take the foreground color and 0 bits the background color. The renderer draws
-  copies with black and white; a copy made while the foreground is not black or the background not
-  white is colorized by QuickDraw, which the renderer does with M3 (until then it is
-  `Unsupported_Feature` in `Strict`, a plain copy with an `Approximated_Rendering` warning
-  otherwise).
+- A BitMap's 1 bits are black and 0 bits white before the transfer mode applies, so a copy made
+  while the foreground is not black or the background not white is colorized (section 3.2).
 - The transfer mode's `ditherCopy` flag (`16#40#`) makes no difference to true-color output and is
   ignored.
 - `hRes`/`vRes`, `pixelType`, `planeBytes` and `pmReserved` are validated for consistency and
@@ -207,7 +249,9 @@ Pictlib.Internal.PackBits          -- unpack/pack byte and word runs
 Pictlib.Internal.Pixmaps           -- BitMap/PixMap headers, color tables, rows
 Pictlib.Internal.Patterns
 Pictlib.Internal.Canvas            -- the caller's view as a drawing surface
-Pictlib.Internal.Rendering         -- painter state, copies, clip and mask
+Pictlib.Internal.Rendering         -- painter and port state, fills, copies, clip and mask
+Pictlib.Internal.Drawing           -- port state and shape opcodes
+Pictlib.Internal.Coverage          -- shapes as per-row spans
 Pictlib.Internal.Rasterizer        -- shapes, pen, clipping
 Pictlib.Internal.Transfer_Modes
 Pictlib.Internal.Text

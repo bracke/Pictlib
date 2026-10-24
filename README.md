@@ -10,8 +10,10 @@ version 2 containers, with or without the 512-byte file header, and enumerates
 every opcode of the picture under explicit resource limits, retaining comments,
 font names and other metadata on request. Since Gate M2 it renders a picture's
 bitmaps and pixmaps — every depth and pack type, with scaling, clip regions and
-masks — into a caller-owned RGB or RGBA view. Vector shapes, text and
-QuickTime images are reported as unsupported until their gates pass. `Pictlib.Capabilities` lists what is
+masks — into a caller-owned RGB or RGBA view, and since Gate M3 its QuickDraw
+lines, rectangles, round rects, ovals, arcs, polygons and regions with
+patterns, colors, transfer modes and clipping. Text and QuickTime images are
+reported as unsupported until their gates pass. `Pictlib.Capabilities` lists what is
 implemented; everything else is unavailable until its implementation-plan gate
 passes.
 

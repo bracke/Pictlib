@@ -1,13 +1,8 @@
-with Interfaces;
 with Pictlib.Errors;
 
 package body Pictlib.Internal.Rendering is
-   use type Interfaces.Unsigned_16;
    use type Geometry.Rect;
-
-   --  srcCopy; the ditherCopy flag (16#40#) makes no difference to true-color output.
-   Source_Copy : constant := 0;
-   Dither_Flag : constant := 16#40#;
+   use type Patterns.Pattern_Kind;
 
    procedure Start
      (P : in out Painter;
@@ -17,12 +12,27 @@ package body Pictlib.Internal.Rendering is
    begin
       Canvas.Bind (P.Target, View);
       Canvas.Fill (P.Target, Background);
-      P.Frame := Frame;
+      P.Window := Regions.To_Area (Frame);
+      P.Origin_H := 0;
+      P.Origin_V := 0;
       P.Has_Clip := False;
-      P.Clip := Regions.Rectangle (Frame);
+      P.Clip := Regions.Rectangle (P.Window);
+      P.Colors := (others => <>);
+      P.Pen_Width := 1;
+      P.Pen_Height := 1;
+      P.Pen_Mode := Transfer_Modes.Copy;
+      P.Pen_Pattern := Patterns.From_Bits (Patterns.Black);
+      P.Fill_Pattern := Patterns.From_Bits (Patterns.Black);
+      P.Back_Pattern := Patterns.From_Bits (Patterns.White);
+      P.Pen_H := 0;
+      P.Pen_V := 0;
+      P.Oval_Width := 0;
+      P.Oval_Height := 0;
+      P.Hilite_Next := False;
+      P.Last_Rect := (others => 0);
+      P.Last_Polygon.Clear;
+      P.Last_Region := Regions.Rectangle ((others => 0));
       P.Work := 0;
-      P.Default_Foreground := True;
-      P.Default_Background := True;
    end Start;
 
    function Charge (P : in out Painter; S : Sessions.Session; Units : Natural) return Results.Result is
@@ -35,16 +45,93 @@ package body Pictlib.Internal.Rendering is
       return Results.Success;
    end Charge;
 
+   function Context_Of (Event : Pictures.Opcode_Event) return Errors.Diagnostic_Context is
+     ((Source => Event.Offset, Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal, others => <>));
+
    function Unsupported (S : in out Sessions.Session; Event : Pictures.Opcode_Event) return Results.Result is
-      Context : constant Errors.Diagnostic_Context :=
-        (Source => Event.Offset, Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal, others => <>);
    begin
       if not Sessions.Is_Lenient (S) then
-         return Results.Failure (Errors.Make (Errors.Unsupported_Feature, Context));
+         return Results.Failure (Errors.Make (Errors.Unsupported_Feature, Context_Of (Event)));
       end if;
-      Sessions.Warn (S, Errors.Approximated_Rendering, Errors.Data_Loss, Context);
+      Sessions.Warn (S, Errors.Approximated_Rendering, Errors.Data_Loss, Context_Of (Event));
       return Results.Success;
    end Unsupported;
+
+   function Mode
+     (S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event;
+      Value : Interfaces.Unsigned_16;
+      Kind : out Transfer_Modes.Mode_Kind) return Results.Result is
+   begin
+      if Transfer_Modes.Classify (Value, Kind) then
+         return Results.Success;
+      elsif not Sessions.Is_Lenient (S) then
+         return Results.Failure
+           (Errors.Make (Errors.Transfer_Mode_Invalid, (Context_Of (Event) with delta Actual => Byte_Count (Value))));
+      end if;
+      Sessions.Warn (S, Errors.Recovery_Applied, Errors.Recovery,
+                     (Context_Of (Event) with delta Actual => Byte_Count (Value)));
+      Kind := Transfer_Modes.Copy;
+      return Results.Success;
+   end Mode;
+
+   --  Narrow P.Row_Spans to the clip region's row Y.
+   function Clip_Row (P : in out Painter; S : Sessions.Session; Y : Integer) return Results.Result is
+      Work : Natural;
+   begin
+      if not P.Has_Clip then
+         return Results.Success;
+      end if;
+      Regions.Row_Spans (P.Clip, Y, P.Clip_Spans, Work);
+      Regions.Intersect (P.Row_Spans, P.Clip_Spans, P.Scratch);
+      P.Row_Spans.Move (P.Scratch);
+      return Charge (P, S, Work);
+   end Clip_Row;
+
+   procedure Put (P : in out Painter; X, Y : Integer; Color : Images.RGB_Color) is
+   begin
+      Canvas.Put (P.Target, X - P.Window.Left, Y - P.Window.Top, Color);
+   end Put;
+
+   function Get (P : Painter; X, Y : Integer) return Images.RGB_Color is
+     (Canvas.Get (P.Target, X - P.Window.Left, Y - P.Window.Top));
+
+   function Fill
+     (P : in out Painter;
+      S : Sessions.Session;
+      Shape : Coverage.Shape;
+      How : Paint) return Results.Result
+   is
+      Outcome : Results.Result := Charge (P, S, Coverage.Work (Shape));
+      Colorize : constant Boolean := Patterns.Kind (How.Source) = Patterns.Bit_Pattern;
+      Kind : constant Transfer_Modes.Mode_Kind :=
+        (if P.Hilite_Next then Transfer_Modes.Hilite else How.Mode);
+   begin
+      P.Hilite_Next := False;
+      for Y in P.Window.Top .. P.Window.Bottom - 1 loop
+         exit when not Results.Succeeded (Outcome);
+         P.Row_Spans := Coverage.Row (Shape, Y);
+         if not P.Row_Spans.Is_Empty then
+            Outcome := Clip_Row (P, S, Y);
+            for Span of P.Row_Spans loop
+               exit when not Results.Succeeded (Outcome);
+               Outcome := Charge (P, S, Span.Right - Span.Left);
+               if Results.Succeeded (Outcome) then
+                  for X in Span.Left .. Span.Right - 1 loop
+                     if How.Kind = Invert_Paint then
+                        Put (P, X, Y, Transfer_Modes.Invert (Get (P, X, Y)));
+                     else
+                        Put (P, X, Y,
+                             Transfer_Modes.Compose
+                               (Kind, Patterns.Sample (How.Source, X, Y), Get (P, X, Y), P.Colors, Colorize));
+                     end if;
+                  end loop;
+               end if;
+            end loop;
+         end if;
+      end loop;
+      return Outcome;
+   end Fill;
 
    function Ceiling_Divide (Left, Right : Long_Long_Integer) return Long_Long_Integer is ((Left + Right - 1) / Right);
 
@@ -54,21 +141,20 @@ package body Pictlib.Internal.Rendering is
       S : Sessions.Session;
       Header : Pixmaps.Bits_Header;
       Source : Geometry.Rect;
+      Destination : Area;
+      Kind : Transfer_Modes.Mode_Kind;
       Mask : in out Regions.Region;
       Decoder : Pixmaps.Row_Decoder;
       Source_Y : Integer) return Results.Result
    is
-      Destination : constant Geometry.Rect := Header.Destination;
       Source_Width : constant Long_Long_Integer := Long_Long_Integer (Geometry.Width (Source));
       Source_Height : constant Long_Long_Integer := Long_Long_Integer (Geometry.Height (Source));
-      Destination_Width : constant Long_Long_Integer := Long_Long_Integer (Geometry.Width (Destination));
-      Destination_Height : constant Long_Long_Integer := Long_Long_Integer (Geometry.Height (Destination));
+      Destination_Width : constant Long_Long_Integer := Long_Long_Integer (Destination.Right - Destination.Left);
+      Destination_Height : constant Long_Long_Integer := Long_Long_Integer (Destination.Bottom - Destination.Top);
       Relative : constant Long_Long_Integer := Long_Long_Integer (Source_Y) - Long_Long_Integer (Source.Top);
       --  Destination rows k sample source row floor (k * Source_Height / Destination_Height).
       First_Row : constant Long_Long_Integer := Ceiling_Divide (Relative * Destination_Height, Source_Height);
       Last_Row : constant Long_Long_Integer := Ceiling_Divide ((Relative + 1) * Destination_Height, Source_Height) - 1;
-      Frame_Left : constant Integer := Integer (P.Frame.Left);
-      Frame_Top : constant Integer := Integer (P.Frame.Top);
       Outcome : Results.Result;
       Work : Natural;
    begin
@@ -77,23 +163,16 @@ package body Pictlib.Internal.Rendering is
       end if;
       for K in First_Row .. Last_Row loop
          declare
-            Y : constant Integer := Integer (Destination.Top) + Integer (K);
-            Canvas_Y : constant Integer := Y - Frame_Top;
+            Y : constant Integer := Destination.Top + Integer (K);
          begin
-            if Canvas_Y in 0 .. P.Target.Height - 1 then
-               --  The row's paintable spans: destination and canvas, then clip, then mask.
+            if Y in P.Window.Top .. P.Window.Bottom - 1 then
                P.Row_Spans.Clear;
                P.Row_Spans.Append
-                 (Regions.Span'(Integer'Max (Integer (Destination.Left), Frame_Left),
-                   Integer'Min (Integer (Destination.Right), Frame_Left + P.Target.Width)));
-               if P.Has_Clip then
-                  Regions.Row_Spans (P.Clip, Y, P.Clip_Spans, Work);
-                  Outcome := Charge (P, S, Work);
-                  if not Results.Succeeded (Outcome) then
-                     return Outcome;
-                  end if;
-                  Regions.Intersect (P.Row_Spans, P.Clip_Spans, P.Scratch);
-                  P.Row_Spans.Move (P.Scratch);
+                 (Regions.Span'(Integer'Max (Destination.Left, P.Window.Left),
+                                Integer'Min (Destination.Right, P.Window.Right)));
+               Outcome := Clip_Row (P, S, Y);
+               if not Results.Succeeded (Outcome) then
+                  return Outcome;
                end if;
                if Header.Masked then
                   Regions.Row_Spans (Mask, Y, P.Mask_Spans, Work);
@@ -117,9 +196,10 @@ package body Pictlib.Internal.Rendering is
                              (Long_Long_Integer (X) - Long_Long_Integer (Destination.Left)) * Source_Width
                              / Destination_Width;
                            Source_X : constant Integer := Integer (Source.Left) + Integer (Column);
+                           Pixel : constant Images.RGB_Color :=
+                             Pixmaps.Pixel (Decoder, Source_X - Integer (Header.Bounds.Left));
                         begin
-                           Canvas.Put (P.Target, X - Frame_Left, Canvas_Y,
-                                       Pixmaps.Pixel (Decoder, Source_X - Integer (Header.Bounds.Left)));
+                           Put (P, X, Y, Transfer_Modes.Compose (Kind, Pixel, Get (P, X, Y), P.Colors));
                         end;
                      end loop;
                   end if;
@@ -142,14 +222,9 @@ package body Pictlib.Internal.Rendering is
          Bottom => Coordinate'Min (Wanted.Bottom, Bounds.Bottom), Right => Coordinate'Min (Wanted.Right, Bounds.Right));
       if Source /= Wanted and then not Geometry.Is_Empty (Wanted) then
          if not Sessions.Is_Lenient (S) then
-            return Results.Failure
-              (Errors.Make
-                 (Errors.Pixmap_Invalid,
-                  (Source => S.Stream.Offset, Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal,
-                   others => <>)));
+            return Results.Failure (Errors.Make (Errors.Pixmap_Invalid, Context_Of (Event)));
          end if;
-         Sessions.Warn (S, Errors.Recovery_Applied, Errors.Recovery,
-                        (Op => Event.Op, Has_Opcode => True, Ordinal => Event.Ordinal, others => <>));
+         Sessions.Warn (S, Errors.Recovery_Applied, Errors.Recovery, Context_Of (Event));
       end if;
       return Results.Success;
    end Source_Rect;
@@ -163,12 +238,13 @@ package body Pictlib.Internal.Rendering is
    is
       Decoder : Pixmaps.Row_Decoder;
       Source : Geometry.Rect;
-      Outcome : Results.Result := Results.Success;
-      Mode : constant Interfaces.Unsigned_16 := Header.Mode and not Dither_Flag;
+      Destination : constant Area := To_Picture (P, Header.Destination);
+      Kind : Transfer_Modes.Mode_Kind;
+      Outcome : Results.Result := Mode (S, Event, Header.Mode, Kind);
    begin
-      if Mode /= Source_Copy or else not (P.Default_Foreground and then P.Default_Background) then
-         --  Other transfer modes and colorizing arrive with the rasterizer; lenient decoders copy instead.
-         Outcome := Unsupported (S, Event);
+      if P.Hilite_Next then
+         Kind := Transfer_Modes.Hilite;
+         P.Hilite_Next := False;
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Source_Rect (S, Header, Event, Source);
@@ -176,8 +252,11 @@ package body Pictlib.Internal.Rendering is
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
-      if Geometry.Is_Empty (Source) or else Geometry.Is_Empty (Header.Destination) then
+      if Geometry.Is_Empty (Source) or else Regions.Is_Empty (Destination) then
          return Pixmaps.Skip_Pixels (S, Header);
+      end if;
+      if Header.Masked then
+         Regions.Translate (Mask, -P.Origin_H, -P.Origin_V);
       end if;
 
       Outcome := Pixmaps.Start (S, Decoder, Header);
@@ -185,7 +264,8 @@ package body Pictlib.Internal.Rendering is
          exit when not Results.Succeeded (Outcome);
          Outcome := Pixmaps.Read_Row (S, Decoder, Row);
          if Results.Succeeded (Outcome) then
-            Outcome := Put_Row (P, S, Header, Source, Mask, Decoder, Integer (Header.Bounds.Top) + Row);
+            Outcome := Put_Row (P, S, Header, Source, Destination, Kind, Mask, Decoder,
+                                Integer (Header.Bounds.Top) + Row);
          end if;
       end loop;
       Pixmaps.Finish (Decoder);

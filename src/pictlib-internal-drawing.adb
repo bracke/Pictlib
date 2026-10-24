@@ -1,0 +1,371 @@
+with Interfaces;
+with Pictlib.Errors;
+with Pictlib.Geometry;
+with Pictlib.Images;
+with Pictlib.Internal.Coverage;
+with Pictlib.Internal.Patterns;
+with Pictlib.Internal.Regions;
+with Pictlib.Internal.Transfer_Modes;
+with Pictlib.Streams;
+
+package body Pictlib.Internal.Drawing is
+   use type Interfaces.Unsigned_16;
+
+   subtype Area is Regions.Area;
+   subtype Point is Coverage.Point;
+
+   Smallest_Polygon : constant := 10;
+
+   function Signed (Value : Interfaces.Unsigned_16) return Integer is
+     (if Value >= 16#8000# then Integer (Value) - 16#1_0000# else Integer (Value));
+
+   function Signed (Value : Byte) return Integer is
+     (if Value >= 16#80# then Integer (Value) - 16#100# else Integer (Value));
+
+   --  A local point (v, h) as a picture point.
+   function Read_Point (P : Rendering.Painter; S : in out Sessions.Session; Item : out Point) return Results.Result is
+      V, H : Interfaces.Unsigned_16 := 0;
+      Outcome : Results.Result := Sessions.Read_Word (S, V);
+   begin
+      if Results.Succeeded (Outcome) then
+         Outcome := Sessions.Read_Word (S, H);
+      end if;
+      Item := (H => Signed (H) - P.Origin_H, V => Signed (V) - P.Origin_V);
+      return Outcome;
+   end Read_Point;
+
+   --  A (v, h) pair as read, without the origin: pen and oval sizes.
+   function Read_Size (S : in out Sessions.Session; Height, Width : out Integer) return Results.Result is
+      V, H : Interfaces.Unsigned_16 := 0;
+      Outcome : Results.Result := Sessions.Read_Word (S, V);
+   begin
+      if Results.Succeeded (Outcome) then
+         Outcome := Sessions.Read_Word (S, H);
+      end if;
+      Height := Signed (V);
+      Width := Signed (H);
+      return Outcome;
+   end Read_Size;
+
+   function Read_Color (S : in out Sessions.Session; Color : out Images.RGB_Color) return Results.Result is
+      Data : Streams.Byte_Array (1 .. 6);
+      Outcome : constant Results.Result := Sessions.Read_Into (S, Data);
+   begin
+      --  The high byte of each 16-bit component.
+      Color := (Data (1), Data (3), Data (5));
+      return Outcome;
+   end Read_Color;
+
+   --  Classic QuickDraw's eight planar colors, as Color QuickDraw shows them.
+   function Planar_Color (Value : Interfaces.Unsigned_32; Color : out Images.RGB_Color) return Boolean is
+   begin
+      case Value is
+         when 30 => Color := Images.White;
+         when 33 => Color := Images.Black;
+         when 69 => Color := (16#FC#, 16#F3#, 16#05#);
+         when 137 => Color := (16#F2#, 16#08#, 16#84#);
+         when 205 => Color := (16#DD#, 16#08#, 16#06#);
+         when 273 => Color := (16#02#, 16#AB#, 16#EA#);
+         when 341 => Color := (16#00#, 16#80#, 16#11#);
+         when 409 => Color := (16#00#, 16#00#, 16#D4#);
+         when others =>
+            Color := Images.Black;
+            return False;
+      end case;
+      return True;
+   end Planar_Color;
+
+   function Read_Polygon
+     (P : Rendering.Painter;
+      S : in out Sessions.Session;
+      Points : out Coverage.Point_Vectors.Vector) return Results.Result
+   is
+      pragma Unreferenced (P);
+      Size : Interfaces.Unsigned_16 := 0;
+      Box : Geometry.Rect;
+      Outcome : Results.Result := Sessions.Read_Word (S, Size);
+   begin
+      Points.Clear;
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      elsif Size < Smallest_Polygon or else (Size - Smallest_Polygon) mod 4 /= 0 then
+         return Sessions.Fail (S, Errors.Polygon_Invalid, Smallest_Polygon, Byte_Count (Size));
+      elsif Natural (Size - Smallest_Polygon) / 4 > S.Budget.Max_Polygon_Points then
+         return Sessions.Over_Limit
+           (S, Polygon_Point_Limit, Byte_Count (S.Budget.Max_Polygon_Points),
+            Byte_Count (Size - Smallest_Polygon) / 4);
+      end if;
+      Outcome := Sessions.Read_Bounds (S, Box);
+      for Index in 1 .. Natural (Size - Smallest_Polygon) / 4 loop
+         exit when not Results.Succeeded (Outcome);
+         declare
+            V, H : Interfaces.Unsigned_16 := 0;
+         begin
+            Outcome := Sessions.Read_Word (S, V);
+            if Results.Succeeded (Outcome) then
+               Outcome := Sessions.Read_Word (S, H);
+            end if;
+            --  Kept local; the origin applies when the polygon is drawn.
+            Points.Append (Point'(H => Signed (H), V => Signed (V)));
+         end;
+      end loop;
+      return Outcome;
+   end Read_Polygon;
+
+   function Inset (Item : Area; Width, Height : Integer) return Area is
+     ((Item.Top + Height, Item.Left + Width, Item.Bottom - Height, Item.Right - Width));
+
+   --  How frame and paint (pen), erase (background pattern), invert and fill (fill pattern) change pixels.
+   function Paint_For (P : Rendering.Painter; Verb : Natural) return Rendering.Paint is
+     (case Verb is
+         when 0 | 1 => (Rendering.Pattern_Paint, P.Pen_Pattern, P.Pen_Mode),
+         when 2 => (Rendering.Pattern_Paint, P.Back_Pattern, Transfer_Modes.Copy),
+         when 3 => (Rendering.Invert_Paint, P.Pen_Pattern, Transfer_Modes.Copy),
+         when others => (Rendering.Pattern_Paint, P.Fill_Pattern, Transfer_Modes.Copy));
+
+   --  The pixels a shape verb changes, for the rect, round rect, oval and arc groups.
+   procedure Rect_Like
+     (P : Rendering.Painter;
+      Group : Natural;
+      Verb : Natural;
+      Bounds : Area;
+      Start_Angle, Arc_Angle : Integer;
+      Shape : in out Coverage.Shape)
+   is
+      Frame : constant Boolean := Verb = 0;
+      Inner : Coverage.Shape;
+
+      procedure Interior (Item : in out Coverage.Shape; Box : Area; Oval_Width, Oval_Height : Integer) is
+      begin
+         case Group is
+            when 3 => Coverage.Rectangle (Item, Box);
+            when 4 => Coverage.Round_Rect (Item, Box, Oval_Width, Oval_Height);
+            when others => Coverage.Oval (Item, Box);
+         end case;
+      end Interior;
+   begin
+      if Frame and then (P.Pen_Width <= 0 or else P.Pen_Height <= 0) then
+         return;
+      end if;
+      Interior (Shape, Bounds, P.Oval_Width, P.Oval_Height);
+      if Frame then
+         Coverage.Start (Inner, Coverage.Window_Of (Shape));
+         Interior (Inner, Inset (Bounds, P.Pen_Width, P.Pen_Height),
+                   P.Oval_Width - 2 * P.Pen_Width, P.Oval_Height - 2 * P.Pen_Height);
+         Coverage.Subtract (Shape, Inner);
+      end if;
+      if Group = 6 then
+         Coverage.Wedge (Shape, Bounds, Start_Angle, Arc_Angle);
+      end if;
+   end Rect_Like;
+
+   function Draw_Shape
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event) return Results.Result
+   is
+      Group : constant Natural := Natural (Event.Op / 16);
+      Verb : constant Natural := Natural (Event.Op mod 8);
+      Same : constant Boolean := Event.Op mod 16 >= 8;
+      Shape : Coverage.Shape;
+      Outcome : Results.Result := Results.Success;
+   begin
+      Coverage.Start (Shape, P.Window);
+      case Group is
+         when 3 .. 6 =>
+            declare
+               Start_Angle, Arc_Angle : Integer := 0;
+            begin
+               if not Same then
+                  Outcome := Sessions.Read_Bounds (S, P.Last_Rect);
+               end if;
+               if Results.Succeeded (Outcome) and then Group = 6 then
+                  Outcome := Read_Size (S, Start_Angle, Arc_Angle);
+               end if;
+               if not Results.Succeeded (Outcome) then
+                  return Outcome;
+               end if;
+               Rect_Like (P, Group, Verb, Rendering.To_Picture (P, P.Last_Rect), Start_Angle, Arc_Angle, Shape);
+            end;
+         when 7 =>
+            if not Same then
+               Outcome := Read_Polygon (P, S, P.Last_Polygon);
+               if not Results.Succeeded (Outcome) then
+                  return Outcome;
+               end if;
+            end if;
+            declare
+               Points : Coverage.Point_Vectors.Vector;
+            begin
+               for Item of P.Last_Polygon loop
+                  Points.Append (Point'(H => Item.H - P.Origin_H, V => Item.V - P.Origin_V));
+               end loop;
+               if Verb /= 0 then
+                  Coverage.Polygon (Shape, Points);
+               elsif Natural (Points.Length) >= 2 then
+                  --  FramePoly draws the polygon's lines; it does not close the polygon.
+                  for Index in 1 .. Natural (Points.Length) - 1 loop
+                     Coverage.Line (Shape, Points (Index), Points (Index + 1), P.Pen_Width, P.Pen_Height);
+                  end loop;
+               end if;
+            end;
+         when others =>
+            if not Same then
+               Outcome := Regions.Read (S, P.Last_Region);
+               if not Results.Succeeded (Outcome) then
+                  return Outcome;
+               end if;
+            end if;
+            declare
+               Region : Regions.Region := P.Last_Region;
+            begin
+               Regions.Translate (Region, -P.Origin_H, -P.Origin_V);
+               if Verb = 0 then
+                  Coverage.Region_Frame (Shape, Region, P.Pen_Width, P.Pen_Height);
+               else
+                  Coverage.From_Region (Shape, Region);
+               end if;
+            end;
+      end case;
+      return Rendering.Fill (P, S, Shape, Paint_For (P, Verb));
+   end Draw_Shape;
+
+   function Draw_Line (P : in out Rendering.Painter; S : Sessions.Session; From, To : Point) return Results.Result is
+      Shape : Coverage.Shape;
+   begin
+      Coverage.Start (Shape, P.Window);
+      Coverage.Line (Shape, From, To, P.Pen_Width, P.Pen_Height);
+      P.Pen_H := To.H;
+      P.Pen_V := To.V;
+      return Rendering.Fill (P, S, Shape, (Rendering.Pattern_Paint, P.Pen_Pattern, P.Pen_Mode));
+   end Draw_Line;
+
+   function Consume_Line
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event) return Results.Result
+   is
+      From : Point := (H => P.Pen_H, V => P.Pen_V);
+      To : Point;
+      Outcome : Results.Result := Results.Success;
+   begin
+      if Event.Op in 16#0020# | 16#0022# then
+         Outcome := Read_Point (P, S, From);
+      end if;
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
+      if Event.Op in 16#0020# | 16#0021# then
+         Outcome := Read_Point (P, S, To);
+      else
+         --  ShortLine and ShortLineFrom: a signed byte dh, then dv.
+         declare
+            Dh, Dv : Byte := 0;
+         begin
+            Outcome := Sessions.Read_Count_Byte (S, Dh);
+            if Results.Succeeded (Outcome) then
+               Outcome := Sessions.Read_Count_Byte (S, Dv);
+            end if;
+            To := (H => From.H + Signed (Dh), V => From.V + Signed (Dv));
+         end;
+      end if;
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
+      return Draw_Line (P, S, From, To);
+   end Consume_Line;
+
+   function Consume
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event;
+      Handled : out Boolean) return Results.Result
+   is
+      Outcome : Results.Result := Results.Success;
+   begin
+      Handled := True;
+      case Event.Op is
+         when 16#0001# =>  --  Clip
+            Outcome := Regions.Read (S, P.Clip);
+            Regions.Translate (P.Clip, -P.Origin_H, -P.Origin_V);
+            P.Has_Clip := Results.Succeeded (Outcome);
+         when 16#0002# =>
+            Outcome := Patterns.Read_Bit_Pattern (S, P.Back_Pattern);
+         when 16#0009# =>
+            Outcome := Patterns.Read_Bit_Pattern (S, P.Pen_Pattern);
+         when 16#000A# =>
+            Outcome := Patterns.Read_Bit_Pattern (S, P.Fill_Pattern);
+         when 16#0012# =>
+            Outcome := Patterns.Read_Pixel_Pattern (S, P.Back_Pattern);
+         when 16#0013# =>
+            Outcome := Patterns.Read_Pixel_Pattern (S, P.Pen_Pattern);
+         when 16#0014# =>
+            Outcome := Patterns.Read_Pixel_Pattern (S, P.Fill_Pattern);
+         when 16#0007# =>
+            Outcome := Read_Size (S, P.Pen_Height, P.Pen_Width);
+         when 16#0008# =>
+            declare
+               Value : Interfaces.Unsigned_16;
+            begin
+               Outcome := Sessions.Read_Word (S, Value);
+               if Results.Succeeded (Outcome) then
+                  Outcome := Rendering.Mode (S, Event, Value, P.Pen_Mode);
+               end if;
+            end;
+         when 16#000B# =>
+            Outcome := Read_Size (S, P.Oval_Height, P.Oval_Width);
+         when 16#000C# =>  --  Origin: the clip region keeps its local coordinates
+            declare
+               Dh, Dv : Integer;
+            begin
+               Outcome := Read_Size (S, Dh, Dv);
+               --  Origin's data is dh, then dv.
+               if Results.Succeeded (Outcome) then
+                  P.Origin_H := P.Origin_H + Dh;
+                  P.Origin_V := P.Origin_V + Dv;
+                  Regions.Translate (P.Clip, -Dh, -Dv);
+               end if;
+            end;
+         when 16#000E# | 16#000F# =>
+            declare
+               Value : Interfaces.Unsigned_32;
+               Color : Images.RGB_Color;
+            begin
+               Outcome := Sessions.Read_Long (S, Value);
+               if Results.Succeeded (Outcome) then
+                  if not Planar_Color (Value, Color) then
+                     Outcome := Rendering.Unsupported (S, Event);
+                  elsif Event.Op = 16#000E# then
+                     P.Colors.Foreground := Color;
+                  else
+                     P.Colors.Background := Color;
+                  end if;
+               end if;
+            end;
+         when 16#001A# =>
+            Outcome := Read_Color (S, P.Colors.Foreground);
+         when 16#001B# =>
+            Outcome := Read_Color (S, P.Colors.Background);
+         when 16#001D# =>
+            Outcome := Read_Color (S, P.Colors.Highlight);
+         when 16#001F# =>
+            Outcome := Read_Color (S, P.Colors.Operation);
+         when 16#001C# =>
+            P.Hilite_Next := True;
+         when 16#001E# =>
+            --  The default highlight: black, so highlighting inverts black and white.
+            P.Colors.Highlight := Images.Black;
+         when 16#0020# .. 16#0023# =>
+            Outcome := Consume_Line (P, S, Event);
+         when 16#0030# .. 16#008F# =>
+            if Event.Reserved then
+               Handled := False;
+            else
+               Outcome := Draw_Shape (P, S, Event);
+            end if;
+         when others =>
+            Handled := False;
+      end case;
+      return Outcome;
+   end Consume;
+end Pictlib.Internal.Drawing;

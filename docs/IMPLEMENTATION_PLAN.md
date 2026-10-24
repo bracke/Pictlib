@@ -1,6 +1,6 @@
 # pictlib — Implementation Plan
 
-**Status:** M0–M2 implemented; M3 is next  
+**Status:** M0–M3 implemented; M4 is next  
 **Contract:** [SPECIFICATION.md](SPECIFICATION.md) (authoritative)  
 **Reference:** https://github.com/bracke/jpeglib
 
@@ -81,6 +81,15 @@ resolution rendering moved to task 19a.
 
 ## M3 — QuickDraw rasterizer
 
+**Completed (2026-10-24):** Tasks 17–19 and Gate M3. Port state (origin, clip,
+pen, bit and pixel patterns, planar and RGB colors, oval size, highlight),
+transfer modes for patterns and copies with colorizing, and every shape verb for
+lines, rects, round rects, ovals, arcs, polygons and regions, with the "same"
+variants, render to hand-computed rasters (80 tests). No QuickDraw reference
+renderer was available: the geometry follows QuickDraw where it is documented
+and the integer rules of the specification elsewhere; checking those against a
+real QuickDraw rendering is added to task 26. Task 19a stays open.
+
 17. Port state: origin, pen, patterns (8×8 and pixel patterns), colors (v1 planar and RGB).
 18. `Internal.Transfer_Modes`: boolean and arithmetic modes, for shapes and copies.
 19. Lines, rects, rounded rects, ovals, arcs, polygons, regions × frame/paint/erase/invert/fill,
@@ -114,7 +123,9 @@ independent decoders (ImageMagick, Netpbm); decode corpus passes.
 
 ## M7 — Conformance, security and completeness
 
-26. Real-world corpus with provenance, external oracle matrix, fuzz harness and seed corpus.
+26. Real-world corpus with provenance, external oracle matrix, fuzz harness and seed corpus;
+    compare shape rendering with a QuickDraw reference (classic Mac OS emulation or a reference
+    implementation) and revise the specification's shape rules where they differ.
 27. Stress and limit matrix, cancellation/reset reuse, benchmark tool.
 28. `proof/pictlib_proof.gpr`: checked arithmetic, image descriptors, opcode length rules, region
     bounds; `pictlib_prove` via `alr exec`.

@@ -18,7 +18,8 @@ bounds a read, a skip, an allocation or a loop.
 
 | `Max_Canvas_Pixels` | the frame, when `Render` starts | `Limit_Exceeded` |
 | `Max_Output_Bytes` | the view's accessible bytes, when `Render` starts | `Limit_Exceeded` |
-| `Max_Drawing_Work` | every pixel painted and every unit of region row work | `Limit_Exceeded` |
+| `Max_Drawing_Work` | every pixel painted, every unit of region, polygon, line and shape-building work | `Limit_Exceeded` |
+| `Max_Polygon_Points` | each polygon, also while rendering | `Limit_Exceeded` |
 | `Max_Allocation_Bytes` | each opcode's row buffers | `Limit_Exceeded` |
 
 The embedded image limits take effect with M5. `Max_Canvas_Bytes` is reserved:

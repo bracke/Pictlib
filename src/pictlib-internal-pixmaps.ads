@@ -72,6 +72,15 @@ package Pictlib.Internal.Pixmaps is
    --  @return Success, or Color_Table_Invalid for more than 256 entries.
    function Skip_Color_Table (S : in out Sessions.Session) return Results.Result;
 
+   --  Decide layout.
+   --  @param S Session, for diagnostics.
+   --  @param Header A header whose Op, Is_Pixmap, Row_Bytes, Width and Fields are set; its row layout and pixel
+   --  encoding are filled in.
+   --  @param For_Decoding True to also check that rows cover the width, as decoding needs.
+   --  @return Success, or Pixmap_Invalid when depth, pack type, components and row length disagree.
+   function Decide_Layout (S : Sessions.Session; Header : in out Bits_Header; For_Decoding : Boolean)
+     return Results.Result;
+
    --  Read bits header.
    --  @param S Session positioned after a bits opcode.
    --  @param Op The opcode.

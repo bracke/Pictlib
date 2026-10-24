@@ -1,4 +1,5 @@
 with Ada.Strings.Unbounded;
+with AUnit.Assertions;
 with Pictlib_Testing.Recorders;
 
 package body Pictlib_Testing.Canvases is
@@ -39,6 +40,48 @@ package body Pictlib_Testing.Canvases is
          Outcome := Pictlib.Decoding.Render (Decoder, Output);
       end if;
    end Render;
+
+   procedure Expect_Raster
+     (Input : aliased Pictlib.Streams.Byte_Array;
+      Width, Height : Positive;
+      Expected : String;
+      Label : String;
+      Options : Pictlib.Decoding.Options := (others => <>))
+   is
+      use AUnit.Assertions;
+      Storage : aliased Pictlib.Streams.Byte_Array := [1 .. 3 * Width * Height => 16#EE#];
+      Output : constant Pictlib.Images.Mutable_Image_View := View (Storage'Access, Width, Height);
+      Decoder : Pictlib.Decoding.Decoder;
+      Outcome : Pictlib.Results.Result;
+   begin
+      Render (Input, Decoder, Output, Outcome, Options);
+      Assert (Pictlib.Results.Succeeded (Outcome),
+              Label & ": render failed with " & Outcome.First_Error.Code'Image & " at opcode"
+              & Outcome.First_Error.Context.Op'Image);
+      Assert (Picture_Of (Output) = Expected, Label & ": rendered " & Picture_Of (Output) & ", expected " & Expected);
+   end Expect_Raster;
+
+   procedure Expect_Failure
+     (Input : aliased Pictlib.Streams.Byte_Array;
+      Width, Height : Positive;
+      Code : Pictlib.Errors.Error_Code;
+      Label : String;
+      Op : Pictlib.Opcode := 0;
+      Options : Pictlib.Decoding.Options := (others => <>);
+      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits)
+   is
+      use AUnit.Assertions;
+      use type Pictlib.Errors.Error_Code;
+      use type Pictlib.Opcode;
+      Storage : aliased Pictlib.Streams.Byte_Array := [1 .. 3 * Width * Height => 0];
+      Decoder : Pictlib.Decoding.Decoder;
+      Outcome : Pictlib.Results.Result;
+   begin
+      Render (Input, Decoder, View (Storage'Access, Width, Height), Outcome, Options, Budget);
+      Assert (Outcome.First_Error.Code = Code,
+              Label & ": expected " & Code'Image & ", got " & Outcome.First_Error.Code'Image);
+      Assert (Op = 0 or else Outcome.First_Error.Context.Op = Op, Label & ": the failing opcode was not recorded");
+   end Expect_Failure;
 
    function Pixel (Output : Pictlib.Images.Mutable_Image_View; X, Y : Natural) return Pictlib.Images.RGB_Color is
       At_Pixel : constant Positive :=

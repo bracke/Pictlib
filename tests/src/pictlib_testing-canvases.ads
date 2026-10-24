@@ -1,4 +1,5 @@
 with Pictlib.Decoding;
+with Pictlib.Errors;
 with Pictlib.Images;
 with Pictlib.Limits;
 with Pictlib.Results;
@@ -24,6 +25,24 @@ package Pictlib_Testing.Canvases is
       Options : Pictlib.Decoding.Options := (others => <>);
       Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
       Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last);
+
+   --  Expect raster: Input renders successfully to Expected in a Width x Height RGB_24 view.
+   procedure Expect_Raster
+     (Input : aliased Pictlib.Streams.Byte_Array;
+      Width, Height : Positive;
+      Expected : String;
+      Label : String;
+      Options : Pictlib.Decoding.Options := (others => <>));
+
+   --  Expect failure: rendering Input fails with Code, naming Op when Op is not 0.
+   procedure Expect_Failure
+     (Input : aliased Pictlib.Streams.Byte_Array;
+      Width, Height : Positive;
+      Code : Pictlib.Errors.Error_Code;
+      Label : String;
+      Op : Pictlib.Opcode := 0;
+      Options : Pictlib.Decoding.Options := (others => <>);
+      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits);
 
    --  Pixel.
    --  @return The color at X, Y of an RGB_24 view.

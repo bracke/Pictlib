@@ -2,6 +2,7 @@ with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Geometry;
 with Pictlib.Internal.Bytes;
+with Pictlib.Internal.Drawing;
 with Pictlib.Internal.Metadata_Store;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Internal.Pixmaps;
@@ -12,16 +13,11 @@ with Pictlib.Streams;
 
 package body Pictlib.Internal.Opcode_Reader is
    use type Interfaces.Unsigned_16;
-   use type Interfaces.Unsigned_32;
    use type Errors.Error_Code;
 
    subtype Session is Sessions.Session;
 
    Smallest_Polygon : constant := 10;
-
-   --  Classic QuickDraw color constants for FgColor and BkColor.
-   Black_Color : constant := 33;
-   White_Color : constant := 30;
 
    function Item_For (Kind : Metadata.Item_Kind; Event : Pictures.Opcode_Event) return Metadata.Item_Info is
      ((Kind => Kind, Ordinal => Event.Ordinal, Offset => Event.Offset, Op => Event.Op, others => <>));
@@ -240,11 +236,6 @@ package body Pictlib.Internal.Opcode_Reader is
                return Outcome;
             end;
          when Opcodes.Region_Data =>
-            if Paint /= null and then Event.Op = Opcodes.Clip then
-               Outcome := Regions.Read (S, Paint.Clip);
-               Paint.Has_Clip := Results.Succeeded (Outcome);
-               return Outcome;
-            end if;
             return Regions.Skip (S);
          when Opcodes.Polygon_Data =>
             return Skip_Polygon (S);
@@ -263,66 +254,9 @@ package body Pictlib.Internal.Opcode_Reader is
       end case;
    end Consume_Data;
 
-   --  Opcodes that draw but that this renderer does not draw yet.
+   --  Opcodes that draw but that this renderer does not draw yet: text and QuickTime images.
    function Draws_Unsupported (Event : Pictures.Opcode_Event) return Boolean is
-     (not Event.Reserved
-      and then Event.Op in 16#0020# .. 16#0023# | 16#0028# .. 16#002B# | 16#0030# .. 16#008F#
-                         | Opcodes.Compressed_QuickTime);
-
-   --  Port state a copy depends on: the origin and, through colorizing, the foreground and background colors.
-   function Consume_Port_State
-     (S : in out Session;
-      Event : Pictures.Opcode_Event;
-      Paint : access Rendering.Painter;
-      Handled : out Boolean) return Results.Result
-   is
-      Outcome : Results.Result := Results.Success;
-   begin
-      Handled := True;
-      case Event.Op is
-         when 16#000C# =>  --  Origin
-            declare
-               Dh, Dv : Interfaces.Unsigned_16;
-            begin
-               Outcome := Sessions.Read_Word (S, Dh);
-               if Results.Succeeded (Outcome) then
-                  Outcome := Sessions.Read_Word (S, Dv);
-               end if;
-               if Results.Succeeded (Outcome) and then (Dh /= 0 or else Dv /= 0) then
-                  Outcome := Rendering.Unsupported (S, Event);
-               end if;
-            end;
-         when 16#000E# | 16#000F# =>  --  FgColor, BkColor
-            declare
-               Color : Interfaces.Unsigned_32;
-            begin
-               Outcome := Sessions.Read_Long (S, Color);
-               if Results.Succeeded (Outcome) then
-                  if Event.Op = 16#000E# then
-                     Paint.Default_Foreground := Color = Black_Color;
-                  else
-                     Paint.Default_Background := Color = White_Color;
-                  end if;
-               end if;
-            end;
-         when 16#001A# | 16#001B# =>  --  RGBFgCol, RGBBkCol
-            declare
-               Color : Streams.Byte_Array (1 .. 6);
-            begin
-               Outcome := Sessions.Read_Into (S, Color);
-               if Results.Succeeded (Outcome) then
-                  if Event.Op = 16#001A# then
-                     Paint.Default_Foreground := (for all Item of Color => Item = 0);
-                  else
-                     Paint.Default_Background := (for all Item of Color => Item = 16#FF#);
-                  end if;
-               end if;
-            end;
-         when others =>
-            Handled := False;
-      end case;
-      return Outcome;
-   end Consume_Port_State;
+     (Event.Op in 16#0028# .. 16#002B# | Opcodes.Compressed_QuickTime);
 
    function Next
      (S : in out Session;
@@ -382,7 +316,7 @@ package body Pictlib.Internal.Opcode_Reader is
                if Draws_Unsupported (Event) then
                   Outcome := Rendering.Unsupported (S, Event);
                else
-                  Outcome := Consume_Port_State (S, Event, Paint, Handled);
+                  Outcome := Drawing.Consume (Paint.all, S, Event, Handled);
                end if;
             end if;
             if Results.Succeeded (Outcome) and then not Handled then
