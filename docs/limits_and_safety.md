@@ -91,5 +91,5 @@ is never written.
 
 The decoder borrows its source: the caller keeps it alive until `Reset`,
 `Initialize` or `Finalize`. `Copy_Metadata` writes into a caller buffer and
-fails with `Limit_Exceeded` rather than truncating. Tests use
+fails with `Invalid_Argument` rather than truncating. Tests use
 `Unchecked_Access` only to bind stack objects that outlive the decoder's use.

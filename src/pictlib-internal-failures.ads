@@ -19,15 +19,18 @@ package Pictlib.Internal.Failures is
    --  @param Expected The budget.
    --  @param Actual The amount asked for.
    --  @param Source Source offset, when the input has one.
+   --  @param Destination Destination offset, when the output has one.
    --  @return A Limit_Exceeded failure.
    function Over_Limit
      (Limit : Limit_Kind;
       Expected, Actual : Byte_Count;
-      Source : Source_Offset := 0) return Results.Result is
+      Source : Source_Offset := 0;
+      Destination : Destination_Offset := 0) return Results.Result is
      (Results.Failure
         (Errors.Make
            (Errors.Limit_Exceeded,
-            (Source => Source, Expected => Expected, Actual => Actual, Limit => Limit, others => <>))));
+            (Source => Source, Destination => Destination, Expected => Expected, Actual => Actual, Limit => Limit,
+             others => <>))));
 
    --  In opcode: a failure of an opcode's data.
    --  @param Event The opcode.
@@ -46,10 +49,10 @@ package Pictlib.Internal.Failures is
    --  @param Row The pixel row being read, from 0.
    --  @return Outcome; a failure naming no row names Row.
    function At_Row (Outcome : Results.Result; Row : Natural) return Results.Result is
-     (if Results.Succeeded (Outcome) or else Outcome.First_Error.Context.Row /= 0 then Outcome
+     (if Results.Succeeded (Outcome) or else Outcome.First_Error.Context.Has_Row then Outcome
       else Results.Failure
              ((Outcome.First_Error with delta
-                 Context => (Outcome.First_Error.Context with delta Row => Row_Index (Row)))));
+                 Context => (Outcome.First_Error.Context with delta Row => Row_Index (Row), Has_Row => True))));
 
    --  Check frame size.
    --  @param Width A picture's width.

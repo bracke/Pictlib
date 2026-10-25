@@ -45,6 +45,12 @@ package body Pictlib.Internal.Sessions is
       if Item.Source = 0 then
          Item.Source := S.Stream.Offset;
       end if;
+      --  A warning inside an opcode's data that names no opcode is that opcode's, as a failure is.
+      if not Item.Has_Opcode and then S.Counts.In_Opcode then
+         Item.Op := S.Counts.Current_Op;
+         Item.Has_Opcode := True;
+         Item.Ordinal := S.Counts.Current_Ordinal;
+      end if;
       --  Max_Warning_Records bounds the log, so it needs no allocation quota; past it the last record says how
       --  many warnings were suppressed.
       Diagnostics.Add (S.Kept.Log, Errors.Make_Warning (Code, Severity, Item), S.Budget.Max_Warning_Records);
@@ -167,10 +173,18 @@ package body Pictlib.Internal.Sessions is
       return Results.Success;
    end Claim_Ordinal;
 
-   procedure Begin_Opcode_Data (S : in out Session) is
+   procedure Begin_Opcode_Data (S : in out Session; Event : Pictures.Opcode_Event) is
    begin
       S.Counts.Data_Start := Picture_Stream.Picture_Offset (S.Stream);
+      S.Counts.In_Opcode := True;
+      S.Counts.Current_Op := Event.Op;
+      S.Counts.Current_Ordinal := Event.Ordinal;
    end Begin_Opcode_Data;
+
+   procedure End_Opcode_Data (S : in out Session) is
+   begin
+      S.Counts.In_Opcode := False;
+   end End_Opcode_Data;
 
    function Opcode_Data_Length (S : Session) return Byte_Count is
      (Picture_Stream.Picture_Offset (S.Stream) - S.Counts.Data_Start);
@@ -206,6 +220,9 @@ package body Pictlib.Internal.Sessions is
       Data := null;
       if not Results.Succeeded (Outcome) then
          return Outcome;
+      --  The budget as set first, then the most one buffer can hold whatever the budget.
+      elsif Length > S.Budget.Max_Allocation_Bytes then
+         return Over_Limit (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Length);
       elsif Length > Byte_Count (Natural'Last) then
          return Over_Limit (S, Allocation_Byte_Limit, Byte_Count (Natural'Last), Length);
       end if;

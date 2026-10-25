@@ -119,6 +119,7 @@ package body Pictlib_Testing.Test_Foundation is
          Has_Opcode => True,
          Ordinal => 12,
          Row => 4,
+         Has_Row => True,
          Expected => 12,
          Actual => 13,
          Limit => Pictlib.Region_Byte_Limit,

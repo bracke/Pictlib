@@ -417,7 +417,8 @@ While `Enumerate` calls the visitor, `Read_Header`, `Enumerate` and `Render` on 
 fail with `Invalid_State`. A visitor may `Cancel`, `Reset` or `Finalize` the decoder: the state it
 leaves stands, and `Enumerate` returns what a call in that state gets (`Operation_Cancelled` after
 `Cancel`, `Invalid_State` otherwise) without visiting another opcode. An exception raised by the
-visitor propagates out of `Enumerate`, and the decoder stays usable after `Reset` or `Initialize`.
+visitor propagates out of `Enumerate`; a decoder the visit left in `Header_Read`, its stream partly
+read, is then `Stopped`, and is usable again after `Reset` or `Initialize`.
 
 `Render` rejects an invalid view or one whose size is not the frame's with `Invalid_Argument`,
 and a view above `Max_Output_Bytes` with `Limit_Exceeded`, leaving the decoder in `Header_Read`
@@ -425,8 +426,8 @@ so another view can be given. A frame above `Max_Canvas_Pixels` fails with `Limi
 leaves the decoder `Failed`: no view can render it. Drawing opcodes a release does not render yet
 fail with `Unsupported_Feature` in `Strict` and are skipped with an `Approximated_Rendering`
 warning otherwise; port state they depend on is tracked. In `Recover_When_Safe`, malformed
-picture data (truncation, malformed regions, pixmaps, PackBits, color tables, patterns, opcode
-lengths or embedded JPEG data) ends rendering with success and a `Partial_Picture` warning: what was drawn stands, the
+picture data (truncation, malformed regions, polygons, pixmaps, PackBits, color tables, patterns,
+opcode lengths, coordinates beyond reach (`Opcode_Invalid`) or embedded JPEG data) ends rendering with success and a `Partial_Picture` warning: what was drawn stands, the
 rest is background. A missing end opcode is not malformed data: every opcode was read whole, so it
 finishes with a warning in both lenient modes, as below. Limits, stream failures and unsupported features are
 never recovered.
@@ -447,8 +448,13 @@ the number suppressed, the displaced entry included, as its actual count.
 States: `Created`, `Ready`, `Encoded`, `Finished`, `Failed`, `Cancelled`. `Initialize (Object,
 Output, Options, Limits)`, `Encode (Image_View)` (Ready → Encoded), `Finish` (flushes; Encoded →
 Finished), `Layout_Used`, `Bytes_Written`, `Last_Error`, `Cancel`, `Finalize` (idempotent). Calls
-in the wrong state fail with `Invalid_State` (`Operation_Cancelled` after `Cancel`). An invalid
-view or a non-positive resolution is `Invalid_Argument` and leaves the encoder `Ready`.
+in the wrong state fail with `Invalid_State` (`Operation_Cancelled` after `Cancel`). A failure
+found before the destination is written to (an invalid view or a non-positive resolution, an image
+too wide, too many colors, a frame, allocation or output limit) leaves the encoder `Ready`, so
+another image or encoder can be tried, and does not set `Last_Error`; a failure while writing
+leaves it `Failed`. An invalid view's `Invalid_Argument` reports the least a valid view of its size
+and format holds as expected and its accessible bytes as actual; `Too_Many_Colors` reports 256 as
+expected and 257 as actual, as counting stops there.
 
 One image becomes one extended version 2 picture: the 512-byte zero file header (option, on by
 default), `picSize` (the low 16 bits of the picture's length; the encoder measures the picture in a
@@ -534,12 +540,34 @@ and storage that is no single allocation at fixed rates:
 `Embedded_Image_Failed`, `Too_Many_Colors`, `Missing_End_Opcode`, `Trailing_Data`,
 `Font_Unavailable`, `Unsupported_Feature`, `Invalid_State`, `Invalid_Argument`, `Integer_Overflow`, `Limit_Exceeded`,
 `Operation_Cancelled`, `Internal_Invariant_Failed`. Identifiers are stable dotted strings
-(`pict.*`). `Diagnostic_Context` carries source/destination offset, opcode, opcode ordinal, row,
-expected/actual counts, limit kind and an underlying code. Every limit kind but
-`Warning_Record_Limit` can be reported by `Limit_Exceeded`; that one names `Max_Warning_Records`,
-which caps the warning log instead of failing (section 6). Sizes taken from a picture saturate
-instead of overflowing, so an overflowing size is reported as the limit it exceeds;
-`Integer_Overflow` is kept for callers and for parity with `jpeglib`.
+(`pict.*`). `Diagnostic_Context` carries source/destination offset, opcode, opcode ordinal, row
+(with `Has_Row`, as the opcode has `Has_Opcode`, since row 0 is a row), expected/actual counts,
+limit kind and an underlying code. Expected is the bound or requirement a value was checked
+against (a limit, what the format requires, or the length of what must hold it: an opcode, a view,
+a caller's buffer or storage); actual is what the input, content or request came to. A full
+`Fixed_Buffer_Destination` fails with `Destination_Write_Failed`, expecting its length, and
+`Copy_Metadata` refuses a short buffer with `Invalid_Argument`, expecting the buffer's length.
+Failures and warnings raised while an opcode's data is read name that opcode and its ordinal.
+Every limit kind but `Warning_Record_Limit` can be reported by `Limit_Exceeded`; that one names
+`Max_Warning_Records`, which caps the warning log instead of failing (section 6). Sizes taken from
+a picture saturate instead of overflowing, so an overflowing size is reported as the limit it
+exceeds; `Integer_Overflow` is kept for callers and for parity with `jpeglib`.
+
+Warnings, each with its fixed severity. A reserved opcode and a character textrender cannot draw
+warn in every mode; the rest are recorded only by a lenient decoder, where a strict one fails with
+the error named:
+
+| Warning | Severity | Recorded when |
+| --- | --- | --- |
+| `Compatibility_Issue` | `Compatibility` | a version 2 picture has no or an unknown `HeaderOp` (`Header_Invalid`), input ends between opcodes (`Missing_End_Opcode`), bytes follow the end opcode under `Require_End_Of_Input` (`Trailing_Data`) |
+| `Recovery_Applied` | `Recovery` | an unknown transfer mode is drawn as copy (`Transfer_Mode_Invalid`), a `srcRect` past the bounds is clamped (`Pixmap_Invalid`), a color table entry past 255 is dropped or an undefined pixel index drawn black, once an opcode (`Color_Table_Invalid`) |
+| `Reserved_Opcode_Skipped` | `Informational` | a reserved opcode's data is skipped, in every mode |
+| `Approximated_Rendering` | `Data_Loss` | drawing a release does not render is skipped or drawn plain (`Unsupported_Feature`), text has no font (`Font_Unavailable`) |
+| `Partial_Picture` | `Data_Loss` | `Recover_When_Safe` ends the picture at malformed data |
+| `Data_Loss` | `Data_Loss` | metadata over its budgets is dropped (`Limit_Exceeded`), a fontName too short for its name is dropped (`Opcode_Length_Invalid`), a character textrender cannot draw advances half the size, once an opcode |
+| `Warnings_Suppressed` | `Data_Loss` | the log's last slot, counting the warnings it displaced and those after |
+
+`Generic_Warning` is never recorded; it is the code of a warning record's default value.
 
 ## 11. Crate and project structure
 

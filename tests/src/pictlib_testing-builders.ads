@@ -19,6 +19,9 @@ package Pictlib_Testing.Builders is
    function Text (Item : String) return Bytes;
    --  A rectangular region.
    function Region (Top, Left, Bottom, Right : Integer) return Bytes;
+   --  An L of a region in a 4 x 4 box: rows 0 and 1 columns 0 .. 1, rows 2 and 3 columns 0 .. 3; its last
+   --  scanline lies on the box's bottom, with a point on its right.
+   function L_Region return Bytes;
 
    --  picSize (Size), picFrame and the version 1 version opcode.
    function V1_Prefix (Top, Left, Bottom, Right : Integer; Size : Natural := 0) return Bytes;

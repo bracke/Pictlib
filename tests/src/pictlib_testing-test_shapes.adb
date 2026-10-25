@@ -1,19 +1,12 @@
-with AUnit.Assertions;
-
 with Pictlib;
-with Pictlib.Decoding;
 with Pictlib.Errors;
-with Pictlib.Images;
 with Pictlib.Limits;
-with Pictlib.Results;
 with Pictlib.Streams;
 with Pictlib_Testing.Builders;
 with Pictlib_Testing.Canvases;
 
 package body Pictlib_Testing.Test_Shapes is
-   use AUnit.Assertions;
    use Pictlib_Testing.Builders;
-   use type Pictlib.Images.RGB_Color;
    use type Pictlib.Streams.Byte_Array;
 
    package Errors renames Pictlib.Errors;
@@ -31,9 +24,6 @@ package body Pictlib_Testing.Test_Shapes is
    Scanline_Square : constant Bytes :=
      W (28) & Rect (0, 0, 6, 6) & W (0) & W (0) & W (6) & W (16#7FFF#) & W (6) & W (0) & W (6) & W (16#7FFF#)
      & W (16#7FFF#);
-   L_Region : constant Bytes :=
-     W (36) & Rect (0, 0, 4, 4) & W (0) & W (0) & W (2) & W (16#7FFF#) & W (2) & W (2) & W (4) & W (16#7FFF#)
-     & W (4) & W (0) & W (4) & W (16#7FFF#) & W (16#7FFF#);
    Triangle : constant Bytes :=
      W (26) & Rect (0, 0, 4, 4) & W (0) & W (0) & W (0) & W (4) & W (4) & W (0) & W (0) & W (0);
 
@@ -77,6 +67,14 @@ package body Pictlib_Testing.Test_Shapes is
                 & W (16#9A#) & L (16#FF#) & W (16#8000# + 8) & Rect (0, 0, 1, 2) & Pixmap_Tail (1, 32, 3, 8)
                 & Rect (0, 0, 1, 2) & Rect (0, 0, 1, 2) & W (36)
                 & [0, 16#FF#, 16#FF#, 16#FF#, 0, 0, 16#FF#, 0]);
+   --  The not pattern modes work with the pattern inverted: notPatOr blackens where it is white, notPatXor inverts
+   --  there, notPatBic whitens there; where it is black they leave the destination.
+   Not_Pattern_Or : aliased constant Bytes :=
+     Pic (4, 2, Red_Field & Pen_Mode (13) & W (16#09#) & Checker & Op_Rect (16#31#, 0, 0, 1, 4));
+   Not_Pattern_Xor : aliased constant Bytes :=
+     Pic (4, 2, Op_Rect (16#31#, 0, 0, 2, 4) & Pen_Mode (14) & W (16#09#) & Checker & Op_Rect (16#31#, 0, 0, 1, 4));
+   Not_Pattern_Bic : aliased constant Bytes :=
+     Pic (4, 2, Red_Field & Pen_Mode (15) & W (16#09#) & Checker & Op_Rect (16#31#, 0, 0, 1, 4));
    Source_Mode_As_Pen : aliased constant Bytes :=
      Pic (4, 2, Op_Rect (16#31#, 0, 0, 2, 4) & Pen_Mode (2) & Op_Rect (16#31#, 0, 0, 1, 4));
 
@@ -150,6 +148,20 @@ package body Pictlib_Testing.Test_Shapes is
    Hilite_Invert : aliased constant Bytes :=
      Pic (4, 1, RGB (16#1D#, 16#FFFF#, 0, 0) & W (16#1C#) & Op_Rect (16#33#, 0, 0, 1, 2)
           & Op_Rect (16#33#, 0, 2, 1, 4));
+   --  The not source modes work with the source inverted: notSrcOr blackens where it is white, notSrcXor inverts
+   --  there, notSrcBic whitens there; where it is black they leave the destination.
+   Copy_Not_Or : aliased constant Bytes := Pic (8, 2, Red_Under & Bitmap (5));
+   Copy_Not_Xor : aliased constant Bytes := Pic (8, 2, Black_Under & Bitmap (6));
+   Copy_Not_Bic : aliased constant Bytes := Pic (8, 2, Red_Under & Bitmap (7));
+   --  grayishTextOr, drawn as srcOr.
+   Copy_Grayish : aliased constant Bytes := Pic (8, 2, Red_Under & Bitmap (49));
+   --  The arithmetic modes over red, with an OpColor of 128 gray: pixel 0 copies black, pixel 1 white.
+   function Arithmetic (Mode : Natural) return Bytes is
+     (Pic (8, 2, Red_Under & RGB (16#1F#, 16#8000#, 16#8000#, 16#8000#) & Bitmap (Mode)));
+   Copy_Add_Pin : aliased constant Bytes := Arithmetic (33);
+   Copy_Add_Over : aliased constant Bytes := Arithmetic (34);
+   Copy_Sub_Pin : aliased constant Bytes := Arithmetic (35);
+   Copy_Sub_Over : aliased constant Bytes := Arithmetic (38);
    Copy_Blend : aliased constant Bytes := Pic (8, 2, RGB (16#1F#, 16#8000#, 16#8000#, 16#8000#) & Bitmap (32));
 
    Overhanging : aliased constant Bytes := Pic (4, 2, Op_Rect (16#31#, -5, -5, 100, 100));
@@ -216,6 +228,9 @@ package body Pictlib_Testing.Test_Shapes is
       Canvases.Expect_Raster (Pattern_Bic, 4, 2, "WBWB/BBBB", "patBic");
       Canvases.Expect_Raster (Pattern_Or, 4, 2, "BWBW/WWWW", "patOr");
       Canvases.Expect_Raster (Not_Pattern, 4, 2, "WBWB/WWWW", "notPatCopy");
+      Canvases.Expect_Raster (Not_Pattern_Or, 4, 2, "RBRB/RRRR", "notPatOr");
+      Canvases.Expect_Raster (Not_Pattern_Xor, 4, 2, "BWBW/BBBB", "notPatXor");
+      Canvases.Expect_Raster (Not_Pattern_Bic, 4, 2, "RWRW/RRRR", "notPatBic");
       Canvases.Expect_Raster (Source_Mode_As_Pen, 4, 2, "WWWW/BBBB", "srcXor as a pen mode");
       Canvases.Expect_Raster (Solid_Or, 4, 2, "BBBB/RRRR", "patOr, solid black");
       Canvases.Expect_Raster (White_Or, 4, 2, "RRRR/RRRR", "patOr, white");
@@ -224,24 +239,12 @@ package body Pictlib_Testing.Test_Shapes is
       Canvases.Expect_Raster (Transparent_Copy, 2, 1, "WG", "a transparent copy is not colorized");
    end Patterns_And_Modes;
 
-   procedure Expect_Color (Input : aliased Bytes; Width, Height : Positive; Color : Pictlib.Images.RGB_Color;
-                           Label : String) is
-      Storage : aliased Bytes := [1 .. 3 * Width * Height => 16#EE#];
-      Output : constant Pictlib.Images.Mutable_Image_View := Canvases.View (Storage'Access, Width, Height);
-      Decoder : Pictlib.Decoding.Decoder;
-      Outcome : Pictlib.Results.Result;
-   begin
-      Canvases.Render (Input, Decoder, Output, Outcome);
-      Assert (Pictlib.Results.Succeeded (Outcome), Label & ": render failed with " & Outcome.First_Error.Code'Image);
-      Assert (Canvases.Pixel (Output, 0, 0) = Color, Label & ": wrong color");
-   end Expect_Color;
-
    procedure Colors (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
    begin
       Canvases.Expect_Raster (Red_Paint, 2, 1, "RR", "RGBFgCol");
       Canvases.Expect_Raster (Blue_Erase, 2, 1, "UU", "RGBBkCol");
-      Expect_Color (Planar_Blue, 1, 1, (0, 0, 16#D4#), "FgColor blueColor");
+      Canvases.Expect_Pixels (Planar_Blue, 1, 1, [1 => (0, 0, (0, 0, 16#D4#))], "FgColor blueColor");
    end Colors;
 
    procedure Ovals_And_Round_Rects (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -337,7 +340,20 @@ package body Pictlib_Testing.Test_Shapes is
       Canvases.Expect_Raster (Copy_Hilite, 8, 2, "RWRWWRWR/WWWWRRRR", "hilite");
       Canvases.Expect_Raster (Hilite_Next, 8, 2, "RWRWWRWR/WWWWRRRR", "HiliteMode");
       Canvases.Expect_Raster (Hilite_Invert, 4, 1, "RRBB", "HiliteMode, then invert");
-      Expect_Color (Copy_Blend, 8, 2, (127, 127, 127), "blend at half weight");
+      Canvases.Expect_Pixels (Copy_Blend, 8, 2, [1 => (0, 0, (127, 127, 127))], "blend at half weight");
+      Canvases.Expect_Raster (Copy_Not_Or, 8, 2, "RBRBBRBR/BBBBRRRR", "notSrcOr");
+      Canvases.Expect_Raster (Copy_Not_Xor, 8, 2, "BWBWWBWB/WWWWBBBB", "notSrcXor");
+      Canvases.Expect_Raster (Copy_Not_Bic, 8, 2, "RWRWWRWR/WWWWRRRR", "notSrcBic");
+      Canvases.Expect_Raster (Copy_Grayish, 8, 2, "BRBRRBRB/RRRRBBBB", "grayishTextOr");
+      --  addPin: the sum, at most OpColor; subPin: the difference, at least OpColor; addOver and subOver wrap.
+      Canvases.Expect_Pixels
+        (Copy_Add_Pin, 8, 2, [(0, 0, (128, 0, 0)), (1, 0, (128, 128, 128))], "addPin");
+      Canvases.Expect_Pixels
+        (Copy_Add_Over, 8, 2, [(0, 0, (255, 0, 0)), (1, 0, (254, 255, 255))], "addOver");
+      Canvases.Expect_Pixels
+        (Copy_Sub_Pin, 8, 2, [(0, 0, (255, 128, 128)), (1, 0, (128, 128, 128))], "subPin");
+      Canvases.Expect_Pixels
+        (Copy_Sub_Over, 8, 2, [(0, 0, (255, 0, 0)), (1, 0, (0, 1, 1))], "subOver");
    end Copy_Modes;
 
    procedure Clipping_And_Limits (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -347,8 +363,11 @@ package body Pictlib_Testing.Test_Shapes is
       Canvases.Expect_Raster (Clipped, 4, 2, "WBBW/WBBW", "a clipped rect");
       Canvases.Expect_Raster (Reserved_Shape, 4, 1, "WWWW", "reserved shape opcodes draw nothing");
       Canvases.Expect_Failure (Rect_Paint, 6, 4, Errors.Limit_Exceeded, "drawing work", 16#31#,
-                               Budget => (Pictlib.Limits.Default_Limits with delta Max_Drawing_Work => 5));
+                               Budget => (Pictlib.Limits.Default_Limits with delta Max_Drawing_Work => 5),
+                               Limit => Pictlib.Drawing_Work_Limit);
       Canvases.Expect_Failure (Odd_Polygon, 4, 4, Errors.Polygon_Invalid, "odd polygon", 16#71#);
+      Canvases.Expect_Lenient (Odd_Polygon, 4, 4, "WWWW/WWWW/WWWW/WWWW", Errors.Partial_Picture,
+                               "odd polygon, recovered", Pictlib.Recover_When_Safe);
       Canvases.Expect_Failure (Bad_Pen_Mode, 4, 4, Errors.Transfer_Mode_Invalid, "pen mode 20", 16#08#);
       Canvases.Expect_Raster (Bad_Pen_Mode, 4, 4, "BWWW/WWWW/WWWW/WWWW", "pen mode 20, lenient",
                               (Strictness => Pictlib.Compatible, others => <>));

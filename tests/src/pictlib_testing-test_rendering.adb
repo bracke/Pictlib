@@ -18,9 +18,9 @@ package body Pictlib_Testing.Test_Rendering is
    use type Pictlib.Byte_Count;
    use type Pictlib.Decoding.Decoder_State;
    use type Pictlib.Errors.Error_Code;
-   use type Pictlib.Images.RGB_Color;
    use type Pictlib.Limit_Kind;
    use type Pictlib.Opcode;
+   use type Pictlib.Opcode_Ordinal;
    use type Pictlib.Row_Index;
    use type Pictlib.Streams.Byte_Array;
 
@@ -54,6 +54,12 @@ package body Pictlib_Testing.Test_Rendering is
    Undefined_Index : aliased constant Bytes :=
      V2_Picture (0, 0, 2, 4, Indexed_8 (0, [0, 5, 200], [0, 5, 7, 0, 200, 200, 5, 0]));
    Indexed_Raster : constant String := "RGUR/UUGR";
+   --  The blue entry's value is 300, past any 8-bit index: leniently it is dropped, and no pixel uses it.
+   Entry_Past_255 : aliased constant Bytes :=
+     V2_Picture (0, 0, 2, 4, W (16#98#) & W (16#8000# + 4) & Rect (0, 0, 2, 4) & Pixmap_Tail (0, 8, 1, 8)
+                 & Table_Header (0, 3) & W (0) & W (16#FFFF#) & W (0) & W (0) & W (5) & W (0) & W (16#FFFF#) & W (0)
+                 & W (300) & W (0) & W (0) & W (16#FFFF#)
+                 & Rect (0, 0, 2, 4) & Rect (0, 0, 2, 4) & W (0) & [0, 5, 5, 0, 0, 0, 5, 0]);
 
    --  A device table: 0 white, 1 red, 2 green, 3 blue.
    function Four_Colors return Bytes is
@@ -117,10 +123,6 @@ package body Pictlib_Testing.Test_Rendering is
    Partly_Outside : aliased constant Bytes := V2_Picture (10, 20, 12, 24, Offset_Copy (Rect (11, 22, 13, 26)));
 
    Clipped : aliased constant Bytes := V2_Picture (0, 0, 2, 8, W (1) & Region (0, 0, 1, 8) & Bitmap_2x8);
-   --  An L: rows 0 and 1 columns 0 .. 1, rows 2 and 3 columns 0 .. 3.
-   L_Region : constant Bytes :=
-     W (36) & Rect (0, 0, 4, 4) & W (0) & W (0) & W (2) & W (16#7FFF#) & W (2) & W (2) & W (4) & W (16#7FFF#)
-     & W (4) & W (0) & W (4) & W (16#7FFF#) & W (16#7FFF#);
    Black_4x4 : constant Bytes := [16#F0#, 0, 16#F0#, 0, 16#F0#, 0, 16#F0#, 0];
    L_Raster : constant String := "BBWW/BBWW/BBBB/BBBB";
    Masked : aliased constant Bytes :=
@@ -146,7 +148,24 @@ package body Pictlib_Testing.Test_Rendering is
      Bad_Mask (W (20) & Rect (0, 0, 4, 4) & W (0) & W (0) & W (6) & W (16#7FFF#) & W (16#7FFF#));
    Row_Outside_Mask : aliased constant Bytes :=
      Bad_Mask (W (20) & Rect (0, 0, 4, 4) & W (6) & W (0) & W (2) & W (16#7FFF#) & W (16#7FFF#));
+   --  Row 2 twice, a column left of the box, a row above it. L_Region's last scanline, at the box's bottom with a
+   --  point at its right, is accepted.
+   Repeated_Row_Mask : aliased constant Bytes :=
+     Bad_Mask (W (28) & Rect (0, 0, 4, 4) & W (2) & W (0) & W (2) & W (16#7FFF#) & W (2) & W (0) & W (2)
+               & W (16#7FFF#) & W (16#7FFF#));
+   Column_Left_Mask : aliased constant Bytes :=
+     Bad_Mask (W (20) & Rect (0, 0, 4, 4) & W (0) & W (16#FFFF#) & W (2) & W (16#7FFF#) & W (16#7FFF#));
+   Row_Above_Mask : aliased constant Bytes :=
+     Bad_Mask (W (20) & Rect (0, 0, 4, 4) & W (16#FFFF#) & W (0) & W (2) & W (16#7FFF#) & W (16#7FFF#));
 
+   --  The last rowBytes with a byte count, and the first with a word count: one row each of 128 bytes of black, then
+   --  the rest white. The byte-counted row ends at an odd offset, so a pad byte follows it.
+   Byte_Counted_Row : aliased constant Bytes :=
+     V2_Picture (0, 0, 1, 2000, Copy (16#98#, 250, Rect (0, 0, 1, 2000), Rect (0, 0, 1, 2000), Rect (0, 0, 1, 2000))
+                 & B (4) & B (16#81#) & B (16#FF#) & B (16#87#) & B (0) & B (0));
+   Word_Counted_Row : aliased constant Bytes :=
+     V2_Picture (0, 0, 1, 2008, Copy (16#98#, 251, Rect (0, 0, 1, 2008), Rect (0, 0, 1, 2008), Rect (0, 0, 1, 2008))
+                 & W (4) & B (16#81#) & B (16#FF#) & B (16#86#) & B (0));
    Short_Packed_Row : aliased constant Bytes :=
      V2_Picture (0, 0, 1, 64, Copy (16#98#, 8, Rect (0, 0, 1, 64), Rect (0, 0, 1, 64), Rect (0, 0, 1, 64))
                  & B (2) & B (16#FD#) & B (16#FF#) & B (0));
@@ -206,6 +225,10 @@ package body Pictlib_Testing.Test_Rendering is
       Canvases.Expect_Raster (Unpacked_Bitmap, 8, 2, Bitmap_2x8_Raster, "unpacked BitMap");
       Canvases.Expect_Raster (Packed_Bitmap, 64, 1, [1 .. 32 => 'W'] & [1 .. 32 => 'B'], "packed BitMap");
       Canvases.Expect_Raster (Dither_Copy, 8, 2, Bitmap_2x8_Raster, "ditherCopy is srcCopy");
+      Canvases.Expect_Raster
+        (Byte_Counted_Row, 2000, 1, [1 .. 1024 => 'B'] & [1 .. 976 => 'W'], "rowBytes 250, byte counts");
+      Canvases.Expect_Raster
+        (Word_Counted_Row, 2008, 1, [1 .. 1024 => 'B'] & [1 .. 984 => 'W'], "rowBytes 251, word counts");
       Canvases.Expect_Raster (Unpacked_Bitmap, 8, 2, Bitmap_2x8_Raster, "one-byte reads", Max_Transfer => 1);
    end Bitmaps;
 
@@ -219,26 +242,17 @@ package body Pictlib_Testing.Test_Rendering is
       Canvases.Expect_Raster (Packed_Indexed, 8, 1, "RRRRRRRR", "packed 8-bit row");
    end Indexed_Pixmaps;
 
-   procedure Expect_Colors (Input : aliased Bytes; First, Second : Pictlib.Images.RGB_Color; Label : String) is
-      Storage : aliased Bytes := [1 .. 6 => 16#EE#];
-      Output : constant Pictlib.Images.Mutable_Image_View := Canvases.View (Storage'Access, 2, 1);
-      Decoder : Decoding.Decoder;
-      Outcome : Pictlib.Results.Result;
-   begin
-      Canvases.Render (Input, Decoder, Output, Outcome);
-      Assert (Pictlib.Results.Succeeded (Outcome), Label & ": render failed with " & Outcome.First_Error.Code'Image);
-      Assert (Canvases.Pixel (Output, 0, 0) = First and then Canvases.Pixel (Output, 1, 0) = Second,
-              Label & ": wrong colors");
-   end Expect_Colors;
-
    procedure Direct_Pixmaps (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
+      --  The two pixels every planar fixture holds.
+      Planar_Pixels : constant Canvases.Probe_Array :=
+        [(0, 0, (16#10#, 16#30#, 16#50#)), (1, 0, (16#20#, 16#40#, 16#60#))];
    begin
       Canvases.Expect_Raster (Sixteen_Literal, 4, 1, "RGUW", "16-bit literal words");
       Canvases.Expect_Raster (Sixteen_Run, 4, 1, "RRRR", "16-bit word run");
-      Expect_Colors (Planar_3, (16#10#, 16#30#, 16#50#), (16#20#, 16#40#, 16#60#), "32-bit planar");
-      Expect_Colors (Planar_Default, (16#10#, 16#30#, 16#50#), (16#20#, 16#40#, 16#60#), "32-bit default pack");
-      Expect_Colors (Planar_4, (16#10#, 16#30#, 16#50#), (16#20#, 16#40#, 16#60#), "32-bit planar with alpha");
+      Canvases.Expect_Pixels (Planar_3, 2, 1, Planar_Pixels, "32-bit planar");
+      Canvases.Expect_Pixels (Planar_Default, 2, 1, Planar_Pixels, "32-bit default pack");
+      Canvases.Expect_Pixels (Planar_4, 2, 1, Planar_Pixels, "32-bit planar with alpha");
       Canvases.Expect_Raster (Chunky, 2, 1, "RU", "32-bit unpacked");
       Canvases.Expect_Raster (Triplets, 2, 1, "RG", "32-bit pad dropped");
    end Direct_Pixmaps;
@@ -270,6 +284,10 @@ package body Pictlib_Testing.Test_Rendering is
       Canvases.Expect_Failure
         (Column_Outside_Mask, 4, 4, Errors.Region_Invalid, "inversion point outside the box", 16#91#);
       Canvases.Expect_Failure (Row_Outside_Mask, 4, 4, Errors.Region_Invalid, "scanline outside the box", 16#91#);
+      Canvases.Expect_Failure (Repeated_Row_Mask, 4, 4, Errors.Region_Invalid, "repeated scanline", 16#91#);
+      Canvases.Expect_Failure
+        (Column_Left_Mask, 4, 4, Errors.Region_Invalid, "inversion point left of the box", 16#91#);
+      Canvases.Expect_Failure (Row_Above_Mask, 4, 4, Errors.Region_Invalid, "scanline above the box", 16#91#);
    end Clip_And_Mask;
 
    procedure Output_Formats (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -301,10 +319,23 @@ package body Pictlib_Testing.Test_Rendering is
       Storage : aliased Bytes := [1 .. 3 * 64 => 0];
       Decoder : Decoding.Decoder;
       Outcome : Pictlib.Results.Result;
+
+      --  A 4 x 2 picture whose color recovery, compatibly, names the opcode whose data it was in.
+      procedure Expect_Named (Input : aliased Bytes) is
+         Lenient : Decoding.Decoder;
+      begin
+         Canvases.Render (Input, Lenient, Canvases.View (Storage'Access, 4, 2), Outcome,
+                          (Strictness => Pictlib.Compatible, others => <>));
+         Assert (Recorders.Warning_With (Lenient, Errors.Recovery_Applied).Context.Has_Opcode
+                 and then Recorders.Warning_With (Lenient, Errors.Recovery_Applied).Context.Op = 16#98#
+                 and then Recorders.Warning_With (Lenient, Errors.Recovery_Applied).Context.Ordinal > 0,
+                 "a color recovery did not name its opcode");
+      end Expect_Named;
    begin
       Canvases.Render (Short_Packed_Row, Decoder, Canvases.View (Storage'Access, 64, 1), Outcome);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.PackBits_Invalid
               and then Outcome.First_Error.Context.Op = 16#98# and then Outcome.First_Error.Context.Row = 0
+              and then Outcome.First_Error.Context.Has_Row
               and then Outcome.First_Error.Context.Expected = 8 and then Outcome.First_Error.Context.Actual = 4,
               "a short packed row was accepted");
       --  A row that unpacks short is never patched: Compatible fails, Recover_When_Safe keeps what came before.
@@ -315,6 +346,11 @@ package body Pictlib_Testing.Test_Rendering is
 
       Canvases.Expect_Failure (Undefined_Index, 4, 2, Errors.Color_Table_Invalid, "undefined index", 16#98#);
       Canvases.Expect_Lenient (Undefined_Index, 4, 2, "RGBR/UUGR", Errors.Recovery_Applied, "undefined index");
+      Canvases.Expect_Failure (Entry_Past_255, 4, 2, Errors.Color_Table_Invalid, "color table entry 300", 16#98#);
+      Canvases.Expect_Lenient (Entry_Past_255, 4, 2, "RGGR/RRGR", Errors.Recovery_Applied, "color table entry 300");
+      --  Both recoveries name the opcode whose data they were in.
+      Expect_Named (Undefined_Index);
+      Expect_Named (Entry_Past_255);
 
       Canvases.Expect_Failure (Wide_Source, 8, 2, Errors.Pixmap_Invalid, "srcRect outside bounds", 16#98#);
       Canvases.Expect_Lenient (Wide_Source, 8, 2, Bitmap_2x8_Raster, Errors.Recovery_Applied, "srcRect clamped");

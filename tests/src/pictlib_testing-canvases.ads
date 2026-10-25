@@ -16,6 +16,19 @@ package Pictlib_Testing.Canvases is
       Format : Pictlib.Pixel_Format := Pictlib.RGB_24;
       Stride : Natural := 0) return Pictlib.Images.Mutable_Image_View;
 
+   --  Frame bytes.
+   --  @return The bytes a tightly packed view of Decoder's frame holds in Format; Decoder has read its header.
+   function Frame_Bytes
+     (Decoder : Pictlib.Decoding.Decoder;
+      Format : Pictlib.Pixel_Format := Pictlib.RGB_24) return Natural;
+   --  Frame view.
+   --  @return A tightly packed view of Storage the size of Decoder's frame, which Render requires.
+   function Frame_View
+     (Decoder : Pictlib.Decoding.Decoder;
+      Storage : not null Pictlib.Streams.Byte_Array_Access;
+      Format : Pictlib.Pixel_Format := Pictlib.RGB_24) return Pictlib.Images.Mutable_Image_View
+     with Pre => Storage'Length >= Frame_Bytes (Decoder, Format);
+
    --  Render Input into Output with a fresh decoder.
    procedure Render
      (Input : aliased Pictlib.Streams.Byte_Array;
@@ -35,14 +48,28 @@ package Pictlib_Testing.Canvases is
       Options : Pictlib.Decoding.Options := (others => <>);
       Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last);
 
-   --  Expect failure: rendering Input fails with Code, naming Op when Op is not 0 and Limit when it is given, and
-   --  leaves the decoder in State, with Code as its last error when that is Failed and none otherwise.
+   --  A pixel an Expect_Pixels call checks.
+   type Probe is record
+      X, Y : Natural;
+      Color : Pictlib.Images.RGB_Color;
+   end record;
+   type Probe_Array is array (Positive range <>) of Probe;
+
+   --  Expect pixels: Input renders successfully in a Width x Height RGB_24 view, with each probe's pixel its color.
+   procedure Expect_Pixels
+     (Input : aliased Pictlib.Streams.Byte_Array;
+      Width, Height : Positive;
+      Probes : Probe_Array;
+      Label : String);
+
+   --  Expect failure: rendering Input fails with Code, naming Op unless it is Any_Opcode, and Limit when it is
+   --  given, and leaves the decoder in State, with Code as its last error when that is Failed and none otherwise.
    procedure Expect_Failure
      (Input : aliased Pictlib.Streams.Byte_Array;
       Width, Height : Positive;
       Code : Pictlib.Errors.Error_Code;
       Label : String;
-      Op : Pictlib.Opcode := 0;
+      Op : Expected_Opcode := Any_Opcode;
       Options : Pictlib.Decoding.Options := (others => <>);
       Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
       Limit : Pictlib.Limit_Kind := Pictlib.No_Limit;

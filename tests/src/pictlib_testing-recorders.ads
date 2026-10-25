@@ -1,3 +1,4 @@
+with Ada.Containers.Vectors;
 with Pictlib.Decoding;
 with Pictlib.Errors;
 with Pictlib.Limits;
@@ -6,11 +7,11 @@ with Pictlib.Results;
 with Pictlib.Streams;
 
 package Pictlib_Testing.Recorders is
-   type Event_Array is array (Positive range 1 .. 64) of Pictlib.Pictures.Opcode_Event;
+   package Event_Vectors is new Ada.Containers.Vectors (Positive, Pictlib.Pictures.Opcode_Event, Pictlib.Pictures."=");
 
-   --  Records every opcode; stops after Stop_After opcodes when it is positive.
+   --  Records every opcode, however many; stops after Stop_After opcodes when it is positive.
    type Recorder is new Pictlib.Decoding.Opcode_Visitor with record
-      Events : Event_Array := [others => (others => <>)];
+      Events : Event_Vectors.Vector;
       Count : Natural := 0;
       Stop_After : Natural := 0;
    end record;
@@ -61,7 +62,7 @@ package Pictlib_Testing.Recorders is
      (Input : aliased Pictlib.Streams.Byte_Array;
       Code : Pictlib.Errors.Error_Code;
       Label : String;
-      Op : Pictlib.Opcode := 0;
+      Op : Expected_Opcode := Any_Opcode;
       Options : Pictlib.Decoding.Options := (others => <>);
       Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
       Limit : Pictlib.Limit_Kind := Pictlib.No_Limit;

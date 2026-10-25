@@ -41,12 +41,13 @@ procedure Pictlib_Real_World is
    Count_Opcodes : constant Boolean := Project_Tools.Processes.Has_Argument ("--opcodes");
    type Opcode_Counts is array (Pictlib.Opcode) of Natural;
 
-   type Null_Visitor is new Pictlib.Decoding.Opcode_Visitor with record
+   --  Counts each opcode it visits.
+   type Opcode_Counter is new Pictlib.Decoding.Opcode_Visitor with record
       Counts : Opcode_Counts := [others => 0];
    end record;
-   overriding function Visit (Object : in out Null_Visitor; Event : Pictlib.Pictures.Opcode_Event)
+   overriding function Visit (Object : in out Opcode_Counter; Event : Pictlib.Pictures.Opcode_Event)
      return Pictlib.Decoding.Visit_Action;
-   overriding function Visit (Object : in out Null_Visitor; Event : Pictlib.Pictures.Opcode_Event)
+   overriding function Visit (Object : in out Opcode_Counter; Event : Pictlib.Pictures.Opcode_Event)
      return Pictlib.Decoding.Visit_Action is
    begin
       Object.Counts (Event.Op) := Object.Counts (Event.Op) + 1;
@@ -60,7 +61,7 @@ procedure Pictlib_Real_World is
    function Enumerate (Data : Bytes_Access) return String is
       Source : aliased Pictlib.Streams.Memory_Source;
       Decoder : Pictlib.Decoding.Decoder;
-      Visitor : Null_Visitor;
+      Visitor : Opcode_Counter;
       Outcome : Pictlib.Results.Result;
    begin
       Pictlib.Streams.Open (Source, Pictlib.Streams.Const_Byte_Array_Access (Data));
@@ -99,12 +100,9 @@ procedure Pictlib_Real_World is
          Frame : constant Pictlib.Geometry.Rect := Pictlib.Decoding.Header (Decoder).Frame;
          Width : constant Positive := Pictlib.Geometry.Width (Frame);
          Height : constant Positive := Pictlib.Geometry.Height (Frame);
-         Storage : Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. 3 * Width * Height);
-         View : constant Pictlib.Images.Mutable_Image_View :=
-           (Descriptor => (Width => Pictlib.Image_Width (Width), Height => Pictlib.Image_Height (Height),
-                           Format => Pictlib.RGB_24, Stride => Pictlib.Row_Stride (3 * Width),
-                           Accessible_Bytes => Pictlib.Byte_Count (3 * Width * Height)),
-            Storage => Storage);
+         Storage : Pictlib.Streams.Byte_Array_Access :=
+           new Pictlib.Streams.Byte_Array (1 .. Pictlib_Testing.Canvases.Frame_Bytes (Decoder));
+         View : constant Pictlib.Images.Mutable_Image_View := Pictlib_Testing.Canvases.Frame_View (Decoder, Storage);
       begin
          Outcome := Pictlib.Decoding.Render (Decoder, View);
          if Pictlib.Results.Succeeded (Outcome) and then Reference'Length > 0 then

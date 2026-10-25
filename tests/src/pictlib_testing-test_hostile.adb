@@ -71,6 +71,8 @@ package body Pictlib_Testing.Test_Hostile is
    begin
       Canvases.Expect_Raster (Origin_At_Bound, 4, 4, "WWWW/WWWW/WWWW/WWWW", "a line after the origin at its bound");
       Canvases.Expect_Failure (Origin_Past_Bound, 4, 4, Errors.Opcode_Invalid, "origin past its bound", 16#0C#);
+      Canvases.Expect_Lenient (Origin_Past_Bound, 4, 4, "WWWW/WWWW/WWWW/WWWW", Errors.Partial_Picture,
+                               "origin past its bound, recovered", Pictlib.Recover_When_Safe);
       --  The failure names the origin's bound, 2^24 - 2^15, not the reach of points.
       Canvases.Render (Origin_Past_Bound, Decoder, Canvases.View (Storage'Access, 4, 4), Outcome);
       Assert (Outcome.First_Error.Context.Expected = 2 ** 24 - 2 ** 15
@@ -218,6 +220,7 @@ package body Pictlib_Testing.Test_Hostile is
          Canvases.Render (Whole.all, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Compatible,
                           Budget => Tight);
          Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded
+                 and then Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit
                  and then not Recorders.Has_Warning (Decoder, Errors.Approximated_Rendering),
                  "an uncharged skipped tile was reported as drawn: " & Outcome.First_Error.Code'Image);
          Tight := Pictlib.Limits.Default_Limits;
@@ -314,9 +317,7 @@ package body Pictlib_Testing.Test_Hostile is
       Assert (Pictlib.Results.Succeeded (Outcome), "zig-zag polygon failed with " & Outcome.First_Error.Code'Image);
       Small.Max_Drawing_Work := 50_000;
       Canvases.Expect_Failure (Polygon, 200, 200, Errors.Limit_Exceeded, "zig-zag polygon over budget", 16#71#,
-                               Budget => Small);
-      Canvases.Render (Polygon, Decoder, Canvases.View (Storage'Access, 200, 200), Outcome, Budget => Small);
-      Assert (Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit, "zig-zag polygon: wrong limit");
+                               Budget => Small, Limit => Pictlib.Drawing_Work_Limit);
       --  With drawing work to spare, a shape that the allocation total stops names that limit, at every total.
       for Step in 0 .. 60 loop
          Canvases.Render
@@ -389,7 +390,7 @@ package body Pictlib_Testing.Test_Hostile is
                  & Outcome.First_Error.Code'Image);
          Budget.Max_Drawing_Work := 9_999;
          Canvases.Expect_Failure (Same_Rects, 1, 16_384, Errors.Limit_Exceeded, "10,000 empty shapes on 9,999",
-                                  16#39#, Budget => Budget);
+                                  16#39#, Budget => Budget, Limit => Pictlib.Drawing_Work_Limit);
       end;
    end Shape_Work;
 
@@ -444,18 +445,18 @@ package body Pictlib_Testing.Test_Hostile is
       --  Rows are charged as they are converted, drawn or not.
       Small.Max_Drawing_Work := 10;
       Canvases.Expect_Failure (Wide, 16, 1, Errors.Limit_Exceeded, "row conversion over budget", 16#98#,
-                               Budget => Small);
+                               Budget => Small, Limit => Pictlib.Drawing_Work_Limit);
       Canvases.Expect_Failure (Missing, 16, 1, Errors.Limit_Exceeded, "skipped rows over budget", 16#98#,
-                               Budget => Small);
+                               Budget => Small, Limit => Pictlib.Drawing_Work_Limit);
       Small.Max_Drawing_Work := 10_000;
       Canvases.Expect_Failure (Stretched, 16, 1, Errors.Limit_Exceeded, "a copy's off-frame rows over budget",
-                               16#90#, Budget => Small);
+                               16#90#, Budget => Small, Limit => Pictlib.Drawing_Work_Limit);
       Small.Max_Drawing_Work := 10;
       --  Pattern opcodes are read, then charged, like every other opcode: a complete one past the budget reports
       --  the limit, one cut short the truncation, as a PixPat does.
       Small.Max_Drawing_Work := 0;
       Canvases.Expect_Failure (Pen_Bits, 4, 4, Errors.Limit_Exceeded, "PnPat past the budget", 16#09#,
-                               Budget => Small);
+                               Budget => Small, Limit => Pictlib.Drawing_Work_Limit);
       Canvases.Expect_Failure (Cut_Pen_Bits, 4, 4, Errors.Source_Unexpected_End, "cut PnPat past the budget",
                                16#09#, Budget => Small);
       Canvases.Expect_Failure (Cut_Pixel_Pattern, 4, 4, Errors.Source_Unexpected_End, "cut PnPixPat past the budget",

@@ -58,11 +58,14 @@ begin
       if Pictlib.Results.Succeeded (Outcome) then
          Outcome := Pictlib.Decoding.Render (Decoder, (Descriptor => Layout, Storage => Canvas));
       end if;
-      if Pictlib.Results.Succeeded (Outcome) and then Canvas.all = Pixels.all then
-         Ada.Text_IO.Put_Line ("a" & Length'Image & "-byte picture decoded back to its pixels");
-      else
+      if not Pictlib.Results.Succeeded (Outcome) then
          Ada.Text_IO.Put_Line ("decode failed: " & Outcome.First_Error.Code'Image);
          Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+      elsif Canvas.all /= Pixels.all then
+         Ada.Text_IO.Put_Line ("decoded pixels differ from the encoded ones");
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+      else
+         Ada.Text_IO.Put_Line ("a" & Length'Image & "-byte picture decoded back to its pixels");
       end if;
    end;
 end Pictlib_Example;

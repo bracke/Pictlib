@@ -74,15 +74,6 @@ procedure Pictlib_Conformance is
 
    function Path (Name, Extension : String) return String is (Directory & "/" & Name & "." & Extension);
 
-   procedure Write (File_Name : String; Data : Pictlib.Streams.Byte_Array) is
-      use Ada.Streams.Stream_IO;
-      File : File_Type;
-   begin
-      Create (File, Out_File, File_Name);
-      Pictlib.Streams.Byte_Array'Write (Stream (File), Data);
-      Close (File);
-   end Write;
-
    --  Pixels of a binary PPM that differ from the case's expected raster; Natural'Last when unreadable.
    function Differences (Item : Sample_Case; File_Name : String) return Natural is
       Result : Files.Raster;
@@ -162,7 +153,7 @@ procedure Pictlib_Conformance is
                end;
                Index := Index + 1;
             end loop;
-            Write (Target, Decoded (1 .. Count));
+            Files.Save_Path (Target, Decoded (1 .. Count));
             return Count > 0;
          end;
       end;
@@ -178,7 +169,7 @@ procedure Pictlib_Conformance is
          Fail (To_String (Item.Name) & ": encode " & Picture.Outcome.First_Error.Code'Image);
          return False;
       end if;
-      Write (Path (To_String (Item.Name), "pict"), Picture.Data.all);
+      Files.Save_Path (Path (To_String (Item.Name), "pict"), Picture.Data.all);
       return True;
    end Encode;
 

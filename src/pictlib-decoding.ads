@@ -76,7 +76,7 @@ package Pictlib.Decoding is
    --  @param Visitor Receives every opcode in order, the version opcode and HeaderOp included. While it is called,
    --  Read_Header, Enumerate and Render on Object fail with Invalid_State; it may Cancel, Reset or Finalize
    --  Object, which ends the enumeration with what a call in the state it leaves gets. Its exceptions propagate
-   --  and leave Object usable after Reset or Initialize.
+   --  and leave Object Stopped, if the visit left it Header_Read, until Reset or Initialize.
    --  @return Operation result.
    function Enumerate (Object : in out Decoder; Visitor : in out Opcode_Visitor'Class) return Results.Result;
    --  Render.
@@ -121,7 +121,8 @@ package Pictlib.Decoding is
    --  @param Index 1-based item position.
    --  @param Buffer Receives the item data from Buffer'First.
    --  @param Count Bytes copied; 0 on failure.
-   --  @return Success, Invalid_Argument for an index out of range, or Limit_Exceeded when Buffer is short.
+   --  @return Success, or Invalid_Argument for an index out of range or a Buffer shorter than the item (expecting
+   --  Buffer's length, with the item's as actual).
    function Copy_Metadata
      (Object : Decoder;
       Index : Positive;
@@ -137,9 +138,9 @@ package Pictlib.Decoding is
 
 private
    type Decoder is limited record
-      Current_State : Decoder_State := Created;
+      Current_State : aliased Decoder_State := Created;
       --  True while Enumerate calls a visitor, which may not read the picture again under it.
-      Visiting : Boolean := False;
+      Visiting : aliased Boolean := False;
       Decode_Options : Options;
       Inner : Internal.Decoder_State.State;
       First_Error : Errors.Error := Errors.Make (Errors.No_Error);

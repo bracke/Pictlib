@@ -93,7 +93,7 @@ package body Pictlib.Internal.Text is
    is
       pragma Unreferenced (Held);
       Key : constant Ada.Strings.Unbounded.Unbounded_String := Ada.Strings.Unbounded.To_Unbounded_String (Path);
-      Free : Natural := 0;
+      Spare : Natural := 0;
       Loaded : Natural := 0;
       Status : Textrender.Status_Code;
    begin
@@ -106,14 +106,14 @@ package body Pictlib.Internal.Text is
             return Textrender.Success;
          elsif Cache.Items (Index).Used then
             Loaded := Loaded + 1;
-         elsif Free = 0 then
-            Free := Index;
+         elsif Spare = 0 then
+            Spare := Index;
          end if;
       end loop;
       --  At most Slots of the Slots + 1 renderers are in use, so one is free.
-      Slot := Free;
+      Slot := Spare;
       declare
-         Item : Slot_Type renames Cache.Items (Free);
+         Item : Slot_Type renames Cache.Items (Spare);
       begin
          if Item.Renderer = null then
             Item.Renderer := new Textrender.Renderer;
@@ -137,7 +137,7 @@ package body Pictlib.Internal.Text is
             Oldest : Natural := 0;
          begin
             for Index in Cache.Items'Range loop
-               if Index /= Free and then Cache.Items (Index).Used
+               if Index /= Spare and then Cache.Items (Index).Used
                  and then (Oldest = 0 or else Cache.Items (Index).Stamp < Cache.Items (Oldest).Stamp)
                then
                   Oldest := Index;

@@ -1,6 +1,7 @@
 # Proof Profile
 
-`pictlib_prove` runs GNATprove, through `alr exec` (never from `PATH`), at
+`pictlib_prove` runs GNATprove, through `alr exec` (the one `alr install gnatprove` put under the Alire
+home, one on `PATH` only when there is none), at
 `--level=0` on the proof-designated units of `proof/pictlib_proof.gpr`, and
 fails on any unproved check, any medium or high diagnostic, or a declared SPARK
 body that was skipped:

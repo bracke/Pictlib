@@ -56,26 +56,28 @@ package body Pictlib_Testing.Test_Decoder is
      (Object : in out Far_Offset; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result
    is (Object.Inner.Skip (Count));
 
-   --  A source that delivers honestly but claims one byte more than it skipped.
+   --  A source that delivers honestly but claims one byte more than it skipped, or with On_Read than it read.
    type Overreporting is limited new Pictlib.Streams.Source with record
       Inner : Pictlib.Streams.Memory_Source;
+      On_Read : Boolean := False;
    end record;
    overriding function Read
-     (Object : in out Overreporting; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result
-   is (Object.Inner.Read (Buffer));
+     (Object : in out Overreporting; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result;
    overriding function Offset (Object : Overreporting) return Pictlib.Source_Offset is (Object.Inner.Offset);
    overriding function Skip
      (Object : in out Overreporting; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result;
 
    --  What a meddling visitor does to its decoder at its first opcode.
-   type Meddle is (Cancels, Enumerates, Reads_Header, Renders, Resets, Finalizes, Raises);
+   type Meddle is (Cancels, Enumerates, Reads_Header, Renders, Resets, Resets_And_Reads_Header, Finalizes, Raises);
 
    Visitor_Failure : exception;
 
-   --  A visitor that, at its first opcode, calls into the decoder it is visiting.
+   --  A visitor that, at one opcode, calls into the decoder it is visiting.
    type Meddling is new Decoding.Opcode_Visitor with record
       Target : access Decoding.Decoder;
       Move : Meddle := Cancels;
+      --  The visit Move is made at: 1 and 2 are Picture's version opcode and HeaderOp, 3 its first opcode after.
+      At_Visit : Positive := 1;
       --  The source Resets rebinds.
       Input : access Pictlib.Streams.Source'Class;
       Visits : Natural := 0;
@@ -93,7 +95,7 @@ package body Pictlib_Testing.Test_Decoder is
       Storage : aliased Bytes := [1 .. 3 * 8 * 4 => 0];
    begin
       Object.Visits := Object.Visits + 1;
-      if Object.Visits = 1 then
+      if Object.Visits = Object.At_Visit then
          case Object.Move is
             when Cancels => Decoding.Cancel (Object.Target.all);
             when Enumerates => Object.Nested := Decoding.Enumerate (Object.Target.all, Inner);
@@ -101,6 +103,9 @@ package body Pictlib_Testing.Test_Decoder is
             when Renders =>
                Object.Nested := Decoding.Render (Object.Target.all, Canvases.View (Storage'Access, 8, 4));
             when Resets => Decoding.Reset (Object.Target.all, Object.Input);
+            when Resets_And_Reads_Header =>
+               Decoding.Reset (Object.Target.all, Object.Input);
+               Object.Nested := Decoding.Read_Header (Object.Target.all);
             when Finalizes => Decoding.Finalize (Object.Target.all);
             when Raises => raise Visitor_Failure;
          end case;
@@ -114,8 +119,17 @@ package body Pictlib_Testing.Test_Decoder is
       use type Pictlib.Byte_Count;
       Step : constant Pictlib.Streams.Source_Result := Object.Inner.Skip (Count);
    begin
-      return (Step with delta Count => Step.Count + 1);
+      return (Step with delta Count => Step.Count + (if Object.On_Read then 0 else 1));
    end Skip;
+
+   overriding function Read
+     (Object : in out Overreporting; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result
+   is
+      use type Pictlib.Byte_Count;
+      Step : constant Pictlib.Streams.Source_Result := Object.Inner.Read (Buffer);
+   begin
+      return (Step with delta Count => Step.Count + (if Object.On_Read then 1 else 0));
+   end Read;
 
    overriding function Name (T : Test) return AUnit.Message_String is
       pragma Unreferenced (T);
@@ -284,81 +298,107 @@ package body Pictlib_Testing.Test_Decoder is
       end;
    end Cancellation;
 
-   --  A visitor's nested Read_Header and Render are refused; one that resets or finalizes its decoder ends the
-   --  enumeration in the state it left; one that raises leaves the decoder usable.
+   --  At a header event and at an opcode after it: a visitor's nested Read_Header, Enumerate and Render are
+   --  refused; one that resets or finalizes its decoder ends the enumeration in the state it left, and a reset
+   --  decoder reads no header under its visitor; one that raises leaves the decoder Stopped until Reset.
    procedure Meddling_Visitors (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
       Source : aliased Pictlib.Streams.Memory_Source;
       Again : aliased Pictlib.Streams.Memory_Source;
       Outcome : Pictlib.Results.Result;
-   begin
-      for Move in Reads_Header .. Renders loop
-         declare
-            Inside : aliased Decoding.Decoder;
-            Visitor : Meddling := (Target => Inside'Unchecked_Access, Move => Move, others => <>);
-         begin
-            Pictlib.Streams.Open (Source, Picture'Access);
-            Decoding.Initialize (Inside, Source'Access);
-            Outcome := Decoding.Read_Header (Inside);
-            Assert (Pictlib.Results.Succeeded (Outcome), "the header was not read");
-            Outcome := Decoding.Enumerate (Inside, Visitor);
-            Assert (Visitor.Nested.First_Error.Code = Pictlib.Errors.Invalid_State,
-                    "a visitor's nested " & Move'Image & " was not refused");
-            Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.State (Inside) = Decoding.Finished,
-                    "a refused nested " & Move'Image & " disturbed the enumeration");
-         end;
-      end loop;
+      Storage : aliased Bytes := [1 .. 3 * 8 * 4 => 0];
 
-      for Move in Resets .. Finalizes loop
-         declare
-            Inside : aliased Decoding.Decoder;
-            Visitor : Meddling :=
-              (Target => Inside'Unchecked_Access, Move => Move, Input => Again'Unchecked_Access, others => <>);
-         begin
-            Pictlib.Streams.Open (Source, Picture'Access);
-            Pictlib.Streams.Open (Again, Picture'Access);
-            Decoding.Initialize (Inside, Source'Access);
-            Outcome := Decoding.Read_Header (Inside);
-            Assert (Pictlib.Results.Succeeded (Outcome), "the header was not read");
-            Outcome := Decoding.Enumerate (Inside, Visitor);
-            Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State and then Visitor.Visits = 1,
-                    "a decoder its visitor ran " & Move'Image & " on read on");
-            Assert (Decoding.State (Inside) = (if Move = Resets then Decoding.Ready else Decoding.Created),
-                    "the state " & Move'Image & " left did not stand");
-            if Move = Resets then
-               Outcome := Decoding.Read_Header (Inside);
-               Assert (Pictlib.Results.Succeeded (Outcome), "a decoder reset by its visitor read no header");
-               Outcome := Decoding.Enumerate (Inside, Visitor);
-               Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.State (Inside) = Decoding.Finished,
-                       "a decoder reset by its visitor did not enumerate the new source");
-            end if;
-         end;
-      end loop;
-
-      declare
-         Inside : aliased Decoding.Decoder;
-         Visitor : Meddling := (Target => Inside'Unchecked_Access, Move => Raises, others => <>);
-         Events : Recorders.Recorder;
-         Raised : Boolean := False;
+      procedure Start (Inside : in out Decoding.Decoder) is
       begin
          Pictlib.Streams.Open (Source, Picture'Access);
+         Pictlib.Streams.Open (Again, Other'Access);
          Decoding.Initialize (Inside, Source'Access);
          Outcome := Decoding.Read_Header (Inside);
          Assert (Pictlib.Results.Succeeded (Outcome), "the header was not read");
+      end Start;
+   begin
+      for At_Visit in 1 .. 3 loop
+         declare
+            Where : constant String := " at visit" & At_Visit'Image;
          begin
-            Outcome := Decoding.Enumerate (Inside, Visitor);
-         exception
-            when Visitor_Failure => Raised := True;
+            for Move in Enumerates .. Renders loop
+               declare
+                  Inside : aliased Decoding.Decoder;
+                  Visitor : Meddling :=
+                    (Target => Inside'Unchecked_Access, Move => Move, At_Visit => At_Visit, others => <>);
+               begin
+                  Start (Inside);
+                  Outcome := Decoding.Enumerate (Inside, Visitor);
+                  Assert (Visitor.Nested.First_Error.Code = Pictlib.Errors.Invalid_State,
+                          "a visitor's nested " & Move'Image & " was not refused" & Where);
+                  Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.State (Inside) = Decoding.Finished,
+                          "a refused nested " & Move'Image & " disturbed the enumeration" & Where);
+               end;
+            end loop;
+
+            for Move in Resets .. Finalizes loop
+               declare
+                  Inside : aliased Decoding.Decoder;
+                  Visitor : Meddling :=
+                    (Target => Inside'Unchecked_Access, Move => Move, At_Visit => At_Visit,
+                     Input => Again'Unchecked_Access, others => <>);
+               begin
+                  Start (Inside);
+                  Outcome := Decoding.Enumerate (Inside, Visitor);
+                  Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State and then Visitor.Visits = At_Visit,
+                          "a decoder its visitor ran " & Move'Image & " on read on" & Where);
+                  Assert (Decoding.State (Inside) = (if Move = Finalizes then Decoding.Created else Decoding.Ready),
+                          "the state " & Move'Image & " left did not stand" & Where);
+                  if Move = Resets_And_Reads_Header then
+                     Assert (Visitor.Nested.First_Error.Code = Pictlib.Errors.Invalid_State,
+                             "a decoder reset by its visitor read a header under it" & Where);
+                  end if;
+                  if Move /= Finalizes then
+                     --  The source the visitor bound, Other, a version 1 picture.
+                     Outcome := Decoding.Read_Header (Inside);
+                     Assert (Pictlib.Results.Succeeded (Outcome)
+                             and then Decoding.Header (Inside).Version = Pictlib.Version_1,
+                             "a decoder reset by its visitor did not read the new source" & Where);
+                     Outcome := Decoding.Enumerate (Inside, Visitor);
+                     Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.State (Inside) = Decoding.Finished,
+                             "a decoder reset by its visitor did not enumerate the new source" & Where);
+                  end if;
+               end;
+            end loop;
+
+            declare
+               Inside : aliased Decoding.Decoder;
+               Visitor : Meddling :=
+                 (Target => Inside'Unchecked_Access, Move => Raises, At_Visit => At_Visit, others => <>);
+               Events : Recorders.Recorder;
+               Raised : Boolean := False;
+            begin
+               Start (Inside);
+               begin
+                  Outcome := Decoding.Enumerate (Inside, Visitor);
+               exception
+                  when Visitor_Failure => Raised := True;
+               end;
+               Assert (Raised, "a visitor's exception did not propagate" & Where);
+               Assert (Decoding.State (Inside) = Decoding.Stopped,
+                       "a decoder whose visitor raised was not stopped" & Where);
+               Outcome := Decoding.Render (Inside, Canvases.View (Storage'Access, 8, 4));
+               Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State,
+                       "a decoder whose visitor raised rendered the rest of its stream" & Where);
+               Outcome := Decoding.Enumerate (Inside, Events);
+               Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State,
+                       "a decoder whose visitor raised enumerated the rest of its stream" & Where);
+               Pictlib.Streams.Open (Source, Picture'Access);
+               Decoding.Reset (Inside, Source'Access);
+               Outcome := Decoding.Read_Header (Inside);
+               Assert (Pictlib.Results.Succeeded (Outcome),
+                       "a decoder whose visitor raised read no header after Reset" & Where);
+               Outcome := Decoding.Enumerate (Inside, Events);
+               Assert (Pictlib.Results.Succeeded (Outcome) and then Events.Count > 0,
+                       "a decoder whose visitor raised did not enumerate after Reset" & Where);
+            end;
          end;
-         Assert (Raised, "a visitor's exception did not propagate");
-         Pictlib.Streams.Open (Source, Picture'Access);
-         Decoding.Reset (Inside, Source'Access);
-         Outcome := Decoding.Read_Header (Inside);
-         Assert (Pictlib.Results.Succeeded (Outcome), "a decoder whose visitor raised read no header after Reset");
-         Outcome := Decoding.Enumerate (Inside, Events);
-         Assert (Pictlib.Results.Succeeded (Outcome) and then Events.Count > 0,
-                 "a decoder whose visitor raised did not enumerate after Reset");
-      end;
+      end loop;
    end Meddling_Visitors;
 
    procedure Reset_Reuses_The_Decoder (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -457,6 +497,24 @@ package body Pictlib_Testing.Test_Decoder is
       Outcome := Decoding.Enumerate (Decoder, Visitor);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Internal_Invariant_Failed,
               "a source claiming more than it skipped was trusted: " & Outcome.First_Error.Code'Image);
+
+      --  One claiming more than it read: a claim within the request cannot be told from the truth, but the first
+      --  read it fills claims more than was asked.
+      declare
+         Reader : aliased Overreporting;
+         Other_Decoder : Decoding.Decoder;
+      begin
+         Reader.On_Read := True;
+         Pictlib.Streams.Open (Reader.Inner, Skipped'Access);
+         Decoding.Initialize (Other_Decoder, Reader'Access);
+         Outcome := Decoding.Read_Header (Other_Decoder);
+         if Pictlib.Results.Succeeded (Outcome) then
+            Outcome := Decoding.Enumerate (Other_Decoder, Visitor);
+         end if;
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Internal_Invariant_Failed
+                 and then Decoding.State (Other_Decoder) = Decoding.Failed,
+                 "a source claiming more than it read was trusted: " & Outcome.First_Error.Code'Image);
+      end;
    end Overreporting_Source;
 
    procedure Source_Offsets (T : in out AUnit.Test_Cases.Test_Case'Class) is

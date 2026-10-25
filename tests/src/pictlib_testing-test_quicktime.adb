@@ -258,7 +258,9 @@ package body Pictlib_Testing.Test_QuickTime is
       begin
          Budget.Max_Drawing_Work := High + 5;
          Canvases.Render (After_Image, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome, Budget => Budget);
-         Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded, "the placeholder cost less than its rows");
+         Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded
+                 and then Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit,
+                 "the placeholder cost less than its rows");
          Budget.Max_Drawing_Work := High + 6;
          Canvases.Render (After_Image, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome, Budget => Budget);
          Assert (Pictlib.Results.Succeeded (Outcome), "the placeholder cost more than its rows: "
@@ -535,7 +537,8 @@ package body Pictlib_Testing.Test_QuickTime is
          Canvases.Render (Picture, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome,
                           (Strictness => Pictlib.Recover_When_Safe, others => <>),
                           (Defaults with delta Max_Allocation_Bytes => Pictlib.Byte_Count (Least_Jpeglib) + 143));
-         Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded,
+         Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded
+                 and then Outcome.First_Error.Context.Limit = Pictlib.Allocation_Byte_Limit,
                  "jpeglib's allocation limit was recovered: " & Outcome.First_Error.Code'Image);
       end;
       --  Decoding is drawing work whether or not anything is drawn: an image moved off the frame still costs its

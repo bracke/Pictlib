@@ -30,6 +30,7 @@ package body Pictlib.Internal.Opcode_Reader is
 
    function Skip_Pixel_Pattern (S : in out Session) return Results.Result is
       Pattern_Type : Interfaces.Unsigned_16;
+      Kind : Pixmaps.Pattern_Kind;
       --  The rows are laid out, and checked, as rendering decodes them, so both agree where the opcode ends.
       Header : Pixmaps.Bits_Header;
       Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
@@ -37,20 +38,21 @@ package body Pictlib.Internal.Opcode_Reader is
       if Results.Succeeded (Outcome) then
          Outcome := Sessions.Skip_Data (S, Bit_Pattern_Bytes);  --  pat1Data, the 1-bit fallback pattern
       end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Pixmaps.Classify_Pattern (S, Pattern_Type, Kind);
+      end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
-      case Pattern_Type is
-         when Color_Pattern_Type =>
+      case Kind is
+         when Pixmaps.Color_Pattern =>
             Outcome := Pixmaps.Read_Pattern_Header (S, Header, For_Decoding => False);
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
             return Pixmaps.Skip_Pixels (S, Header);
-         when Dither_Pattern_Type =>
+         when Pixmaps.Dither_Pattern =>
             return Sessions.Skip_Data (S, RGB_Color_Bytes);
-         when others =>
-            return Sessions.Fail (S, Errors.Pattern_Invalid, Dither_Pattern_Type, Byte_Count (Pattern_Type));
       end case;
    end Skip_Pixel_Pattern;
 
@@ -115,7 +117,7 @@ package body Pictlib.Internal.Opcode_Reader is
             Bytes.Free (Data);
             return Sessions.Reject_Or_Warn
               (S, Errors.Opcode_Length_Invalid, Errors.Data_Loss, Errors.Data_Loss,
-               (Sessions.Context_Of (Event) with delta Source => 0, Expected => Needed, Actual => Length));
+               (Sessions.Context_Of (Event) with delta Expected => Length, Actual => Needed));
          end;
       end if;
       declare
@@ -283,7 +285,7 @@ package body Pictlib.Internal.Opcode_Reader is
       Event.Reserved := Opcodes.Is_Reserved (Op);
       Outcome := Sessions.Claim_Ordinal (S, Event.Ordinal);
       if Results.Succeeded (Outcome) then
-         Sessions.Begin_Opcode_Data (S);
+         Sessions.Begin_Opcode_Data (S, Event);
          declare
             Handled : Boolean := False;
          begin
@@ -297,6 +299,7 @@ package body Pictlib.Internal.Opcode_Reader is
          end;
          Event.Data_Length := Sessions.Opcode_Data_Length (S);
       end if;
+      Sessions.End_Opcode_Data (S);
       if not Results.Succeeded (Outcome) then
          return Sessions.Attributed (Outcome, Event);
       end if;

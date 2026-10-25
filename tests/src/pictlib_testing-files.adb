@@ -16,6 +16,15 @@ package body Pictlib_Testing.Files is
       return Result;
    end Load_Path;
 
+   procedure Save_Path (Path : String; Data : Pictlib.Streams.Byte_Array) is
+      use Ada.Streams.Stream_IO;
+      File : File_Type;
+   begin
+      Create (File, Out_File, Path);
+      Pictlib.Streams.Byte_Array'Write (Stream (File), Data);
+      Close (File);
+   end Save_Path;
+
    function Read_Raster (Path : String; Item : out Raster) return Boolean is
       Data : Bytes_Access;
       Position : Positive;

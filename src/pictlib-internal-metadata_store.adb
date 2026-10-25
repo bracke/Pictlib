@@ -62,8 +62,7 @@ package body Pictlib.Internal.Metadata_Store is
          if Item'Length > Buffer'Length then
             return Results.Failure
               (Errors.Make
-                 (Errors.Limit_Exceeded,
-                  (Expected => Buffer'Length, Actual => Item'Length, Limit => Output_Byte_Limit, others => <>)));
+                 (Errors.Invalid_Argument, (Expected => Buffer'Length, Actual => Item'Length, others => <>)));
          end if;
          Buffer (Buffer'First .. Buffer'First + Item'Length - 1) := Item;
          Count := Item'Length;

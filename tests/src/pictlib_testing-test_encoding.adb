@@ -148,6 +148,17 @@ package body Pictlib_Testing.Test_Encoding is
       Round_Trip (Samples.Gray_Ramp, 37, 3, Encoding.Mono_1, "Mono_1 threshold 128");
       Round_Trip (Samples.Gray_Ramp, 37, 3, Encoding.Mono_1, "Mono_1 threshold 200",
                   (Mono_Threshold => 200, others => <>));
+      Round_Trip (Samples.Luminance_Edges, 16, 2, Encoding.Mono_1, "Mono_1 at the threshold");
+      --  The oracle is held to the luminances worked out by hand, either side of each threshold.
+      declare
+         Default : constant Encoded :=
+           Encode (Samples.Luminance_Edges, 8, 1, (Layout => Encoding.Mono_1, others => <>));
+         Raised : constant Encoded :=
+           Encode (Samples.Luminance_Edges, 8, 1, (Layout => Encoding.Mono_1, Mono_Threshold => 200, others => <>));
+      begin
+         Canvases.Expect_Raster (Default.Data.all, 8, 1, "BWWWWWBW", "Mono_1 at threshold 128");
+         Canvases.Expect_Raster (Raised.Data.all, 8, 1, "BBBWBBBB", "Mono_1 at threshold 200");
+      end;
    end Layouts;
 
    procedure Row_Lengths (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -377,6 +388,24 @@ package body Pictlib_Testing.Test_Encoding is
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_Argument
               and then Encoding.State (Encoder) = Encoding.Ready,
               "a view without storage was encoded, or it failed the encoder");
+      Assert (Outcome.First_Error.Context.Expected = 48 and then Outcome.First_Error.Context.Actual = 48,
+              "an invalid view did not report the bytes a valid one holds against its own");
+      --  A failure found before anything is written leaves the encoder Ready for another image.
+      declare
+         Many : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
+         Few : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 4, 4);
+      begin
+         Encoding.Initialize (Encoder, Output'Access, (Layout => Encoding.Indexed_8, others => <>));
+         Outcome := Encoding.Encode (Encoder, Samples.View (Many, 37, 23));
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Too_Many_Colors
+                 and then Encoding.State (Encoder) = Encoding.Ready
+                 and then Encoding.Last_Error (Encoder).Code = Pictlib.Errors.No_Error
+                 and then Encoding.Bytes_Written (Encoder) = 0,
+                 "a failure before writing failed the encoder");
+         Outcome := Encoding.Encode (Encoder, Samples.View (Few, 4, 4));
+         Assert (Pictlib.Results.Succeeded (Outcome) and then Encoding.State (Encoder) = Encoding.Encoded,
+                 "an encoder left Ready did not encode the next image");
+      end;
    end Rejections;
 
    procedure Destinations (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -387,9 +416,10 @@ package body Pictlib_Testing.Test_Encoding is
    begin
       Assert (Pictlib.Results.Succeeded (Trickled.Outcome) and then Trickled.Data.all = Whole.Data.all,
               "one-byte writes changed the output");
-      Assert (Cramped.Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
-              and then Cramped.Outcome.First_Error.Context.Limit = Pictlib.Output_Byte_Limit,
-              "a full destination was not reported");
+      Assert (Cramped.Outcome.First_Error.Code = Pictlib.Errors.Destination_Write_Failed
+              and then Cramped.Outcome.First_Error.Context.Limit = Pictlib.No_Limit
+              and then Cramped.Outcome.First_Error.Context.Expected = 700,
+              "a full destination was not reported as its capacity");
       --  A destination that fails once and would take the rest is written nothing more: no gap, no end opcode
       --  after one.
       declare
@@ -408,6 +438,17 @@ package body Pictlib_Testing.Test_Encoding is
          Assert (Output.Writes_After = 0, "the encoder wrote" & Output.Writes_After'Image & " times after a failure");
          Assert (Encoding.Bytes_Written (Encoder) = Pictlib.Byte_Count (Output.Offset),
                  "Bytes_Written disagrees with the destination after a failure");
+         --  A failure while writing is terminal: later calls change neither the state nor the last error.
+         Assert (Encoding.State (Encoder) = Encoding.Failed
+                 and then Encoding.Last_Error (Encoder).Code = Pictlib.Errors.Destination_Write_Failed,
+                 "a failed write did not fail the encoder");
+         Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 37, 23));
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State, "a failed encoder encoded");
+         Outcome := Encoding.Finish (Encoder);
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State, "a failed encoder finished");
+         Assert (Encoding.State (Encoder) = Encoding.Failed
+                 and then Encoding.Last_Error (Encoder).Code = Pictlib.Errors.Destination_Write_Failed,
+                 "a wrong-state call changed a failed encoder");
       end;
    end Destinations;
 
@@ -435,8 +476,14 @@ package body Pictlib_Testing.Test_Encoding is
       Assert (Pictlib.Results.Succeeded (Outcome) and then Encoding.State (Encoder) = Encoding.Finished, "finish");
       Encoding.Initialize (Encoder, Output'Access);
       Encoding.Cancel (Encoder);
+      Assert (Encoding.State (Encoder) = Encoding.Cancelled, "a ready encoder was not cancelled");
       Outcome := Encoding.Encode (Encoder, Image);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Operation_Cancelled, "a cancelled encoder encoded");
+      Outcome := Encoding.Finish (Encoder);
+      Assert (Outcome.First_Error.Code = Pictlib.Errors.Operation_Cancelled
+              and then Encoding.State (Encoder) = Encoding.Cancelled
+              and then Encoding.Last_Error (Encoder).Code = Pictlib.Errors.No_Error,
+              "a cancelled encoder finished, or a wrong-state call changed it");
       Encoding.Finalize (Encoder);
       Encoding.Finalize (Encoder);
       Assert (Encoding.State (Encoder) = Encoding.Created, "finalize is not idempotent");

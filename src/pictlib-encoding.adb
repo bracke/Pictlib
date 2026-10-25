@@ -397,7 +397,8 @@ package body Pictlib.Encoding is
       Image : Images.Image_View;
       Settings : Options;
       Item : Plan;
-      Colors : Palette) return Results.Result
+      Colors : Palette;
+      Started : out Boolean) return Results.Result
    is
       Budget : Limits.Limit_Set renames Object.Encode_Limits;
       File_Header : constant Streams.Byte_Array (1 .. Internal.File_Header_Bytes) := [others => 0];
@@ -405,6 +406,7 @@ package body Pictlib.Encoding is
       Output : Writers.Writer;
       Outcome : Results.Result := Results.Success;
    begin
+      Started := False;
       --  The dry run counts what the output will hold, the file header included, against the limit as it was
       --  set, so a picture that does not fit is reported in the caller's terms.
       Writers.Start (Measure, null, Budget.Max_Output_Bytes);
@@ -417,6 +419,7 @@ package body Pictlib.Encoding is
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
+      Started := True;
       Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes);
       if Settings.File_Header then
          Outcome := Writers.Put (Output, File_Header);
@@ -434,11 +437,17 @@ package body Pictlib.Encoding is
       Colors : Palette;
       Layout : Layout_Kind;
       Outcome : Results.Result;
+      --  Whether the destination was written to: a failure before leaves the encoder Ready.
+      Started : Boolean := False;
    begin
       if Object.Current_State /= Ready then
          return Wrong_State (Object);
       elsif not Images.Is_Valid (Image) then
-         return Invalid (0, 0);
+         --  The least a valid view of its size and format holds, against what it holds.
+         return Invalid
+           (Images.Minimum_Row_Bytes (Image.Descriptor.Width, Image.Descriptor.Format)
+              * Byte_Count (Image.Descriptor.Height),
+            Image.Descriptor.Accessible_Bytes);
       elsif Settings.Horizontal_Resolution <= 0 or else Settings.Vertical_Resolution <= 0 then
          return Invalid (1, 0);
       end if;
@@ -456,13 +465,15 @@ package body Pictlib.Encoding is
          begin
             Outcome := Check_Plan (Item, Colors, Object.Encode_Limits);
             if Results.Succeeded (Outcome) then
-               Outcome := Write (Object, Image, Settings, Item, Colors);
+               Outcome := Write (Object, Image, Settings, Item, Colors, Started);
             end if;
          end;
       end if;
       if Results.Succeeded (Outcome) then
          Object.Layout := Layout;
          Object.Current_State := Encoded;
+      elsif not Started then
+         return Outcome;
       end if;
       return Fail (Object, Outcome);
    end Encode;

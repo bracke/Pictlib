@@ -249,6 +249,27 @@ package body Pictlib_Testing.Test_Stress is
       Decode ((Defaults with delta Max_Embedded_Image_Pixels => 10), Retained, True,
               Pictlib.Embedded_Image_Pixel_Limit);
       Decode ((Defaults with delta Max_Warning_Records => 0), Retained, True, Pictlib.No_Limit);
+      --  A reserved opcode warns: one warning by default, none, and no failure, under a zero cap.
+      declare
+         Warns : aliased constant Bytes := V2_Picture (0, 0, 4, 4, W (16#0024#) & W (0));
+         Source : aliased Pictlib.Streams.Memory_Source;
+         Decoder : Decoding.Decoder;
+         Visitor : Null_Visitor;
+         Outcome : Pictlib.Results.Result;
+      begin
+         for Cap in reverse 0 .. 1 loop
+            Pictlib.Streams.Open (Source, Warns'Unchecked_Access);
+            Decoding.Initialize
+              (Decoder, Source'Access, Decode_Limits => (Defaults with delta Max_Warning_Records => Cap));
+            Outcome := Decoding.Read_Header (Decoder);
+            if Pictlib.Results.Succeeded (Outcome) then
+               Outcome := Decoding.Enumerate (Decoder, Visitor);
+            end if;
+            Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.Warning_Count (Decoder) = Cap,
+                    "a warning cap of" & Cap'Image & " kept" & Decoding.Warning_Count (Decoder)'Image
+                    & " warnings, or failed with " & Outcome.First_Error.Code'Image);
+         end loop;
+      end;
       Encode ((Defaults with delta Max_Output_Bytes => 100));
       declare
          Polygon : aliased constant Bytes :=
@@ -264,7 +285,8 @@ package body Pictlib_Testing.Test_Stress is
          if Pictlib.Results.Succeeded (Outcome) then
             Outcome := Decoding.Enumerate (Decoder, Visitor);
          end if;
-         Assert (Outcome.First_Error.Context.Limit = Pictlib.Polygon_Point_Limit,
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
+                 and then Outcome.First_Error.Context.Limit = Pictlib.Polygon_Point_Limit,
                  "a polygon budget reported " & Outcome.First_Error.Context.Limit'Image);
          Seen (Pictlib.Polygon_Point_Limit) := True;
       end;

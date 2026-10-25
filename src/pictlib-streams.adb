@@ -1,3 +1,5 @@
+with Pictlib.Internal.Replies;
+
 package body Pictlib.Streams is
    function Read_Exact (Object : in out Source'Class; Buffer : out Byte_Array) return Results.Result is
       Completed : Natural := 0;
@@ -6,36 +8,22 @@ package body Pictlib.Streams is
          declare
             Step : constant Source_Result :=
               Object.Read (Buffer (Buffer'First + Completed .. Buffer'Last));
-            Remaining : constant Natural := Buffer'Length - Completed;
+            Failure : constant Errors.Error :=
+              Internal.Replies.Judged (Step, Byte_Count (Buffer'Length - Completed), Object.Offset);
          begin
-            if Errors.Is_Fatal (Step.Error) then
-               return Results.Failure (Step.Error);
-            elsif Step.Count > Byte_Count (Remaining) then
+            if Errors.Is_Fatal (Failure) then
+               return Results.Failure (Failure);
+            elsif Step.Count = 0 then
+               --  Nothing, at the end of the input.
                return Results.Failure
                  (Errors.Make
-                    (Errors.Internal_Invariant_Failed,
+                    (Errors.Source_Unexpected_End,
                      (Source => Object.Offset,
-                      Expected => Byte_Count (Remaining),
-                      Actual => Step.Count,
+                      Expected => Byte_Count (Buffer'Length),
+                      Actual => Byte_Count (Completed),
                       others => <>)));
-            elsif Step.Count = 0 then
-               if Step.End_Of_Input then
-                  return Results.Failure
-                    (Errors.Make
-                       (Errors.Source_Unexpected_End,
-                        (Source => Object.Offset,
-                         Expected => Byte_Count (Buffer'Length),
-                         Actual => Byte_Count (Completed),
-                         others => <>)));
-               else
-                  return Results.Failure
-                    (Errors.Make
-                       (Errors.Source_Zero_Progress,
-                        (Source => Object.Offset, others => <>)));
-               end if;
-            else
-               Completed := Completed + Natural (Step.Count);
             end if;
+            Completed := Completed + Natural (Step.Count);
          end;
       end loop;
       return Results.Success;
@@ -46,37 +34,19 @@ package body Pictlib.Streams is
    begin
       while Completed < Count loop
          declare
-            Remaining : constant Byte_Count := Count - Completed;
-            Step : constant Source_Result := Object.Skip (Remaining);
+            Step : constant Source_Result := Object.Skip (Count - Completed);
+            Failure : constant Errors.Error := Internal.Replies.Judged (Step, Count - Completed, Object.Offset);
          begin
-            if Errors.Is_Fatal (Step.Error) then
-               return Results.Failure (Step.Error);
-            elsif Step.Count > Remaining then
+            if Errors.Is_Fatal (Failure) then
+               return Results.Failure (Failure);
+            elsif Step.Count = 0 then
+               --  Nothing, at the end of the input.
                return Results.Failure
                  (Errors.Make
-                    (Errors.Internal_Invariant_Failed,
-                     (Source => Object.Offset,
-                      Expected => Remaining,
-                      Actual => Step.Count,
-                      others => <>)));
-            elsif Step.Count = 0 then
-               if Step.End_Of_Input then
-                  return Results.Failure
-                    (Errors.Make
-                       (Errors.Source_Unexpected_End,
-                        (Source => Object.Offset,
-                         Expected => Count,
-                         Actual => Completed,
-                         others => <>)));
-               else
-                  return Results.Failure
-                    (Errors.Make
-                       (Errors.Source_Zero_Progress,
-                        (Source => Object.Offset, others => <>)));
-               end if;
-            else
-               Completed := Completed + Step.Count;
+                    (Errors.Source_Unexpected_End,
+                     (Source => Object.Offset, Expected => Count, Actual => Completed, others => <>)));
             end if;
+            Completed := Completed + Step.Count;
          end;
       end loop;
       return Results.Success;
@@ -196,6 +166,8 @@ package body Pictlib.Streams is
    is
       Available : Natural;
       To_Copy : Natural;
+      --  Where the write starts, for a full buffer's report.
+      Start : constant Natural := Object.Position;
    begin
       if Object.Storage = null then
          return (Error => Errors.Make (Errors.Destination_Write_Failed), Count => 0);
@@ -213,12 +185,12 @@ package body Pictlib.Streams is
 
       if To_Copy < Buffer'Length and then To_Copy = Available then
          return
+           --  The storage holds fewer bytes than the write needs: its length, against where the write would end.
            (Error => Errors.Make
-              (Errors.Limit_Exceeded,
+              (Errors.Destination_Write_Failed,
                (Destination => Destination_Offset (Object.Position),
-                Expected => Byte_Count (Buffer'Length),
-                Actual => Byte_Count (To_Copy),
-                Limit => Output_Byte_Limit,
+                Expected => Byte_Count (Object.Storage'Length),
+                Actual => Byte_Count (Start) + Byte_Count (Buffer'Length),
                 others => <>)),
             Count => Byte_Count (To_Copy));
       end if;

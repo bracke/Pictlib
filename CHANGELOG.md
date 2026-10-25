@@ -192,10 +192,13 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   so a cancelled decoder answers `Operation_Cancelled` until `Reset`; a
   visitor that calls `Read_Header`, `Enumerate` or `Render` from inside is
   refused with `Invalid_State` instead of draining the stream under it.
-  An exception the visitor raises propagates and leaves the decoder usable
-  after `Reset` or `Initialize`; it used to leave every later `Read_Header`,
-  `Enumerate` and `Render` refused for good. The specification and
-  `Enumerate`'s documentation state these rules, and each is tested.
+  An exception the visitor raises, or an abort, propagates and leaves the
+  decoder `Stopped`, its stream partly read, until `Reset` or `Initialize`;
+  it used to leave every later `Read_Header`, `Enumerate` and `Render`
+  refused for good, and then, once that was fixed, `Header_Read`, so a
+  `Render` could draw the rest of the picture without its first opcodes.
+  The specification and `Enumerate`'s documentation state these rules, and
+  each is tested at a header opcode and at one after it.
 - textrender's renderers are created and destroyed under the textrender lock
   as well as used under it: textrender promises nothing about initializing
   or finalizing one while another task renders.
@@ -206,6 +209,28 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - ChExtra is read as the 4.12 fixed-point value QuickDraw records, and
   widens every character but the space, as Inside Macintosh says; it was
   read as whole pixels and widened spaces too.
+- An encoder stays `Ready`, its last error unset, after a failure found
+  before anything is written (an invalid view or resolution, too wide an
+  image, too many colors, a frame, allocation or output limit), so another
+  image can be tried; only a failure while writing leaves it `Failed`. An
+  invalid view's failure names the bytes a valid one holds against its own.
+- A full `Fixed_Buffer_Destination` fails with `Destination_Write_Failed`,
+  expecting its length, and a short `Copy_Metadata` buffer with
+  `Invalid_Argument`: both were reported as crossing `Max_Output_Bytes`.
+- A short fontName expects the opcode's length against what its name
+  needs, the convention the specification now states for expected and
+  actual counts, and names the opcode's offset.
+- Warnings raised while an opcode's data is read name that opcode and its
+  ordinal, as failures do: dropped metadata and color recoveries named none.
+- Unsupported-feature diagnostics name the text size, planar color, matte
+  size, codec or jpeglib's counts that make them unsupported.
+- A payload past the most one buffer holds names `Max_Allocation_Bytes` when
+  that budget is the smaller bound, in the session and for QuickTime pixels.
+- `Diagnostic_Context.Has_Row` tells row 0 from no row.
+- Malformed polygons and coordinates beyond reach are recovered as partial
+  pictures, as the specification now lists; the dead `Transfer_Mode_Invalid`
+  entry of the recoverable list is gone, it being only ever a warning
+  leniently.
 
 ### Documentation
 
@@ -233,13 +258,17 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   every public subprogram, so a change to a parameter's or result's type, a
   parameter's mode or the number of parameters breaks the build (Ada does not
   compare a renaming's subtypes, names or defaults).
-
 - The invariant registry no longer calls overflow freedom proved where only
   the helpers are, names `Sessions` for retention, the stream and writer
   units for exact transfers, the encoder for states and allocations, and
   every unit that charges drawing work; it cites the tests that cover them,
   among them new ones for descending region scanlines and points outside a
   region's box, and lists text sizes above 512 as unsupported.
+- The specification tabulates every warning, its severity and what records
+  it; STATE-001 gives the encoder its own terminal states; LIMIT-001 no
+  longer counts `Warning_Record_Limit` among the limits reported;
+  BYTES-001 names `Sessions` for attribution; `docs/proof_profile.md` says
+  where `gnatprove` comes from.
 
 ### Internal structure
 
@@ -292,6 +321,12 @@ place:
   the plan, write; `Decide_Layout` keeps one check per pack type and
   component count.
 
+- One judgement of a source's reply (`Internal.Replies`) serves the exact
+  transfers and the picture stream; `Over_Limit` takes a destination offset,
+  so the writer builds no limit failure of its own; enumeration and
+  rendering classify a PixPat's type in one place; `Render` checks the frame
+  and the view separately instead of telling them apart by limit kind.
+
 ### Tooling
 
 All tooling is Ada, in the `tests` crate:
@@ -331,3 +366,27 @@ All tooling is Ada, in the `tests` crate:
   keep alpha and pictures `Auto` laid out; the test-side rowBytes rule lives
   in `Samples`, and every failing render test checks the decoder's state and
   last error.
+- The suite tests the eleven transfer modes it skipped (notSrcOr, notSrcXor,
+  notSrcBic, notPatOr, notPatXor, notPatBic, addPin, addOver, subPin,
+  subOver, grayishTextOr) against hand-worked rasters, the PackBits count at
+  rowBytes 250 and 251, Mono_1 at and around both thresholds with colors
+  only Rec. 601's weights classify, the encoder's terminal states, a source
+  over-reporting a read, the warning cap against a picture that warns,
+  equal, descending and out-of-box region scanlines, and the limit kind of
+  every work-budget failure.
+- `pictlib_prove` captures gnatprove's standard error, where it reports
+  unproved checks and skipped bodies.
+- `pictlib_fuzz` takes `--fail-stuck` anywhere, refuses bad arguments and an
+  empty seed set with a usage failure, reports a failed mutation or replay
+  load instead of raising past its handler, and checks that every failure
+  carries a fatal code and leaves the decoder `Failed` with it.
+- `pictlib_check` also requires every test package to be added to the suite,
+  every registry row to name covered tests, `Register_Routine` only as a
+  call, textrender only through its root package, no `pragma Suppress`,
+  `Unchecked_Conversion`, `'Address` or `'Unrestricted_Access` in the
+  library, no shell or Python script, and single-command CI steps; it counts
+  line lengths in characters.
+- The tests share `L_Region`, `Canvases.Expect_Pixels`, `Frame_View` and
+  `Files.Save_Path`; the recorder keeps every event; `Any_Opcode`, not 0,
+  means a failure's opcode is not checked; `pictlib_benchmark` no longer
+  leaks a buffer each round.

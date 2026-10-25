@@ -1,5 +1,5 @@
-with Pictlib.Errors;
 with Pictlib.Internal.Bytes;
+with Pictlib.Internal.Failures;
 
 package body Pictlib.Internal.Writers is
    use type Interfaces.Unsigned_32;
@@ -29,11 +29,9 @@ package body Pictlib.Internal.Writers is
          return Object.Failure;
       elsif Byte_Count (Data'Length) > Object.Max_Bytes - Object.Total then
          Object.Failure :=
-           Results.Failure
-             (Errors.Make
-                (Errors.Limit_Exceeded,
-                 (Destination => Destination_Offset (Object.Total), Expected => Object.Max_Bytes,
-                  Actual => Object.Total + Data'Length, Limit => Output_Byte_Limit, others => <>)));
+           Failures.Over_Limit
+             (Output_Byte_Limit, Object.Max_Bytes, Object.Total + Data'Length,
+              Destination => Destination_Offset (Object.Total));
          return Object.Failure;
       elsif Object.Output /= null and then Data'Length > 0 then
          Object.Failure := Streams.Write_All (Object.Output.all, Data);

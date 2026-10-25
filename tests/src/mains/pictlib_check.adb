@@ -78,6 +78,8 @@ begin
       Check_Tree (Root & "/src", Production => True);
       Check_Tree (Root & "/tests/src", Production => False);
       Pictlib_Testing.Source_Policy.Check_Registry (Root);
+      Pictlib_Testing.Source_Policy.Check_Suite (Root);
+      Pictlib_Testing.Source_Policy.Check_Tooling (Root);
       Pictlib_Testing.Source_Policy.Check_Readme (Root);
       --  The suite runs whatever the policy found, so a policy finding never hides a failing test.
       if not Policy_Only then

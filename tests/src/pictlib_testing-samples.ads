@@ -6,7 +6,11 @@ with Pictlib.Streams;
 
 --  Deterministic source images for the encoder, shared by the unit tests and the conformance tool.
 package Pictlib_Testing.Samples is
-   type Kind is (Gradient, Three_Colors, Black_And_White, Gray_Ramp, Translucent);
+   --  Luminance_Edges repeats eight pixels across a row: grays 127, 128, 199 and 200, either side of the default
+   --  and a raised Mono_Threshold, and colors only Rec. 601's weights, truncated, put on their side of 128: green
+   --  (149.7, white), (255, 120, 0) (146.7, white; 99.5 with red and blue's weights swapped), (0, 218, 0)
+   --  (127.966, black; white if rounded) and (0, 218, 1) (128.08, white).
+   type Kind is (Gradient, Three_Colors, Black_And_White, Gray_Ramp, Translucent, Luminance_Edges);
 
    type Bytes_Access is access Pictlib.Streams.Byte_Array;
 

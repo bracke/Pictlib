@@ -6,10 +6,8 @@ package body Pictlib_Testing.Recorders is
    overriding function Visit
      (Object : in out Recorder; Event : Pictlib.Pictures.Opcode_Event) return Pictlib.Decoding.Visit_Action is
    begin
-      if Object.Count < Object.Events'Last then
-         Object.Count := Object.Count + 1;
-         Object.Events (Object.Count) := Event;
-      end if;
+      Object.Events.Append (Event);
+      Object.Count := Natural (Object.Events.Length);
       if Object.Stop_After > 0 and then Object.Count >= Object.Stop_After then
          return Pictlib.Decoding.Stop;
       end if;
@@ -82,7 +80,7 @@ package body Pictlib_Testing.Recorders is
      (Input : aliased Pictlib.Streams.Byte_Array;
       Code : Pictlib.Errors.Error_Code;
       Label : String;
-      Op : Pictlib.Opcode := 0;
+      Op : Expected_Opcode := Any_Opcode;
       Options : Pictlib.Decoding.Options := (others => <>);
       Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
       Limit : Pictlib.Limit_Kind := Pictlib.No_Limit;
@@ -91,7 +89,6 @@ package body Pictlib_Testing.Recorders is
       use AUnit.Assertions;
       use type Pictlib.Errors.Error_Code;
       use type Pictlib.Limit_Kind;
-      use type Pictlib.Opcode;
       use type Pictlib.Decoding.Decoder_State;
       Decoder : Pictlib.Decoding.Decoder;
       Events : Recorder;
@@ -102,8 +99,8 @@ package body Pictlib_Testing.Recorders is
               Label & ": expected " & Code'Image & ", got " & Outcome.First_Error.Code'Image);
       Assert (Pictlib.Decoding.State (Decoder) = Pictlib.Decoding.Failed, Label & ": the decoder did not fail");
       Assert (Pictlib.Decoding.Last_Error (Decoder).Code = Code, Label & ": the last error is wrong");
-      if Op /= 0 then
-         Assert (Outcome.First_Error.Context.Has_Opcode and then Outcome.First_Error.Context.Op = Op,
+      if Op /= Any_Opcode then
+         Assert (Outcome.First_Error.Context.Has_Opcode and then Integer (Outcome.First_Error.Context.Op) = Op,
                  Label & ": the failing opcode was not recorded");
       end if;
       if Limit /= Pictlib.No_Limit then

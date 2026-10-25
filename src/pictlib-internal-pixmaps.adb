@@ -381,6 +381,22 @@ package body Pictlib.Internal.Pixmaps is
    function Buffer_Bytes (Header : Bits_Header) return Byte_Count is
      (Byte_Count (Stored_Length (Header)) + Byte_Count (Unpacked_Length (Header)) + 3 * Byte_Count (Header.Width));
 
+   function Classify_Pattern
+     (S : Sessions.Session;
+      Pattern_Type : Interfaces.Unsigned_16;
+      Kind : out Pattern_Kind) return Results.Result is
+   begin
+      Kind := Color_Pattern;
+      case Pattern_Type is
+         when Color_Pattern_Type => return Results.Success;
+         when Dither_Pattern_Type =>
+            Kind := Dither_Pattern;
+            return Results.Success;
+         when others =>
+            return Sessions.Fail (S, Errors.Pattern_Invalid, Dither_Pattern_Type, Byte_Count (Pattern_Type));
+      end case;
+   end Classify_Pattern;
+
    function Read_Pattern_Header
      (S : in out Sessions.Session;
       Header : out Bits_Header;
@@ -470,7 +486,7 @@ package body Pictlib.Internal.Pixmaps is
                            declare
                               Verdict : constant Results.Result := Sessions.Reject_Or_Warn
                                 (S, Errors.Color_Table_Invalid, Errors.Recovery_Applied, Errors.Recovery,
-                                 (Row => Row_Index (Row), Actual => Byte_Count (Index), others => <>));
+                                 (Row => Row_Index (Row), Has_Row => True, Actual => Byte_Count (Index), others => <>));
                            begin
                               if not Results.Succeeded (Verdict) then
                                  return Verdict;

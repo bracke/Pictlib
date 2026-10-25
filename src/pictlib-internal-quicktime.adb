@@ -159,7 +159,10 @@ package body Pictlib.Internal.QuickTime is
          return Sessions.Over_Limit
            (S, Embedded_Image_Pixel_Limit, Byte_Count (S.Budget.Max_Embedded_Image_Pixels), Pixels);
       elsif Bytes_Per_Pixel * Pixels > Largest then
-         return Sessions.Over_Limit (S, Allocation_Byte_Limit, Largest, Bytes_Per_Pixel * Pixels);
+         --  The budget as set when it is the smaller bound.
+         return Sessions.Over_Limit
+           (S, Allocation_Byte_Limit, Byte_Count'Min (Largest, S.Budget.Max_Allocation_Bytes),
+            Bytes_Per_Pixel * Pixels);
       end if;
       return Results.Success;
    end Check_Image;
@@ -481,7 +484,7 @@ package body Pictlib.Internal.QuickTime is
          if Byte_Count (Header.Matte_Size) > Length - Used then
             return Too_Long (Byte_Count (Header.Matte_Size));
          end if;
-         Outcome := Rendering.Unsupported (S, Event);
+         Outcome := Rendering.Unsupported (S, Event, 0, Byte_Count (Header.Matte_Size));
          if Results.Succeeded (Outcome) then
             Outcome := Sessions.Skip_Data (S, Byte_Count (Header.Matte_Size));
          end if;
@@ -525,7 +528,11 @@ package body Pictlib.Internal.QuickTime is
       elsif Byte_Count (Item.Data_Size) > Length - Used then
          return Too_Long (Byte_Count (Item.Data_Size));
       elsif not Is_Supported (Header, Item) then
-         return Finish (Rendering.Unsupported (S, Event));
+         --  The codec named, when it is not JPEG's.
+         return Finish
+           (Rendering.Unsupported
+              (S, Event, (if Item.Codec = JPEG_Codec then 0 else JPEG_Codec),
+               (if Item.Codec = JPEG_Codec then 0 else Byte_Count (Item.Codec))));
       end if;
       Outcome := Check_Image (S, Event, Item);
       if not Results.Succeeded (Outcome) then
@@ -565,7 +572,9 @@ package body Pictlib.Internal.QuickTime is
                  and then Errors."=" (Outcome.First_Error.Code, Errors.Unsupported_Feature)
                  and then Sessions.Is_Lenient (S)
                then
-                  return Finish (Rendering.Unsupported (S, Event));
+                  return Finish
+                    (Rendering.Unsupported
+                       (S, Event, Outcome.First_Error.Context.Expected, Outcome.First_Error.Context.Actual));
                end if;
             end;
          end if;

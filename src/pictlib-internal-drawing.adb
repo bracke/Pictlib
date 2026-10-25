@@ -489,7 +489,8 @@ package body Pictlib.Internal.Drawing is
                Outcome := Sessions.Read_Long (S, Value);
                if Results.Succeeded (Outcome) then
                   if not Planar_Color (Value, Color) then
-                     Outcome := Rendering.Unsupported (S, Event);
+                     --  The planar color value, which names no color this release knows.
+                     Outcome := Rendering.Unsupported (S, Event, Actual => Byte_Count (Value));
                   elsif Event.Op = Opcodes.Foreground_Color then
                      P.Port.Colors.Foreground := Color;
                   else

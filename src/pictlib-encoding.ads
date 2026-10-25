@@ -48,11 +48,12 @@ package Pictlib.Encoding is
    --  @return Current state.
    function State (Object : Encoder) return Encoder_State;
    --  Encode.
-   --  @param Object Encoder in state Ready; Encoded on success.
+   --  @param Object Encoder in state Ready; Encoded on success, Failed on a failure while writing, and still
+   --  Ready, Last_Error unchanged, on one found before the destination was written to.
    --  @param Image A valid caller view.
    --  @return Success; Invalid_Argument for an invalid view, a non-positive resolution or an image too wide for
-   --  the layout's rowBytes; Too_Many_Colors for Indexed_8 above 256 colors; Limit_Exceeded above the frame,
-   --  output or allocation limits; the destination's failure.
+   --  the layout's rowBytes; Too_Many_Colors for Indexed_8 above 256 colors (counted up to 257);
+   --  Limit_Exceeded above the frame, output or allocation limits; the destination's failure.
    function Encode (Object : in out Encoder; Image : Images.Image_View) return Results.Result;
    --  Finish.
    --  @param Object Encoder in state Encoded; Finished on success.

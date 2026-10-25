@@ -10,6 +10,8 @@ package Pictlib_Testing.Files is
    function Load (Name : String) return Bytes_Access;
    --  Load path: the whole of the file at Path.
    function Load_Path (Path : String) return Bytes_Access;
+   --  Save path: create or replace the file at Path with Data, byte for byte.
+   procedure Save_Path (Path : String; Data : Pictlib.Streams.Byte_Array);
 
    --  A binary Netpbm raster: P6 (8-bit RGB) or P4 (1-bit, 1 is black).
    type Raster is record

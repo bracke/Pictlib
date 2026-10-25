@@ -112,6 +112,14 @@ package body Pictlib_Testing.Source_Policy is
                then
                   Fail (Path & ": production code binds foreign code (" & Word & ")");
                end if;
+               --  What would turn the checks off, or reach memory around them.
+               if (Word = "suppress" and then To_String (Previous) = "pragma")
+                 or else Word = "unchecked_conversion"
+                 or else (Word'Length > 21 and then Word (Word'Last - 20 .. Word'Last) = ".unchecked_conversion")
+                 or else (To_String (Previous) = "'" and then Word in "address" | "unrestricted_access")
+               then
+                  Fail (Path & ": production code defeats checks (" & Word & ")");
+               end if;
                --  Context clauses, one by one, until the unit begins.
                if In_Context then
                   if Clause_Start and then Word in "package" | "procedure" | "function" | "generic" | "separate"
@@ -146,10 +154,17 @@ package body Pictlib_Testing.Source_Policy is
       while not Ada.Text_IO.End_Of_File (File) loop
          declare
             Line : constant String := Ada.Text_IO.Get_Line (File);
+            --  Characters, not bytes: a UTF-8 continuation byte belongs to the character before it.
+            Characters : Natural := 0;
          begin
             Number := Number + 1;
-            if Line'Length > Longest_Line then
-               Fail (Path & ":" & Number'Image & ": line of" & Line'Length'Image & " characters");
+            for Item of Line loop
+               if Character'Pos (Item) not in 16#80# .. 16#BF# then
+                  Characters := Characters + 1;
+               end if;
+            end loop;
+            if Characters > Longest_Line then
+               Fail (Path & ":" & Number'Image & ": line of" & Characters'Image & " characters");
             end if;
          end;
       end loop;
@@ -169,6 +184,8 @@ package body Pictlib_Testing.Source_Policy is
              To_Unbounded_String ("Jpeglib.Images"), To_Unbounded_String ("Jpeglib.Limits"),
              To_Unbounded_String ("Jpeglib.Results"), To_Unbounded_String ("Jpeglib.Streams")]);
          Project_Tools.Ada_Source.Require_Only_Allowed_With_Clauses (Path, "Jpeglib.Internal", None);
+         --  textrender's public API is its root package; its children are its own.
+         Project_Tools.Ada_Source.Require_Only_Allowed_With_Clauses (Path, "Textrender.", None);
          Project_Tools.Ada_Source.Require_Only_Allowed_With_Clauses (Path, "AUnit", None);
          Project_Tools.Ada_Source.Require_Only_Allowed_With_Clauses (Path, "Project_Tools", None);
          Project_Tools.Ada_Source.Require_Only_Allowed_With_Clauses (Path, "Pictlib_Testing", None);
@@ -246,22 +263,39 @@ package body Pictlib_Testing.Source_Policy is
       Routines, Tools_Found : Name_Sets.Set;
       Registry : constant String := Root & "/docs/invariants.md";
 
-      --  Every routine name: the first string literal after each Register_Routine.
+      --  Every routine name: the first string literal of each call of Register_Routine, the name followed by an
+      --  opening parenthesis on a line it does not follow a comment on.
       procedure Collect_Routines (Path : String) is
          Text : constant String := Read_Whole (Path);
+         Word : constant String := "Register_Routine";
          From : Natural := Text'First;
       begin
          loop
-            From := Ada.Strings.Fixed.Index (Text (From .. Text'Last), "Register_Routine");
+            From := Ada.Strings.Fixed.Index (Text (From .. Text'Last), Word);
             exit when From = 0;
             declare
-               Open : constant Natural := Ada.Strings.Fixed.Index (Text (From .. Text'Last), """");
-               Close : constant Natural :=
-                 (if Open = 0 then 0 else Ada.Strings.Fixed.Index (Text (Open + 1 .. Text'Last), """"));
+               Line_Start : Natural := From;
+               After : Natural := From + Word'Length;
             begin
-               exit when Close = 0;
-               Routines.Include (Text (Open + 1 .. Close - 1));
-               From := Close + 1;
+               while Line_Start > Text'First and then Text (Line_Start - 1) /= ASCII.LF loop
+                  Line_Start := Line_Start - 1;
+               end loop;
+               while After <= Text'Last and then Text (After) = ' ' loop
+                  After := After + 1;
+               end loop;
+               if After <= Text'Last and then Text (After) = '('
+                 and then Ada.Strings.Fixed.Index (Text (Line_Start .. From), "--") = 0
+               then
+                  declare
+                     Open : constant Natural := Ada.Strings.Fixed.Index (Text (After .. Text'Last), """");
+                     Close : constant Natural :=
+                       (if Open = 0 then 0 else Ada.Strings.Fixed.Index (Text (Open + 1 .. Text'Last), """"));
+                  begin
+                     exit when Close = 0;
+                     Routines.Include (Text (Open + 1 .. Close - 1));
+                  end;
+               end if;
+               From := After;
             end;
          end loop;
       end Collect_Routines;
@@ -318,6 +352,71 @@ package body Pictlib_Testing.Source_Policy is
             Position := Close + 1;
          end;
       end loop;
+      --  Every row of the two tables names its coverage, and every name in a coverage cell is a test or tool:
+      --  the invariants' fourth cell, the capabilities' second.
+      declare
+         Line_Start : Natural := Text'First;
+      begin
+         while Line_Start <= Text'Last loop
+            declare
+               Line_End : constant Natural :=
+                 (if Ada.Strings.Fixed.Index (Text (Line_Start .. Text'Last), [1 => ASCII.LF]) = 0 then Text'Last
+                  else Ada.Strings.Fixed.Index (Text (Line_Start .. Text'Last), [1 => ASCII.LF]) - 1);
+               Line : constant String := Text (Line_Start .. Line_End);
+               --  The bars that bound each cell.
+               Bars : array (1 .. 8) of Natural := [others => 0];
+               Count : Natural := 0;
+               Cell : Natural := 0;
+            begin
+               for Index in Line'Range loop
+                  if Line (Index) = '|' and then Count < Bars'Last then
+                     Count := Count + 1;
+                     Bars (Count) := Index;
+                  end if;
+               end loop;
+               if Line'Length > 2 and then Line (Line'First) = '|' and then Ada.Strings.Fixed.Index (Line, "---") = 0
+                 and then Count >= 3
+               then
+                  if Count >= 6 and then Line (Line'First + 2) in 'A' .. 'Z'
+                    and then Ada.Strings.Fixed.Index (Line (Bars (1) .. Bars (2)), "-0") > 0
+                  then
+                     Cell := 4;
+                  elsif Count = 3 and then Line (Line'First + 2) = '`' then
+                     Cell := 2;
+                  end if;
+               end if;
+               if Cell > 0 then
+                  declare
+                     Coverage : constant String := Line (Bars (Cell) + 1 .. Bars (Cell + 1) - 1);
+                     Position : Natural := Coverage'First;
+                     Names : Natural := 0;
+                  begin
+                     loop
+                        declare
+                           Open : constant Natural :=
+                             Ada.Strings.Fixed.Index (Coverage (Position .. Coverage'Last), "`");
+                           Close : constant Natural :=
+                             (if Open = 0 then 0
+                              else Ada.Strings.Fixed.Index (Coverage (Open + 1 .. Coverage'Last), "`"));
+                        begin
+                           exit when Close = 0;
+                           Names := Names + 1;
+                           if not Covered (Coverage (Open + 1 .. Close - 1)) then
+                              Fail (Registry & ": coverage `" & Coverage (Open + 1 .. Close - 1)
+                                    & "` is no registered test routine or tool");
+                           end if;
+                           Position := Close + 1;
+                        end;
+                     end loop;
+                     if Names = 0 then
+                        Fail (Registry & ": a row names no coverage: " & Line);
+                     end if;
+                  end;
+               end if;
+               Line_Start := Line_End + 2;
+            end;
+         end loop;
+      end;
       --  Every capability constant has a row of its own.
       declare
          Capabilities : constant String := Read_Whole (Root & "/src/pictlib-capabilities.ads");
@@ -340,4 +439,105 @@ package body Pictlib_Testing.Source_Policy is
          end loop;
       end;
    end Check_Registry;
+
+   procedure Check_Suite (Root : String) is
+      Suite_Path : constant String := Root & "/tests/src/pictlib_testing-suite.adb";
+      Suite : constant String := Read_Whole (Suite_Path);
+
+      procedure Check_Package (Path : String) is
+         Name : constant String := Ada.Directories.Base_Name (Path);
+         Prefix : constant String := "pictlib_testing-test_";
+      begin
+         if Name'Length <= Prefix'Length or else Name (Name'First .. Name'First + Prefix'Length - 1) /= Prefix then
+            return;
+         end if;
+         declare
+            --  The unit, as the suite names it: Pictlib_Testing.Test_ and the rest, in any case.
+            Unit : constant String := "pictlib_testing.test_" & Name (Name'First + Prefix'Length .. Name'Last);
+            Lower : constant String := Ada.Characters.Handling.To_Lower (Suite);
+            Made : constant Natural := Ada.Strings.Fixed.Index (Lower, "new " & Unit & ".test;");
+            Before : Natural := Made;
+         begin
+            if Made = 0 then
+               Fail (Suite_Path & ": the test package " & Unit & " is never made a test case");
+               return;
+            end if;
+            --  The variable it is made for: the name before the " : constant" that precedes it.
+            Before := Ada.Strings.Fixed.Index (Lower (Lower'First .. Made), " : constant", Ada.Strings.Backward);
+            declare
+               Start : Natural := Before;
+            begin
+               while Start > Lower'First and then Lower (Start - 1) not in ' ' | ASCII.LF loop
+                  Start := Start - 1;
+               end loop;
+               if Before = 0
+                 or else Ada.Strings.Fixed.Index (Lower, "suite.add_test (" & Lower (Start .. Before - 1) & ");") = 0
+               then
+                  Fail (Suite_Path & ": the test package " & Unit & " is never added to the suite");
+               end if;
+            end;
+         end;
+      end Check_Package;
+      procedure Each_Spec is new For_Files (Check_Package);
+   begin
+      Each_Spec (Root & "/tests/src", "ads");
+   end Check_Suite;
+
+   procedure Check_Tooling (Root : String) is
+      --  Directories of the tree that hold no source of its own.
+      function Skipped (Name : String) return Boolean is
+        (Name in "." | ".." | ".git" | "alire" | "obj" | "lib" | "bin" | "artifacts" | "config");
+
+      procedure Walk (Directory : String) is
+         use Ada.Directories;
+         Search : Search_Type;
+         Item : Directory_Entry_Type;
+      begin
+         Start_Search (Search, Directory, "*");
+         while More_Entries (Search) loop
+            Get_Next_Entry (Search, Item);
+            if Kind (Item) = Ada.Directories.Directory and then not Skipped (Simple_Name (Item)) then
+               Walk (Full_Name (Item));
+            elsif Kind (Item) = Ordinary_File and then Extension (Simple_Name (Item)) in "sh" | "bash" | "py" then
+               Fail (Full_Name (Item) & ": a script; tooling is an Ada tool of the tests crate");
+            end if;
+         end loop;
+         End_Search (Search);
+      end Walk;
+
+      Workflow : constant String := Root & "/.github/workflows/ci.yml";
+   begin
+      Walk (Root);
+      if not Ada.Directories.Exists (Workflow) then
+         return;
+      end if;
+      declare
+         Text : constant String := Read_Whole (Workflow);
+         Line_Start : Natural := Text'First;
+      begin
+         while Line_Start <= Text'Last loop
+            declare
+               Line_End : constant Natural :=
+                 (if Ada.Strings.Fixed.Index (Text (Line_Start .. Text'Last), [1 => ASCII.LF]) = 0 then Text'Last
+                  else Ada.Strings.Fixed.Index (Text (Line_Start .. Text'Last), [1 => ASCII.LF]) - 1);
+               Line : constant String := Ada.Strings.Fixed.Trim (Text (Line_Start .. Line_End), Ada.Strings.Both);
+               Key : constant String := "run:";
+            begin
+               if Line'Length >= Key'Length and then Line (Line'First .. Line'First + Key'Length - 1) = Key then
+                  declare
+                     Command : constant String :=
+                       Ada.Strings.Fixed.Trim (Line (Line'First + Key'Length .. Line'Last), Ada.Strings.Both);
+                  begin
+                     if Command'Length = 0 or else Command (Command'First) in '|' | '>'
+                       or else (for some C of Command => C in ';' | '|' | '&' | '<' | '>' | '`')
+                     then
+                        Fail (Workflow & ": a CI step is not a single command: " & Line);
+                     end if;
+                  end;
+               end if;
+               Line_Start := Line_End + 2;
+            end;
+         end loop;
+      end;
+   end Check_Tooling;
 end Pictlib_Testing.Source_Policy;

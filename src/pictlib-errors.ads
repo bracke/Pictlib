@@ -55,6 +55,8 @@ package Pictlib.Errors is
       Has_Opcode : Boolean := False;
       Ordinal : Opcode_Ordinal := 0;
       Row : Row_Index := 0;
+      --  Whether Row names a row: row 0 is a row too.
+      Has_Row : Boolean := False;
       Expected : Byte_Count := 0;
       Actual : Byte_Count := 0;
       Limit : Limit_Kind := No_Limit;

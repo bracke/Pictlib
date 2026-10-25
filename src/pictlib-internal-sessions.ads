@@ -140,8 +140,8 @@ package Pictlib.Internal.Sessions is
    --  Attributed: a failure while an opcode is read names that opcode.
    --  @param Outcome A result.
    --  @param Event The opcode being read.
-   --  @return Outcome; a failure naming no opcode, or Event's without its ordinal, names Event's opcode and
-   --  ordinal.
+   --  @return Outcome; a failure naming no opcode, or Event's, names Event's opcode and ordinal; one naming
+   --  another opcode keeps it.
    function Attributed (Outcome : Results.Result; Event : Pictures.Opcode_Event) return Results.Result;
 
    --  Defer opcode: the header reader read an opcode it does not consume.
@@ -225,9 +225,14 @@ package Pictlib.Internal.Sessions is
    --  @return The opcodes claimed so far: the ordinal the next one gets.
    function Opcodes_Read (S : Session) return Opcode_Ordinal;
 
-   --  Begin opcode data: the current opcode's data, which the per-opcode budget bounds, begins here.
+   --  Begin opcode data: the current opcode's data, which the per-opcode budget bounds, begins here, and until
+   --  End_Opcode_Data a warning that names no opcode names Event's.
    --  @param S Session positioned after an opcode.
-   procedure Begin_Opcode_Data (S : in out Session);
+   --  @param Event The opcode, with its ordinal.
+   procedure Begin_Opcode_Data (S : in out Session; Event : Pictures.Opcode_Event);
+   --  End opcode data: warnings no longer name the opcode Begin_Opcode_Data was given.
+   --  @param S Session.
+   procedure End_Opcode_Data (S : in out Session);
    --  Opcode data length.
    --  @param S Session.
    --  @return The bytes of the current opcode's data read or skipped since Begin_Opcode_Data.
@@ -367,6 +372,10 @@ private
       Next_Ordinal : Opcode_Ordinal := 0;
       --  Picture offset where the current opcode's data begins.
       Data_Start : Byte_Count := 0;
+      --  The opcode whose data is being read, between Begin_Opcode_Data and End_Opcode_Data.
+      In_Opcode : Boolean := False;
+      Current_Op : Opcode := 0;
+      Current_Ordinal : Opcode_Ordinal := 0;
       --  An opcode the header reader read but did not consume.
       Has_Pending : Boolean := False;
       Pending_Op : Opcode := 0;

@@ -131,6 +131,7 @@ package body Pictlib.Internal.Patterns is
       Work : out Pixel_Count) return Results.Result
    is
       Pattern_Type : Interfaces.Unsigned_16 := 0;
+      Kind : Pixmaps.Pattern_Kind;
       Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
    begin
       --  Every PixPat costs a unit, whatever its type.
@@ -141,17 +142,18 @@ package body Pictlib.Internal.Patterns is
          Outcome := Read_Bit_Pattern (S, Item);
       end if;
       if Results.Succeeded (Outcome) then
-         case Pattern_Type is
-            when Color_Pattern_Type =>
+         Outcome := Pixmaps.Classify_Pattern (S, Pattern_Type, Kind);
+      end if;
+      if Results.Succeeded (Outcome) then
+         case Kind is
+            when Pixmaps.Color_Pattern =>
                Outcome := Read_Color_Tile (S, Event, Item, Allowance, Work);
-            when Dither_Pattern_Type =>
+            when Pixmaps.Dither_Pattern =>
                --  A dither pattern: in true color, its RGB color.
                Outcome := Sessions.Read_RGB (S, Item.Color);
                if Results.Succeeded (Outcome) then
                   Item.Kind := Solid_Color;
                end if;
-            when others =>
-               Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, Dither_Pattern_Type, Byte_Count (Pattern_Type));
          end case;
       end if;
       --  Never a part-read tile, whoever calls; the caller puts the pattern's own default in its place.

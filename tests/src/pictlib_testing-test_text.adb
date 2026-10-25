@@ -332,6 +332,18 @@ package body Pictlib_Testing.Test_Text is
                                With_Fonts);
       Canvases.Expect_Failure (Too_Large, Width, Height, Pictlib.Errors.Unsupported_Feature, "TxSize 600", 16#28#,
                                With_Fonts);
+      --  The failure names the largest size against the one asked for.
+      declare
+         Storage : aliased Bytes := [1 .. 3 * Width * Height => 0];
+         Decoder : Pictlib.Decoding.Decoder;
+         Outcome : Pictlib.Results.Result;
+         use type Pictlib.Byte_Count;
+      begin
+         Canvases.Render (Too_Large, Decoder, Canvases.View (Storage'Access, Width, Height), Outcome, With_Fonts);
+         Assert (Outcome.First_Error.Context.Expected = 512 and then Outcome.First_Error.Context.Actual = 600,
+                 "TxSize 600 reported" & Outcome.First_Error.Context.Expected'Image & " against"
+                 & Outcome.First_Error.Context.Actual'Image);
+      end;
       --  Italic is textrender's synthetic oblique; condense and extend take one pixel off or add one to every
       --  advance.
       declare
@@ -459,8 +471,11 @@ package body Pictlib_Testing.Test_Text is
       begin
          Budget.Max_Drawing_Work := Work;
          Canvases.Render (Input, Decoder, Canvases.View (Storage'Access, Width, Height), Outcome, Options, Budget);
-         Assert (Pictlib.Results.Succeeded (Outcome) or else Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded,
-                 "text work: failed with " & Outcome.First_Error.Code'Image);
+         Assert (Pictlib.Results.Succeeded (Outcome)
+                 or else (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
+                          and then Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit),
+                 "text work: failed with " & Outcome.First_Error.Code'Image & " on "
+                 & Outcome.First_Error.Context.Limit'Image);
          return Pictlib.Results.Succeeded (Outcome);
       end Renders;
 
@@ -492,7 +507,6 @@ package body Pictlib_Testing.Test_Text is
    begin
       --  A size 500 font costs its 16 MiB atlas before it is loaded, so a small budget never loads it.
       Assert (not Renders (Big_Font, 10_000_000), "a size 500 font was loaded on a budget below its atlas");
-      Assert (Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit, "a size 500 font: wrong limit");
       --  255 glyphs cost more than one.
       --  Each glyph asked for costs its full charge, 16 units a cell pixel, drawn or not.
       One_Glyph_Least := Least (One_Glyph, Load (12) + Glyphs (12, 1));

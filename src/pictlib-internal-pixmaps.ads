@@ -79,6 +79,18 @@ package Pictlib.Internal.Pixmaps is
    --  @return Operation result.
    function Skip_Pixels (S : in out Sessions.Session; Header : Bits_Header) return Results.Result;
 
+   type Pattern_Kind is (Color_Pattern, Dither_Pattern);
+
+   --  Classify pattern, for enumeration and rendering alike.
+   --  @param S Session, positioned after pat1Data.
+   --  @param Pattern_Type A PixPat's patType.
+   --  @param Kind Color_Pattern for type 1, Dither_Pattern for type 2.
+   --  @return Success, or Pattern_Invalid for any other type.
+   function Classify_Pattern
+     (S : Sessions.Session;
+      Pattern_Type : Interfaces.Unsigned_16;
+      Kind : out Pattern_Kind) return Results.Result;
+
    --  Read pattern header: a type 1 PixPat's rowBytes, bounds, PixMap tail and color table, laid out and checked
    --  alike for enumeration and rendering, so both agree where the opcode ends.
    --  @param S Session positioned after patType and pat1Data.

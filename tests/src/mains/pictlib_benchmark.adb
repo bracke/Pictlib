@@ -1,6 +1,8 @@
 --  Throughput, for information only: each layout encoded from and rendered back into a 1024 x 768 view, and the
 --  real-world vector picture rendered. Prints megapixels per second. Runs from anywhere below the pictlib tree.
+with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Tools;
+with Ada.Unchecked_Deallocation;
 with Ada.Calendar;
 with Ada.Directories;
 with Ada.Text_IO;
@@ -15,6 +17,7 @@ with Pictlib_Testing.Samples;
 
 procedure Pictlib_Benchmark is
    use type Ada.Calendar.Time;
+   use type Pictlib.Streams.Byte_Array_Access;
 
    Width : constant := 1024;
    Height : constant := 768;
@@ -30,23 +33,26 @@ procedure Pictlib_Benchmark is
       Ada.Text_IO.Put_Line (" s," & Integer'Image (Integer (Rate)) & " Mpx/s");
    end Report;
 
-   function Render (Data : Pictlib.Streams.Byte_Array_Access; Out_Width, Out_Height : Positive) return Boolean is
+   procedure Free is new Ada.Unchecked_Deallocation (Pictlib.Streams.Byte_Array, Pictlib.Streams.Byte_Array_Access);
+
+   --  Render Data into a view of its frame, allocated once and kept in Storage across calls.
+   function Render
+     (Data : Pictlib.Streams.Byte_Array_Access;
+      Storage : in out Pictlib.Streams.Byte_Array_Access) return Boolean
+   is
       Source : aliased Pictlib.Streams.Memory_Source;
       Decoder : Pictlib.Decoding.Decoder;
-      Storage : constant Pictlib.Streams.Byte_Array_Access :=
-        new Pictlib.Streams.Byte_Array (1 .. 3 * Out_Width * Out_Height);
       Outcome : Pictlib.Results.Result;
    begin
       Pictlib.Streams.Open (Source, Pictlib.Streams.Const_Byte_Array_Access (Data));
       Pictlib.Decoding.Initialize (Decoder, Source'Access);
       Outcome := Pictlib.Decoding.Read_Header (Decoder);
       if Pictlib.Results.Succeeded (Outcome) then
-         Outcome := Pictlib.Decoding.Render
-           (Decoder,
-            (Descriptor => (Width => Pictlib.Image_Width (Out_Width), Height => Pictlib.Image_Height (Out_Height),
-                            Format => Pictlib.RGB_24, Stride => Pictlib.Row_Stride (3 * Out_Width),
-                            Accessible_Bytes => Pictlib.Byte_Count (3 * Out_Width * Out_Height)),
-             Storage => Storage));
+         if Storage = null or else Storage'Length < Pictlib_Testing.Canvases.Frame_Bytes (Decoder) then
+            Free (Storage);
+            Storage := new Pictlib.Streams.Byte_Array (1 .. Pictlib_Testing.Canvases.Frame_Bytes (Decoder));
+         end if;
+         Outcome := Pictlib.Decoding.Render (Decoder, Pictlib_Testing.Canvases.Frame_View (Decoder, Storage));
       end if;
       return Pictlib.Results.Succeeded (Outcome);
    end Render;
@@ -56,6 +62,7 @@ procedure Pictlib_Benchmark is
       Started : Ada.Calendar.Time;
       Picture : Pictlib_Testing.Samples.Encoded;
       Encoded : Pictlib.Streams.Byte_Array_Access;
+      Storage : Pictlib.Streams.Byte_Array_Access;
    begin
       Started := Ada.Calendar.Clock;
       for Round in 1 .. Rounds loop
@@ -71,12 +78,14 @@ procedure Pictlib_Benchmark is
       Encoded := Pictlib.Streams.Byte_Array_Access (Picture.Data);
       Started := Ada.Calendar.Clock;
       for Round in 1 .. Rounds loop
-         if not Render (Encoded, Width, Height) then
+         if not Render (Encoded, Storage) then
             Pictlib_Testing.Tools.Fail (Kind'Image & ": render failed");
+            Free (Storage);
             return;
          end if;
       end loop;
       Report (Kind'Image & " render", Rounds * Width * Height, Ada.Calendar.Clock - Started);
+      Free (Storage);
    end Layout;
 
    procedure Vector_Picture (Path : String) is
@@ -84,6 +93,7 @@ procedure Pictlib_Benchmark is
       Started : Ada.Calendar.Time;
       Source : aliased Pictlib.Streams.Memory_Source;
       Decoder : Pictlib.Decoding.Decoder;
+      Storage : Pictlib.Streams.Byte_Array_Access;
    begin
       Pictlib.Streams.Open (Source, Pictlib.Streams.Const_Byte_Array_Access (Data));
       Pictlib.Decoding.Initialize (Decoder, Source'Access);
@@ -97,12 +107,13 @@ procedure Pictlib_Benchmark is
          Frame_Height : constant Positive := Pictlib.Geometry.Height (Frame);
       begin
          Started := Ada.Calendar.Clock;
-         if Render (Pictlib.Streams.Byte_Array_Access (Data), Frame_Width, Frame_Height) then
+         if Render (Pictlib.Streams.Byte_Array_Access (Data), Storage) then
             Report (Ada.Directories.Simple_Name (Path) & " render", Frame_Width * Frame_Height,
                     Ada.Calendar.Clock - Started);
          else
             Pictlib_Testing.Tools.Fail (Ada.Directories.Simple_Name (Path) & ": render failed");
          end if;
+         Free (Storage);
       end;
    end Vector_Picture;
 begin

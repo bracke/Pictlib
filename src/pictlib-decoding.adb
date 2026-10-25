@@ -1,3 +1,4 @@
+with Ada.Finalization;
 with Pictlib.Internal.Container;
 with Pictlib.Internal.Sessions;
 with Pictlib.Internal.Failures;
@@ -136,7 +137,12 @@ package body Pictlib.Decoding is
       Action : Visit_Action;
    begin
       for Index in 1 .. Object.Inner.Header_Event_Count loop
-         Action := Visitor.Visit (Object.Inner.Header_Events (Index));
+         declare
+            --  A copy: a visitor that resets or finalizes the decoder clears the header events.
+            Event : constant Pictures.Opcode_Event := Object.Inner.Header_Events (Index);
+         begin
+            Action := Visitor.Visit (Event);
+         end;
          if Object.Current_State /= Header_Read then
             return Wrong_State (Object);
          elsif Action = Stop then
@@ -177,6 +183,37 @@ package body Pictlib.Decoding is
       end loop;
    end Enumerate_Opcodes;
 
+   --  Holds Visiting for one enumeration. However the enumeration ends, by an exception or an abort included,
+   --  Visiting is cleared, and one that did not return turns a decoder it left Header_Read, its stream partly
+   --  read, Stopped.
+   type Visit_Guard (Visiting : not null access Boolean; State : not null access Decoder_State) is
+     new Ada.Finalization.Limited_Controlled with record
+      Returned : Boolean := False;
+   end record;
+
+   overriding procedure Initialize (Guard : in out Visit_Guard);
+   overriding procedure Finalize (Guard : in out Visit_Guard);
+
+   --  The enumeration returned: the state it left stands.
+   procedure Complete (Guard : in out Visit_Guard'Class);
+   procedure Complete (Guard : in out Visit_Guard'Class) is
+   begin
+      Guard.Returned := True;
+   end Complete;
+
+   overriding procedure Initialize (Guard : in out Visit_Guard) is
+   begin
+      Guard.Visiting.all := True;
+   end Initialize;
+
+   overriding procedure Finalize (Guard : in out Visit_Guard) is
+   begin
+      Guard.Visiting.all := False;
+      if not Guard.Returned and then Guard.State.all = Header_Read then
+         Guard.State.all := Stopped;
+      end if;
+   end Finalize;
+
    function Enumerate (Object : in out Decoder; Visitor : in out Opcode_Visitor'Class) return Results.Result is
    begin
       if Object.Visiting then
@@ -184,38 +221,44 @@ package body Pictlib.Decoding is
       elsif Object.Current_State /= Header_Read then
          return Wrong_State (Object);
       end if;
-      Object.Visiting := True;
       declare
+         Guard : Visit_Guard (Object.Visiting'Access, Object.Current_State'Access);
          Outcome : constant Results.Result := Enumerate_Opcodes (Object, Visitor);
       begin
-         Object.Visiting := False;
+         Complete (Guard);
          return Outcome;
       end;
-   exception
-      --  A visitor's exception is the caller's: it propagates, but leaves the decoder usable.
-      when others =>
-         Object.Visiting := False;
-         raise;
    end Enumerate;
 
-   --  Malformed picture data, after which what was drawn so far may stand as a partial picture.
+   --  Malformed picture data, after which what was drawn so far may stand as a partial picture: the
+   --  specification's list, section 6. An unknown transfer mode is not there: it fails only strictly.
    function Is_Recoverable (Code : Errors.Error_Code) return Boolean is
      (Code in Errors.Source_Unexpected_End | Errors.Opcode_Invalid | Errors.Opcode_Length_Invalid
             | Errors.Region_Invalid | Errors.Polygon_Invalid | Errors.Pixmap_Invalid | Errors.PackBits_Invalid
-            | Errors.Color_Table_Invalid | Errors.Pattern_Invalid | Errors.Transfer_Mode_Invalid
-            | Errors.Embedded_Image_Failed);
+            | Errors.Color_Table_Invalid | Errors.Pattern_Invalid | Errors.Embedded_Image_Failed);
 
-   function Check_View (Object : Decoder; Output : Images.Mutable_Image_View) return Results.Result is
-      Frame : constant Geometry.Rect := Object.Inner.Info.Frame;
+   function Frame_Pixels (Object : Decoder) return Pixel_Count is
+     (Pixel_Count (Geometry.Width (Object.Inner.Info.Frame)) * Pixel_Count (Geometry.Height (Object.Inner.Info.Frame)));
+
+   --  The frame against the canvas limit: a frame over it no view can render.
+   function Check_Frame (Object : Decoder) return Results.Result is
       Budget : Limits.Limit_Set renames Object.Inner.Session.Budget;
-      Pixels : constant Pixel_Count :=
-        Pixel_Count (Geometry.Width (Frame)) * Pixel_Count (Geometry.Height (Frame));
+      Pixels : constant Pixel_Count := Frame_Pixels (Object);
    begin
-      --  The frame first: no view can render a frame over the canvas limit, so no view is worth correcting.
       if Pixels > Budget.Max_Canvas_Pixels then
          return Internal.Failures.Over_Limit
            (Canvas_Pixel_Limit, Byte_Count (Budget.Max_Canvas_Pixels), Byte_Count (Pixels));
-      elsif not Images.Is_Valid (Output)
+      end if;
+      return Results.Success;
+   end Check_Frame;
+
+   --  The view against the frame and the output limit: a caller's mistake, which another view can correct.
+   function Check_View (Object : Decoder; Output : Images.Mutable_Image_View) return Results.Result is
+      Frame : constant Geometry.Rect := Object.Inner.Info.Frame;
+      Budget : Limits.Limit_Set renames Object.Inner.Session.Budget;
+      Pixels : constant Pixel_Count := Frame_Pixels (Object);
+   begin
+      if not Images.Is_Valid (Output)
         or else Integer (Output.Descriptor.Width) /= Geometry.Width (Frame)
         or else Integer (Output.Descriptor.Height) /= Geometry.Height (Frame)
       then
@@ -239,15 +282,17 @@ package body Pictlib.Decoding is
       elsif Object.Current_State /= Header_Read then
          return Wrong_State (Object);
       end if;
+      --  The frame first: no view can render a frame over the canvas limit, so no view is worth correcting.
       declare
-         Checked : constant Results.Result := Check_View (Object, Output);
+         Frame_Checked : constant Results.Result := Check_Frame (Object);
+         View_Checked : constant Results.Result :=
+           (if Results.Succeeded (Frame_Checked) then Check_View (Object, Output) else Results.Success);
       begin
-         if not Results.Succeeded (Checked) and then Checked.First_Error.Context.Limit = Canvas_Pixel_Limit then
-            --  The frame, not the view, is over the limit: no view can render this picture.
-            return Finish (Object, Checked);
-         elsif not Results.Succeeded (Checked) then
-            --  A bad view is the caller's mistake: the picture is untouched and can still be rendered.
-            return Checked;
+         if not Results.Succeeded (Frame_Checked) then
+            return Finish (Object, Frame_Checked);
+         elsif not Results.Succeeded (View_Checked) then
+            --  The picture is untouched and can still be rendered.
+            return View_Checked;
          end if;
       end;
 

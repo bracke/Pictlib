@@ -3,10 +3,13 @@
 --  limits. An exception escaping pictlib is a defect and fails the run. What an input may cost is bounded by the
 --  limits, not the clock, so time only reports: an input taking longer than Slow_Seconds is slow, one taking
 --  longer than Stuck_Seconds stuck, and both are saved under artifacts/fuzz for replay; a stuck input fails the
---  run only with --fail-stuck, for a machine whose speed is known. Arguments: [iterations] [seed]
---  [--fail-stuck]; seeds are taken in file-name order, so a pair is deterministic everywhere. With --replay
---  FILE..., each saved input is run through the same checks instead, and its time printed.
+--  run only with --fail-stuck, for a machine whose speed is known. A failure must carry a fatal code and leave
+--  the decoder Failed with it as its last error; a success must leave it in the state the call promises.
+--  Arguments: [iterations] [seed], with --fail-stuck anywhere; seeds are taken in file-name order, so a pair is
+--  deterministic everywhere. With --replay FILE..., each saved input is run through the same checks instead,
+--  and its time printed.
 --  Runs from anywhere below the pictlib tree.
+with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Files;
 with Pictlib_Testing.Fonts;
 with Pictlib_Testing.Random;
@@ -17,7 +20,6 @@ with Ada.Command_Line;
 with Ada.Containers.Indefinite_Vectors;
 with Ada.Directories;
 with Ada.Exceptions;
-with Ada.Streams.Stream_IO;
 with Ada.Text_IO;
 with Interfaces;
 with Pictlib;
@@ -25,7 +27,6 @@ with Pictlib.Decoding;
 with Pictlib.Encoding;
 with Pictlib.Errors;
 with Pictlib.Fonts;
-with Pictlib.Geometry;
 with Pictlib.Limits;
 with Pictlib.Results;
 with Pictlib.Streams;
@@ -51,13 +52,27 @@ procedure Pictlib_Fuzz is
      (for some Index in 1 .. Ada.Command_Line.Argument_Count => Ada.Command_Line.Argument (Index) = "--fail-stuck");
    Replay : constant Boolean :=
      Ada.Command_Line.Argument_Count >= 1 and then Ada.Command_Line.Argument (1) = "--replay";
-   Iterations : constant Natural :=
-     (if Ada.Command_Line.Argument_Count >= 1 and then not Replay then Natural'Value (Ada.Command_Line.Argument (1))
-      else 2_000);
-   Generator : Pictlib_Testing.Random.Generator :=
-     (if Ada.Command_Line.Argument_Count >= 2 and then not Replay
-      then Pictlib_Testing.Random.Seeded (Interfaces.Unsigned_64'Value (Ada.Command_Line.Argument (2)))
-      else Pictlib_Testing.Random.Seeded);
+
+   package Name_Vectors is new Ada.Containers.Indefinite_Vectors (Positive, String);
+   package Name_Sorting is new Name_Vectors.Generic_Sorting;
+
+   --  The arguments that are not flags: the replayed files, or the iterations and seed.
+   function Positional return Name_Vectors.Vector is
+      Result : Name_Vectors.Vector;
+   begin
+      for Index in 1 .. Ada.Command_Line.Argument_Count loop
+         if Ada.Command_Line.Argument (Index) not in "--fail-stuck" | "--replay" then
+            Result.Append (Ada.Command_Line.Argument (Index));
+         end if;
+      end loop;
+      return Result;
+   end Positional;
+   Arguments : constant Name_Vectors.Vector := Positional;
+
+   --  The iterations and seed, when the arguments give valid ones.
+   Usable : Boolean := True;
+   Iterations : Natural := 2_000;
+   Generator : Pictlib_Testing.Random.Generator := Pictlib_Testing.Random.Seeded;
 
    function Random (Bound : Positive) return Natural is (Pictlib_Testing.Random.Next (Generator, Bound));
 
@@ -75,8 +90,36 @@ procedure Pictlib_Fuzz is
    --  How far inputs got: past the header, rendered completely, rendered as a partial picture.
    Headers_Read, Rendered, Partial : Natural := 0;
 
-   package Name_Vectors is new Ada.Containers.Indefinite_Vectors (Positive, String);
-   package Name_Sorting is new Name_Vectors.Generic_Sorting;
+   --  A decoder that broke its contract on an input that did not make it raise.
+   Contract_Broken : exception;
+
+   --  Check what a call left: a failure carries a fatal code and leaves the decoder Failed with it as its last
+   --  error; a success leaves it Promised.
+   procedure Check
+     (Decoder : Pictlib.Decoding.Decoder;
+      Outcome : Pictlib.Results.Result;
+      Promised : Pictlib.Decoding.Decoder_State;
+      Call : String)
+   is
+      use type Pictlib.Decoding.Decoder_State;
+      use type Pictlib.Errors.Error_Code;
+   begin
+      if Pictlib.Results.Succeeded (Outcome) then
+         if Pictlib.Decoding.State (Decoder) /= Promised then
+            raise Contract_Broken with
+              Call & " succeeded and left " & Pictlib.Decoding.State (Decoder)'Image & ", not " & Promised'Image;
+         end if;
+      elsif not Pictlib.Errors.Is_Fatal (Outcome.First_Error) then
+         raise Contract_Broken with Call & " failed with the non-fatal " & Outcome.First_Error.Code'Image;
+      elsif Pictlib.Decoding.State (Decoder) /= Pictlib.Decoding.Failed
+        or else Pictlib.Decoding.Last_Error (Decoder).Code /= Outcome.First_Error.Code
+      then
+         raise Contract_Broken with
+           Call & " failed with " & Outcome.First_Error.Code'Image & " and left "
+           & Pictlib.Decoding.State (Decoder)'Image & ", last error "
+           & Pictlib.Decoding.Last_Error (Decoder).Code'Image;
+      end if;
+   end Check;
 
    procedure Add_Files (Directory : String) is
       use Ada.Directories;
@@ -244,29 +287,26 @@ procedure Pictlib_Fuzz is
       Pictlib.Streams.Open (Source, Input'Unchecked_Access);
       Pictlib.Decoding.Initialize (Decoder, Source'Access, Decode_Limits => Budget);
       Outcome := Pictlib.Decoding.Read_Header (Decoder);
+      Check (Decoder, Outcome, Pictlib.Decoding.Header_Read, "Read_Header");
       if Pictlib.Results.Succeeded (Outcome) then
          Outcome := Pictlib.Decoding.Enumerate (Decoder, Visitor);
+         Check (Decoder, Outcome, Pictlib.Decoding.Finished, "Enumerate");
       end if;
       for Strictness in Pictlib.Compatible .. Pictlib.Recover_When_Safe loop
          Pictlib.Streams.Open (Source, Input'Unchecked_Access);
          Pictlib.Decoding.Initialize
            (Decoder, Source'Access, (Strictness => Strictness, Fonts => Table, others => <>), Budget);
          Outcome := Pictlib.Decoding.Read_Header (Decoder);
+         Check (Decoder, Outcome, Pictlib.Decoding.Header_Read, "Read_Header");
          if Pictlib.Results.Succeeded (Outcome) then
             if Strictness = Pictlib.Recover_When_Safe then
                Headers_Read := Headers_Read + 1;
             end if;
-            declare
-               Frame : constant Pictlib.Geometry.Rect := Pictlib.Decoding.Header (Decoder).Frame;
-               Width : constant Positive := Pictlib.Geometry.Width (Frame);
-               Height : constant Positive := Pictlib.Geometry.Height (Frame);
             begin
+               --  The budget's frame limits keep every frame within Canvas.
                Outcome := Pictlib.Decoding.Render
-                 (Decoder,
-                  (Descriptor => (Width => Pictlib.Image_Width (Width), Height => Pictlib.Image_Height (Height),
-                                  Format => Pictlib.RGBA_32, Stride => Pictlib.Row_Stride (4 * Width),
-                                  Accessible_Bytes => Pictlib.Byte_Count (4 * Width * Height)),
-                   Storage => Canvas));
+                 (Decoder, Pictlib_Testing.Canvases.Frame_View (Decoder, Canvas, Pictlib.RGBA_32));
+               Check (Decoder, Outcome, Pictlib.Decoding.Finished, "Render");
                if Pictlib.Results.Succeeded (Outcome) and then Strictness = Pictlib.Recover_When_Safe then
                   if Pictlib.Decoding.Warning_Count (Decoder) > 0
                     and then Pictlib.Errors."="
@@ -284,13 +324,9 @@ procedure Pictlib_Fuzz is
    end Exercise;
 
    procedure Save (Name : String; Input : Bytes) is
-      use Ada.Streams.Stream_IO;
-      File : File_Type;
    begin
       Ada.Directories.Create_Path (Artifacts);
-      Create (File, Out_File, Artifacts & "/" & Name);
-      Bytes'Write (Stream (File), Input);
-      Close (File);
+      Pictlib_Testing.Files.Save_Path (Artifacts & "/" & Name, Input);
    end Save;
 
    Defects, Slow, Stuck : Natural := 0;
@@ -298,12 +334,13 @@ procedure Pictlib_Fuzz is
    --  Run each saved input named after --replay through the same checks, printing how long it took.
    procedure Replay_Inputs is
    begin
-      for Index in 2 .. Ada.Command_Line.Argument_Count loop
+      for Name of Arguments loop
          declare
-            Name : constant String := Ada.Command_Line.Argument (Index);
-            Data : constant Pictlib_Testing.Files.Bytes_Access := Pictlib_Testing.Files.Load_Path (Name);
+            Data : Pictlib_Testing.Files.Bytes_Access;
             Started : Ada.Calendar.Time;
          begin
+            --  Loaded here, so a file that cannot be read is reported, not raised past the handler.
+            Data := Pictlib_Testing.Files.Load_Path (Name);
             Started := Ada.Calendar.Clock;
             Exercise (Data.all);
             Ada.Text_IO.Put_Line (Name & Duration'Image (Ada.Calendar.Clock - Started) & " s");
@@ -319,6 +356,25 @@ begin
       return;
    end if;
    Pictlib_Testing.Tools.Start_Report ("pictlib_fuzz");
+   if not Replay then
+      begin
+         if Natural (Arguments.Length) > 2 then
+            Usable := False;
+         elsif Natural (Arguments.Length) >= 1 then
+            Iterations := Natural'Value (Arguments (1));
+         end if;
+         if Natural (Arguments.Length) = 2 then
+            Generator := Pictlib_Testing.Random.Seeded (Interfaces.Unsigned_64'Value (Arguments (2)));
+         end if;
+      exception
+         when Constraint_Error => Usable := False;
+      end;
+      if not Usable then
+         Fail ("usage: pictlib_fuzz [iterations] [seed] [--fail-stuck] | --replay FILE...");
+         Pictlib_Testing.Tools.Finish_Report;
+         return;
+      end if;
+   end if;
    if Replay then
       Replay_Inputs;
       Pictlib_Testing.Tools.Finish_Report;
@@ -330,24 +386,36 @@ begin
    Add_Encoded (Pictlib_Testing.Samples.Three_Colors, Pictlib.Encoding.Indexed_8);
    Add_Encoded (Pictlib_Testing.Samples.Black_And_White, Pictlib.Encoding.Mono_1);
    Ada.Text_IO.Put_Line (Natural'Image (Natural (Seeds.Length)) & " seeds," & Iterations'Image & " iterations");
+   if Seeds.Is_Empty then
+      Fail ("no seeds: run below the pictlib tree, with its fixtures");
+      Pictlib_Testing.Tools.Finish_Report;
+      return;
+   end if;
    for Iteration in 1 .. Iterations loop
-      declare
-         Input : aliased constant Bytes := Mutate (Seeds (1 + Random (Natural (Seeds.Length))));
-         Started : constant Ada.Calendar.Time := Ada.Calendar.Clock;
       begin
-         Exercise (Input);
-         if Ada.Calendar.Clock - Started > Stuck_Seconds then
-            Stuck := Stuck + 1;
-            Save ("stuck-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
-         elsif Ada.Calendar.Clock - Started > Slow_Seconds then
-            Slow := Slow + 1;
-            Save ("slow-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
-         end if;
+         declare
+            Input : aliased constant Bytes := Mutate (Seeds (1 + Random (Natural (Seeds.Length))));
+            Started : constant Ada.Calendar.Time := Ada.Calendar.Clock;
+         begin
+            Exercise (Input);
+            if Ada.Calendar.Clock - Started > Stuck_Seconds then
+               Stuck := Stuck + 1;
+               Save ("stuck-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
+            elsif Ada.Calendar.Clock - Started > Slow_Seconds then
+               Slow := Slow + 1;
+               Save ("slow-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
+            end if;
+         exception
+            when Error : others =>
+               Defects := Defects + 1;
+               Save ("defect-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
+               Fail ("DEFECT at iteration" & Iteration'Image & ": " & Ada.Exceptions.Exception_Information (Error));
+         end;
       exception
+         --  Mutation itself failed: a fault of this tool, with no input to save.
          when Error : others =>
-            Defects := Defects + 1;
-            Save ("defect-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
-            Fail ("DEFECT at iteration" & Iteration'Image & ": " & Ada.Exceptions.Exception_Information (Error));
+            Fail ("mutation failed at iteration" & Iteration'Image & ": "
+                  & Ada.Exceptions.Exception_Information (Error));
       end;
    end loop;
    Ada.Text_IO.Put_Line (Iterations'Image & " inputs:" & Headers_Read'Image & " past the header," & Rendered'Image

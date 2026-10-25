@@ -230,8 +230,7 @@ package body Pictlib_Testing.Test_Enumeration is
               "a comment lost its place in the stream");
 
       Outcome := Decoding.Copy_Metadata (Decoder, 1, Small, Count);
-      Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
-              and then Outcome.First_Error.Context.Limit = Pictlib.Output_Byte_Limit and then Count = 0
+      Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_Argument and then Count = 0
               and then Outcome.First_Error.Context.Expected = Small'Length
               and then Outcome.First_Error.Context.Actual = 3,
               "a short buffer was not rejected with its size and the item's");
@@ -294,6 +293,31 @@ package body Pictlib_Testing.Test_Enumeration is
       Assert (Pictlib.Results.Succeeded (Outcome), "a compatible decoder failed over the metadata budget");
       Assert (Decoding.Metadata_Count (Decoder) = 1, "only the empty ShortComment fits two bytes");
       Assert (Recorders.Has_Warning (Decoder, Pictlib.Errors.Data_Loss), "dropped metadata was not reported");
+      Assert (Recorders.Warning_With (Decoder, Pictlib.Errors.Data_Loss).Context.Has_Opcode
+              and then Recorders.Warning_With (Decoder, Pictlib.Errors.Data_Loss).Context.Ordinal > 0,
+              "dropped metadata did not name its opcode");
+      --  A 3 GB reserved payload, retained, with the byte budgets raised past it: the allocation budget as set
+      --  stops it, before the most one buffer holds.
+      declare
+         Huge : aliased constant Bytes := V2_Body (W (16#8100#) & L (16#C000_0000#));
+         Retain_Reserved : Decoding.Options;
+         Big : constant Pictlib.Byte_Count := 2 ** 40;
+         Huge_Events : Recorders.Recorder;
+         Huge_Decoder : Decoding.Decoder;
+      begin
+         Retain_Reserved.Retention.Reserved_Payloads := True;
+         Recorders.Decode
+           (Huge, Huge_Decoder, Huge_Events, Outcome, Retain_Reserved,
+            (Pictlib.Limits.Default_Limits with delta Max_Picture_Bytes => Big, Max_Opcode_Bytes => Big,
+                                                      Max_Retained_Metadata_Bytes => Big,
+                                                      Max_Allocation_Bytes => 1_000_000));
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
+                 and then Outcome.First_Error.Context.Limit = Pictlib.Allocation_Byte_Limit
+                 and then Outcome.First_Error.Context.Expected = 1_000_000
+                 and then Outcome.First_Error.Context.Actual = 16#C000_0000#,
+                 "a payload past one buffer named" & Outcome.First_Error.Context.Expected'Image
+                 & ", not the allocation budget");
+      end;
       Check_Events (Events, V2_Expected, "v2, dropped metadata");
 
       --  The session's allocation limit is never recovered, not even by dropping an item: at every total, a
@@ -327,6 +351,12 @@ package body Pictlib_Testing.Test_Enumeration is
       end;
 
       Recorders.Expect_Failure (Bad_Font_Name, Pictlib.Errors.Opcode_Length_Invalid, "bad font name", 16#002C#);
+      --  The opcode's 3 bytes bound the 8 its name needs.
+      Events := (others => <>);
+      Recorders.Decode (Bad_Font_Name, Decoder, Events, Outcome);
+      Assert (Outcome.First_Error.Context.Expected = 3 and then Outcome.First_Error.Context.Actual = 8,
+              "a bad font name reported" & Outcome.First_Error.Context.Expected'Image & " against"
+              & Outcome.First_Error.Context.Actual'Image);
       Events := (others => <>);
       Recorders.Decode (Bad_Font_Name, Decoder, Events, Outcome, (Strictness => Pictlib.Compatible, others => <>));
       Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.Metadata_Count (Decoder) = 0

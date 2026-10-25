@@ -13,6 +13,16 @@ package body Pictlib_Testing.Samples is
             return (if (X + Y) mod 3 = 0 or else X mod 7 = 1 then Pictlib.Images.Black else Pictlib.Images.White);
          when Gray_Ramp =>
             return (Pictlib.Byte ((X * 37) mod 256), Pictlib.Byte ((X * 37) mod 256), Pictlib.Byte ((X * 37) mod 256));
+         when Luminance_Edges =>
+            return (case X mod 8 is
+                       when 0 => (127, 127, 127),
+                       when 1 => (128, 128, 128),
+                       when 2 => (199, 199, 199),
+                       when 3 => (200, 200, 200),
+                       when 4 => (0, 255, 0),
+                       when 5 => (255, 120, 0),
+                       when 6 => (0, 218, 0),
+                       when others => (0, 218, 1));
       end case;
    end Color;
 

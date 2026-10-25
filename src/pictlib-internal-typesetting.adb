@@ -57,7 +57,7 @@ package body Pictlib.Internal.Typesetting is
       elsif Path'Length = 0 then
          return Unavailable (S, Event);
       elsif Size > Largest_Size then
-         return Rendering.Unsupported (S, Event);
+         return Rendering.Unsupported (S, Event, Largest_Size, Byte_Count (Size));
       elsif Has (State.Face, Text.Outline) or else Has (State.Face, Text.Shadow) or else not State.Unit_Ratio then
          --  Leniently drawn plain, at the stated size.
          Outcome := Rendering.Unsupported (S, Event);

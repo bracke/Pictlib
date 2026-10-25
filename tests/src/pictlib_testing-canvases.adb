@@ -1,4 +1,5 @@
 with Ada.Strings.Unbounded;
+with Pictlib.Geometry;
 with AUnit.Assertions;
 with Pictlib_Testing.Recorders;
 
@@ -23,6 +24,26 @@ package body Pictlib_Testing.Canvases is
             Accessible_Bytes => Pictlib.Byte_Count (Step * (Height - 1) + Row)),
          Storage => Storage);
    end View;
+
+   function Frame_Bytes
+     (Decoder : Pictlib.Decoding.Decoder;
+      Format : Pictlib.Pixel_Format := Pictlib.RGB_24) return Natural
+   is
+      Frame : constant Pictlib.Geometry.Rect := Pictlib.Decoding.Header (Decoder).Frame;
+   begin
+      return Natural (Pictlib.Images.Bytes_Per_Pixel (Format)) * Pictlib.Geometry.Width (Frame)
+        * Pictlib.Geometry.Height (Frame);
+   end Frame_Bytes;
+
+   function Frame_View
+     (Decoder : Pictlib.Decoding.Decoder;
+      Storage : not null Pictlib.Streams.Byte_Array_Access;
+      Format : Pictlib.Pixel_Format := Pictlib.RGB_24) return Pictlib.Images.Mutable_Image_View
+   is
+      Frame : constant Pictlib.Geometry.Rect := Pictlib.Decoding.Header (Decoder).Frame;
+   begin
+      return View (Storage, Pictlib.Geometry.Width (Frame), Pictlib.Geometry.Height (Frame), Format);
+   end Frame_View;
 
    procedure Render
      (Input : aliased Pictlib.Streams.Byte_Array;
@@ -64,12 +85,38 @@ package body Pictlib_Testing.Canvases is
       Assert (Picture_Of (Output) = Expected, Label & ": rendered " & Picture_Of (Output) & ", expected " & Expected);
    end Expect_Raster;
 
+   procedure Expect_Pixels
+     (Input : aliased Pictlib.Streams.Byte_Array;
+      Width, Height : Positive;
+      Probes : Probe_Array;
+      Label : String)
+   is
+      use AUnit.Assertions;
+      Storage : aliased Pictlib.Streams.Byte_Array := [1 .. 3 * Width * Height => 16#EE#];
+      Output : constant Pictlib.Images.Mutable_Image_View := View (Storage'Access, Width, Height);
+      Decoder : Pictlib.Decoding.Decoder;
+      Outcome : Pictlib.Results.Result;
+   begin
+      Render (Input, Decoder, Output, Outcome);
+      Assert (Pictlib.Results.Succeeded (Outcome), Label & ": render failed with " & Outcome.First_Error.Code'Image);
+      for Item of Probes loop
+         declare
+            Got : constant Pictlib.Images.RGB_Color := Pixel (Output, Item.X, Item.Y);
+         begin
+            Assert (Got = Item.Color,
+                    Label & ": pixel" & Item.X'Image & "," & Item.Y'Image & " is" & Got.Red'Image & Got.Green'Image
+                    & Got.Blue'Image & ", expected" & Item.Color.Red'Image & Item.Color.Green'Image
+                    & Item.Color.Blue'Image);
+         end;
+      end loop;
+   end Expect_Pixels;
+
    procedure Expect_Failure
      (Input : aliased Pictlib.Streams.Byte_Array;
       Width, Height : Positive;
       Code : Pictlib.Errors.Error_Code;
       Label : String;
-      Op : Pictlib.Opcode := 0;
+      Op : Expected_Opcode := Any_Opcode;
       Options : Pictlib.Decoding.Options := (others => <>);
       Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
       Limit : Pictlib.Limit_Kind := Pictlib.No_Limit;
@@ -79,7 +126,6 @@ package body Pictlib_Testing.Canvases is
       use type Pictlib.Decoding.Decoder_State;
       use type Pictlib.Errors.Error_Code;
       use type Pictlib.Limit_Kind;
-      use type Pictlib.Opcode;
       Storage : aliased Pictlib.Streams.Byte_Array := [1 .. 3 * Width * Height => 0];
       Decoder : Pictlib.Decoding.Decoder;
       Outcome : Pictlib.Results.Result;
@@ -87,7 +133,8 @@ package body Pictlib_Testing.Canvases is
       Render (Input, Decoder, View (Storage'Access, Width, Height), Outcome, Options, Budget);
       Assert (Outcome.First_Error.Code = Code,
               Label & ": expected " & Code'Image & ", got " & Outcome.First_Error.Code'Image);
-      Assert (Op = 0 or else (Outcome.First_Error.Context.Has_Opcode and then Outcome.First_Error.Context.Op = Op),
+      Assert (Op = Any_Opcode
+              or else (Outcome.First_Error.Context.Has_Opcode and then Integer (Outcome.First_Error.Context.Op) = Op),
               Label & ": the failing opcode was not recorded");
       Assert (Limit = Pictlib.No_Limit or else Outcome.First_Error.Context.Limit = Limit,
               Label & ": expected the " & Limit'Image & ", got " & Outcome.First_Error.Context.Limit'Image);

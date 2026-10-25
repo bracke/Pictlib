@@ -91,6 +91,8 @@ package Pictlib.Streams is
      (Object : in out Fixed_Buffer_Destination;
       Storage : not null Byte_Array_Access;
       Max_Transfer : Byte_Count := Byte_Count'Last);
+   --  Write: what fits; a write the storage cannot hold whole fails with Destination_Write_Failed, expecting the
+   --  storage's length and naming where the write would end.
    overriding function Write
      (Object : in out Fixed_Buffer_Destination; Buffer : Byte_Array) return Destination_Result;
    overriding function Offset (Object : Fixed_Buffer_Destination) return Destination_Offset;

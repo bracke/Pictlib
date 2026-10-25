@@ -115,8 +115,11 @@ package body Pictlib_Testing.Test_Streams is
    begin
       Pictlib.Streams.Open (Destination, Storage'Unchecked_Access);
       Outcome := Pictlib.Streams.Write_All (Destination, Input);
-      Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded, "fixed-buffer overflow has wrong error");
-      Assert (Outcome.First_Error.Context.Limit = Pictlib.Output_Byte_Limit, "output limit context was lost");
+      Assert (Outcome.First_Error.Code = Pictlib.Errors.Destination_Write_Failed,
+              "fixed-buffer overflow has wrong error");
+      Assert (Outcome.First_Error.Context.Limit = Pictlib.No_Limit and then Outcome.First_Error.Context.Expected = 2
+              and then Outcome.First_Error.Context.Actual = 4,
+              "a full buffer was not reported as its capacity against the bytes written");
       Assert (Destination.Offset = 2, "partial failure offset is wrong");
 
       Pictlib.Streams.Open (Destination, Roomy'Unchecked_Access, Max_Transfer => 0);

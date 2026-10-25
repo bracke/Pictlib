@@ -27,6 +27,10 @@ package body Pictlib_Testing.Builders is
 
    function Region (Top, Left, Bottom, Right : Integer) return Bytes is (W (10) & Rect (Top, Left, Bottom, Right));
 
+   function L_Region return Bytes is
+     (W (36) & Rect (0, 0, 4, 4) & W (0) & W (0) & W (2) & W (16#7FFF#) & W (2) & W (2) & W (4) & W (16#7FFF#)
+      & W (4) & W (0) & W (4) & W (16#7FFF#) & W (16#7FFF#));
+
    function V1_Prefix (Top, Left, Bottom, Right : Integer; Size : Natural := 0) return Bytes is
      (W (Size) & Rect (Top, Left, Bottom, Right) & B (16#11#) & B (16#01#));
 
