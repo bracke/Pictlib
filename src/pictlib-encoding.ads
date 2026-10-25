@@ -10,7 +10,8 @@ with Pictlib.Streams;
 --  OpEndPic. Calls in the wrong state fail with Invalid_State (Operation_Cancelled after Cancel).
 package Pictlib.Encoding is
    type Layout_Kind is
-     (Auto,       --  Mono_1 for black and white only, Indexed_8 for at most 256 colors, Direct_32 otherwise
+     (Auto,       --  Direct_32 when alpha is kept, else Mono_1 for black and white only, Indexed_8 for at most 256
+                  --  colors, Direct_32 otherwise
       Direct_32,  --  DirectBitsRect, 32 bits, PackBits over component planes (pack type 4)
       Indexed_8,  --  PackBitsRect, an 8-bit PixMap with an exact color table
       Mono_1);    --  PackBitsRect, a 1-bit BitMap: black below Mono_Threshold luminance, white otherwise

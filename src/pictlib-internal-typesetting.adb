@@ -15,6 +15,8 @@ package body Pictlib.Internal.Typesetting is
    --  Coverage at or above this is ink; QuickDraw text has no antialiasing.
    Ink_Threshold : constant := 128;
    Space : constant := 16#20#;
+   --  ChExtra is 4.12 fixed point.
+   Char_Extra_Unit : constant := 4096.0;
 
    function Has (Face : Byte; Bit : Byte) return Boolean is ((Face and Bit) /= 0);
 
@@ -271,9 +273,11 @@ package body Pictlib.Internal.Typesetting is
                Metric : Textrender.Glyph_Metric :=
                  (X | Y | W | H => 0, U0 | V0 | U1 | V1 | Advance_X | Bearing_X | Bearing_Y => 0.0);
                Status : constant Textrender.Status_Code := Font.Get_Glyph (Text.To_Unicode (Item), Metric, Style);
+               --  ChExtra widens every character but the space, which SpExtra widens instead.
                Advance : Float :=
                  (if Status = Textrender.Success then Metric.Advance_X else Float (Size) / 2.0)
-                 + Float (State.Char_Extra + Width_Change);
+                 + Float (Width_Change)
+                 + (if Item = Space then 0.0 else Float (State.Char_Extra) / Char_Extra_Unit);
             begin
                if Status /= Textrender.Success and then not Missing_Reported then
                   Sessions.Warn (S, Errors.Data_Loss, Errors.Data_Loss,

@@ -72,6 +72,7 @@ package body Pictlib_Testing.Test_Text is
       Color : Character := 'B';
       Extra : Float := 0.0;
       Space_Extra : Float := 0.0;
+      Char_Extra : Float := 0.0;
       Style : Textrender.Font_Style := Textrender.Regular)
    is
       Font : Textrender.Renderer;
@@ -103,8 +104,9 @@ package body Pictlib_Testing.Test_Text is
                      end if;
                   end loop;
                end loop;
+               --  The face's width change after every character; SpExtra after a space, ChExtra after any other.
                Pen := Pen + Metric.Advance_X + (if Bold then 1.0 else 0.0) + Extra
-                 + (if Code = Character'Pos (' ') then Space_Extra else 0.0);
+                 + (if Code = Character'Pos (' ') then Space_Extra else Char_Extra);
             end;
          end;
       end loop;
@@ -186,8 +188,9 @@ package body Pictlib_Testing.Test_Text is
    Xor_Text : aliased constant Bytes := Pic (Black_Under & Mode_Op (2) & Long_Text (15, 2, "Hi"));
    Copy_Text : aliased constant Bytes := Pic (Black_Under & Mode_Op (0) & Long_Text (15, 2, "."));
    Clipped_Text : aliased constant Bytes := Pic (W (16#01#) & Region (0, 0, 10, Width) & Long_Text (15, 2, "Hi"));
+   --  ChExtra 3 pixels, recorded as 4.12 fixed point, and SpExtra 4.
    Spaced : aliased constant Bytes :=
-     Pic (W (16#16#) & W (3) & W (16#06#) & L (4 * 16#1_0000#) & Long_Text (15, 2, "a b"));
+     Pic (W (16#16#) & W (3 * 4096) & W (16#06#) & L (4 * 16#1_0000#) & Long_Text (15, 2, "a b"));
 
    procedure Plain_Text (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Missing_Fonts (T : in out AUnit.Test_Cases.Test_Case'Class);
@@ -418,8 +421,8 @@ package body Pictlib_Testing.Test_Text is
       end loop;
       Canvases.Expect_Raster (Clipped_Text, Width, Height, Image (Clipped), "clipped text", With_Fonts);
 
-      --  ChExtra 3 after every character, SpExtra 4 more after the space.
-      Ink (Spaced_Out, Sans, 12, 2.0, 15, Points ("a b"), Pen_End, Extra => 3.0, Space_Extra => 4.0);
+      --  ChExtra 3 after every character but the space, SpExtra 4 after the space.
+      Ink (Spaced_Out, Sans, 12, 2.0, 15, Points ("a b"), Pen_End, Space_Extra => 4.0, Char_Extra => 3.0);
       Canvases.Expect_Raster (Spaced, Width, Height, Image (Spaced_Out), "ChExtra and SpExtra", With_Fonts);
    end Spacing_And_Clipping;
 

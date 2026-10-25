@@ -18,6 +18,11 @@ package Pictlib_Testing.Source_Policy is
    --  @param Root The pictlib tree.
    procedure Check_Registry (Root : String);
 
+   --  Check readme: every Ada block of README.md is the example program's text, line for line, so the README
+   --  shows code the tests crate builds.
+   --  @param Root The pictlib tree.
+   procedure Check_Readme (Root : String);
+
    --  Production units depend only on Ada, Interfaces (not Interfaces.C), GNAT, System, pictlib, jpeglib and
    --  textrender, and bind no foreign code. The unit is read whole, without comments, strings and character
    --  literals, and lower-cased: context clauses are taken clause by clause up to the unit itself, however

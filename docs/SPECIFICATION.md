@@ -235,13 +235,14 @@ are retained, never interpreted.
 - `LongText` sets the text origin to its point; `DHText`, `DVText` and `DHDVText` move the previous
   text origin by their unsigned offsets. Characters are drawn from the origin's baseline. Text state:
   `TxFont`, `TxFace`, `TxMode` (default `srcOr`), `TxSize` (0 is 12; points are pixels at 72 dpi;
-  above 512 is unsupported), `SpExtra` (Fixed, added after each space), `ChExtra` (added after each
-  character) and `TxRatio` (only 1:1 is supported).
+  above 512 is unsupported), `SpExtra` (Fixed, added after each space), `ChExtra` (4.12 fixed point, the
+  port's `chExtra` field: added after each character but the space, as Inside Macintosh widens
+  "each glyph other than the space character") and `TxRatio` (only 1:1 is supported).
 - Characters are Mac Roman, mapped to Unicode; bytes below 16#20# draw nothing. A character the
   font lacks advances half the size and records one `Data_Loss` warning per opcode.
 - Layout, per character: the glyph's left edge is `round (pen + bearing)`, its top is the baseline
-  less its bearing, and the pen advances by the glyph's advance plus `ChExtra`, the face's width
-  change and, after a space, `SpExtra`. There is no kerning and no antialiasing: coverage of 128 or
+  less its bearing, and the pen advances by the glyph's advance plus the face's width change and,
+  after a space, `SpExtra`, or after any other character, `ChExtra`. There is no kerning and no antialiasing: coverage of 128 or
   more is ink. The character's cell — from its left edge or the pen, whichever is less, to its
   right edge or the advanced pen, and from the font's ascent above the baseline to its descent
   below, stretched to the glyph's ink where that reaches further — is drawn through the text mode with ink as a black source and the rest as a white one, so
@@ -362,7 +363,8 @@ rules, region bounds), not indiscriminately.
 
 `Byte` from `Interfaces.Unsigned_8`; 64-bit-capacity offsets and counts; QuickDraw `Coordinate`
 (−32_768 .. 32_767); positive `Image_Width`/`Image_Height` bounded by QuickDraw's 16-bit space;
-`Opcode` (0 .. 16#FFFF#); `Pixel_Depth`; `Transfer_Mode`; `Strictness_Mode`; `PICT_Version`.
+`Opcode` (0 .. 16#FFFF#); `Pixel_Depth`; `Strictness_Mode`; `PICT_Version`. Transfer modes are
+internal: a picture's mode words are read as they are recorded.
 All conversions from file values to Ada subtypes are checked before use; no huge stack arrays.
 
 ### 5.2 Streams
@@ -377,8 +379,7 @@ optional transfer cap for short-I/O testing. A zero-byte read without EOF or fai
 Formats `RGB_24`, `BGR_24`, `RGBA_32`, `BGRA_32`, `ARGB_32`. A view is a descriptor (width,
 height, stride, accessible bytes) plus a borrowed access to caller storage. Validators check
 `stride >= width * bytes_per_pixel`, row-span overflow before `stride * (height - 1)`, and that
-storage covers the accessible bytes. The decoder renders `picFrame` (or a caller-chosen rect)
-into the view at 72 dpi; the view must be exactly the frame's size and canvas pixel (0, 0) is
+storage covers the accessible bytes. The decoder renders `picFrame` into the view at 72 dpi; the view must be exactly the frame's size and canvas pixel (0, 0) is
 the frame's top-left corner. The decoder draws directly into the view: there is no library-owned
 canvas, and the view is first filled with `Options.Background` (white by default). Rendering at
 an extended header's native resolution is a later task.

@@ -213,6 +213,34 @@ package body Pictlib_Testing.Source_Policy is
       End_Search (Search);
    end For_Files;
 
+   procedure Check_Readme (Root : String) is
+      Readme : constant String := Read_Whole (Root & "/README.md");
+      Example : constant String := Read_Whole (Root & "/tests/src/mains/pictlib_example.adb");
+      Open_Fence : constant String := "```ada" & ASCII.LF;
+      Close_Fence : constant String := ASCII.LF & "```";
+      From : Natural := Readme'First;
+      Blocks : Natural := 0;
+   begin
+      loop
+         declare
+            Opening : constant Natural := Ada.Strings.Fixed.Index (Readme (From .. Readme'Last), Open_Fence);
+            Start : constant Natural := Opening + Open_Fence'Length;
+            Closing : constant Natural :=
+              (if Opening = 0 then 0 else Ada.Strings.Fixed.Index (Readme (Start .. Readme'Last), Close_Fence));
+         begin
+            exit when Closing = 0;
+            Blocks := Blocks + 1;
+            if Ada.Strings.Fixed.Index (Example, Readme (Start .. Closing)) = 0 then
+               Fail ("README.md: an Ada block is not the text of tests/src/mains/pictlib_example.adb");
+            end if;
+            From := Closing + Close_Fence'Length;
+         end;
+      end loop;
+      if Blocks = 0 then
+         Fail ("README.md: no Ada example");
+      end if;
+   end Check_Readme;
+
    procedure Check_Registry (Root : String) is
       Routines, Tools_Found : Name_Sets.Set;
       Registry : constant String := Root & "/docs/invariants.md";

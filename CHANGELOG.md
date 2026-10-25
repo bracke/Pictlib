@@ -178,16 +178,39 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   sampling factors make, and its coefficient and output limits are that
   share and the image's pixels, so none of jpeglib's own defaults is
   reported as pictlib's allocation limit.
-- The specification describes text cells stretched to their ink, the work
-  of copying a region shape, the font file bytes a load is charged, and
-  `Font_Unavailable`; `Warning_Record_Limit` is documented as never crossed.
-
 - A filled polygon's edges count against `Max_Total_Allocation_Bytes`
   besides its points, 104 bytes an edge, so a filled polygon can now cross
   that limit where it did not.
 - A source's stall or over-reported count names the offset the reader
   reached and the counts involved, wherever it happens; a stall in the
   look-ahead used to name the source's own offset and no counts.
+- A QuickTime image's pixel buffer is admitted like every other allocation,
+  so its failure names `Max_Allocation_Bytes`, and the pixels and jpeglib's
+  share are charged to the session's total separately.
+- ChExtra is read as the 4.12 fixed-point value QuickDraw records, and
+  widens every character but the space, as Inside Macintosh says; it was
+  read as whole pixels and widened spaces too.
+
+### Documentation
+
+- The specification describes text cells stretched to their ink, the work
+  of copying a region shape, the font file bytes a load is charged, and
+  `Font_Unavailable`; `Warning_Record_Limit` is documented as never crossed.
+- The specification says the encoder's resolution only labels a picture,
+  every rectangle staying in pixels, and names its two departures from
+  QuickDraw: patterns tiled from the picture's origin, the pen kept in
+  picture coordinates.
+- The specification tabulates what `Max_Total_Allocation_Bytes` counts at
+  fixed rates, lists embedded JPEG data among what `Recover_When_Safe`
+  recovers, and the invariant registry names the units and tests that
+  enforce RENDER-002 and TASK-001.
+- The specification no longer promises a caller-chosen render rectangle or a
+  public transfer-mode type; `Decoding.Render`, `Decoding.Initialize` and
+  `Encoding.Layout_Kind` describe what they do now.
+- The README shows how to encode and decode, in the words of
+  `pictlib_example`, which the tests crate builds and `pictlib_check` holds
+  the README to; `pictlib_api_consumer` names every public subprogram by its
+  profile, so a change to one breaks the build.
 
 ### Internal structure
 
@@ -216,8 +239,8 @@ place:
   planar row layout (alpha, red, green, blue planes) is one definition the
   encoder and the decoder share, and both pixmap header readers share the
   PixMap fields and color table.
-- A shape opcode builds its coverage in one function per kind, and a shape
-  opcode with a reserved verb is never drawn whatever the opcode table says.
+- A shape opcode builds its coverage in one function per kind, and the
+  reserved verbs are those its verb list leaves out, not a second table.
 - `PackBits.Pack` packs bytes, the only rows the encoder writes, and states
   its output size in its precondition.
 - `Picture_Stream` judges every reply of a source in one place; a clip and a
@@ -231,22 +254,13 @@ place:
 - The font cache's operations that reach textrender take the textrender
   guard as a parameter, so a call without the process-wide lock does not
   compile.
-- The specification says the encoder's resolution only labels a picture,
-  every rectangle staying in pixels, and names its two departures from
-  QuickDraw: patterns tiled from the picture's origin, the pen kept in
-  picture coordinates. The encoder's pack type 0 is named for what it is,
-  the default.
-- The specification tabulates what `Max_Total_Allocation_Bytes` counts at
-  fixed rates, lists embedded JPEG data among what `Recover_When_Safe`
-  recovers, and the invariant registry names the units and tests that
-  enforce RENDER-002 and TASK-001.
+- The encoder's pack type 0 is named for what it is, the default.
 - `Internal.Sessions.Session` is private: its budget, version, strictness
   and retention are read through functions, and its reader is reached only
   for what lies outside an opcode's budget-checked data (the header, opcode
   words, pad bytes and the probe past the end).
 - `Encode` reads as its steps: check the frame, choose the layout, check
-  the plan, write. A QuickTime image's pixel buffer is admitted like every
-  other allocation, and `Decide_Layout` keeps one check per pack type and
+  the plan, write; `Decide_Layout` keeps one check per pack type and
   component count.
 
 ### Tooling

@@ -42,6 +42,50 @@ Open: the shape and text rules have not been compared with real QuickDraw
 header's native resolution is not implemented. See
 [the plan](docs/IMPLEMENTATION_PLAN.md).
 
+## Use
+
+Encode an image into a picture, then decode the picture and render it into a
+view of its frame's size. This is the body of
+[`pictlib_example`](tests/src/mains/pictlib_example.adb), which the tests crate
+builds, so the code stays true to the API (`pictlib_check` holds this README to
+it):
+
+```ada
+   --  Encode: one image becomes one picture.
+   Pictlib.Streams.Open (Output, Picture);
+   Pictlib.Encoding.Initialize (Encoder, Output'Access);
+   Outcome := Pictlib.Encoding.Encode (Encoder, (Descriptor => Layout, Storage => Pixels));
+   if Pictlib.Results.Succeeded (Outcome) then
+      Outcome := Pictlib.Encoding.Finish (Encoder);
+   end if;
+   if not Pictlib.Results.Succeeded (Outcome) then
+      Ada.Text_IO.Put_Line ("encode failed: " & Outcome.First_Error.Code'Image);
+      return;
+   end if;
+
+   --  Decode: read the header for the frame, then render into a view of the frame's size.
+   declare
+      Length : constant Natural := Natural (Pictlib.Encoding.Bytes_Written (Encoder));
+      Input : aliased Pictlib.Streams.Memory_Source;
+      Decoder : Pictlib.Decoding.Decoder;
+      Canvas : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Image_Bytes);
+   begin
+      Pictlib.Streams.Open (Input, new Pictlib.Streams.Byte_Array'(Picture (1 .. Length)));
+      Pictlib.Decoding.Initialize (Decoder, Input'Access);
+      Outcome := Pictlib.Decoding.Read_Header (Decoder);
+      if Pictlib.Results.Succeeded (Outcome) then
+         Outcome := Pictlib.Decoding.Render (Decoder, (Descriptor => Layout, Storage => Canvas));
+      end if;
+      if Pictlib.Results.Succeeded (Outcome) and then Canvas.all = Pixels.all then
+         Ada.Text_IO.Put_Line ("a" & Length'Image & "-byte picture decoded back to its pixels");
+      else
+         Ada.Text_IO.Put_Line ("decode failed: " & Outcome.First_Error.Code'Image);
+      end if;
+   end;
+```
+
+Run it with `alr --chdir tests exec -- ./bin/pictlib_example`.
+
 ## Build and test
 
 All commands use Alire so the declared GNAT 15 toolchain is selected, and all

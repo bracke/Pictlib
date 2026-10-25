@@ -47,7 +47,8 @@ package Pictlib.Decoding is
    --  Initialize.
    --  @param Object Decoder; any earlier picture is discarded.
    --  @param Input Borrowed source; the caller keeps it alive until Reset, Finalize or another Initialize.
-   --  @param Decode_Options Strictness, file header policy and metadata retention.
+   --  @param Decode_Options Strictness, file header policy, metadata retention, whether input must end at the
+   --  end opcode, the background a render starts from, and the fonts text is drawn with.
    --  @param Decode_Limits Resource budgets.
    procedure Initialize
      (Object : in out Decoder;
@@ -79,8 +80,11 @@ package Pictlib.Decoding is
    --  @param Object Decoder in state Header_Read; Finished on success.
    --  @param Output A valid caller view exactly the size of the frame; canvas pixel (0, 0) is the frame's
    --  top-left corner. Its pixels are defined on success, and on a Partial_Picture warning.
-   --  @return Success; Invalid_Argument for an invalid or wrongly sized view; Limit_Exceeded for a frame over
-   --  the canvas or output limits; Unsupported_Feature (strictly) for drawing this release does not render.
+   --  @return Success; Invalid_Argument for an invalid or wrongly sized view, or Limit_Exceeded for a view over
+   --  Max_Output_Bytes, both leaving the decoder in Header_Read so another view can be given; Limit_Exceeded
+   --  for a frame over Max_Canvas_Pixels, which no view can render, leaving it Failed; Unsupported_Feature
+   --  (strictly) for drawing this release does not render; otherwise the first failure while drawing, a
+   --  budget crossed among them.
    --  Recover_When_Safe returns success with a Partial_Picture warning when malformed data ends the picture.
    function Render (Object : in out Decoder; Output : Images.Mutable_Image_View) return Results.Result;
    --  Last error.

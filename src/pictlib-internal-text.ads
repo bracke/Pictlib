@@ -27,6 +27,7 @@ package Pictlib.Internal.Text is
       --  0 is the default size, 12.
       Size : Natural := 0;
       Space_Extra : Geometry.Fixed := 0;
+      --  ChExtra as recorded: 4.12 fixed point, 4096 a pixel.
       Char_Extra : Integer := 0;
       Unit_Ratio : Boolean := True;
       --  Where the last text was drawn from, in picture coordinates; DHText and DVText move it.
