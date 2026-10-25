@@ -81,9 +81,14 @@ package body Pictlib.Internal.Text is
      (for some Item of Cache.Items =>
         Item.Used and then Ada.Strings.Unbounded.To_String (Item.Path) = Path and then Item.Size = Size);
 
-   function Acquire (Cache : in out Font_Cache; Path : String; Size : Positive; Slot : out Positive)
-     return Textrender.Status_Code
+   function Acquire
+     (Cache : in out Font_Cache;
+      Path : String;
+      Size : Positive;
+      Slot : out Positive;
+      Held : Textrender_Guard) return Textrender.Status_Code
    is
+      pragma Unreferenced (Held);
       Key : constant Ada.Strings.Unbounded.Unbounded_String := Ada.Strings.Unbounded.To_Unbounded_String (Path);
       Free : Natural := 0;
       Loaded : Natural := 0;
@@ -140,8 +145,13 @@ package body Pictlib.Internal.Text is
       return Textrender.Success;
    end Acquire;
 
-   function Renderer (Cache : aliased in out Font_Cache; Slot : Positive)
-     return not null access Textrender.Renderer is (Cache.Items (Slot).Renderer'Access);
+   function Renderer (Cache : aliased in out Font_Cache; Slot : Positive; Held : Textrender_Guard)
+     return not null access Textrender.Renderer
+   is
+      pragma Unreferenced (Held);
+   begin
+      return Cache.Items (Slot).Renderer'Access;
+   end Renderer;
 
    procedure Clear (Cache : in out Font_Cache) is
       Guard : Textrender_Guard;

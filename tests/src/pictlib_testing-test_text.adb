@@ -165,6 +165,7 @@ package body Pictlib_Testing.Test_Text is
    Bold_Text : aliased constant Bytes := Pic (Face_Op (1) & Long_Text (15, 2, "Hi"));
    Underlined : aliased constant Bytes := Pic (Face_Op (4) & Long_Text (15, 2, "Hi"));
    Outlined : aliased constant Bytes := Pic (Face_Op (8) & Long_Text (15, 2, "Hi"));
+   Shadowed : aliased constant Bytes := Pic (Face_Op (16) & Long_Text (15, 2, "Hi"));
    Stretched : aliased constant Bytes :=
      Pic (W (16#10#) & W (2) & W (1) & W (1) & W (1) & Long_Text (15, 2, "Hi"));
    Too_Large : aliased constant Bytes := Pic (Size_Op (600) & Long_Text (15, 2, "Hi"));
@@ -320,6 +321,10 @@ package body Pictlib_Testing.Test_Text is
                                With_Fonts);
       Canvases.Expect_Raster (Outlined, Width, Height, Expected (Sans, 12, 2, 15, "Hi"), "outline drawn plain",
                               With_Fonts (Strictness => Pictlib.Compatible));
+      Canvases.Expect_Failure (Shadowed, Width, Height, Pictlib.Errors.Unsupported_Feature, "shadow", 16#28#,
+                               Options => With_Fonts);
+      Canvases.Expect_Raster (Shadowed, Width, Height, Expected (Sans, 12, 2, 15, "Hi"), "shadow drawn plain",
+                              With_Fonts (Strictness => Pictlib.Compatible));
       Canvases.Expect_Failure (Stretched, Width, Height, Pictlib.Errors.Unsupported_Feature, "TxRatio 2:1", 16#28#,
                                With_Fonts);
       Canvases.Expect_Failure (Too_Large, Width, Height, Pictlib.Errors.Unsupported_Feature, "TxSize 600", 16#28#,
@@ -456,19 +461,43 @@ package body Pictlib_Testing.Test_Text is
          return Pictlib.Results.Succeeded (Outcome);
       end Renders;
 
-      --  The least drawing budget Input renders under.
-      function Least (Input : aliased Bytes) return Pictlib.Pixel_Count is
-        (Canvases.Least_Drawing_Work (Input, Width, Height, "text work", Options));
+      function Load (Size : Positive) return Pictlib.Pixel_Count is
+        (Pictlib.Internal.Text.Load_Work (Size, Pictlib.Internal.Text.File_Bytes (Sans)));
+      function Glyphs (Size : Positive; Count : Natural) return Pictlib.Pixel_Count is
+        (Pictlib.Pixel_Count (Count) * Pictlib.Internal.Text.Glyph_Work (Size));
+
+      --  The least drawing budget Input renders under, searched below twice Estimate, what its fonts and glyphs
+      --  cost, which it must render under: a search from 2^30 would load the fonts some thirty times.
+      function Least (Input : aliased Bytes; Estimate : Pictlib.Pixel_Count) return Pictlib.Pixel_Count is
+         High : constant Pictlib.Pixel_Count := 2 * Estimate + 1_000_000;
+      begin
+         Assert (Renders (Input, High), "text work: the estimate is below what the picture needs");
+         return Canvases.Least_Drawing_Work (Input, Width, Height, "text work", Options, High => High);
+      end Least;
+
+      --  Nine fonts of sizes 12 .. 20, a glyph each.
+      function Round_Estimate return Pictlib.Pixel_Count is
+         Total : Pictlib.Pixel_Count := 0;
+      begin
+         for Size in 12 .. 20 loop
+            Total := Total + Load (Size) + Glyphs (Size, 1);
+         end loop;
+         return Total;
+      end Round_Estimate;
+
+      One_Glyph_Least : Pictlib.Pixel_Count;
    begin
       --  A size 500 font costs its 16 MiB atlas before it is loaded, so a small budget never loads it.
       Assert (not Renders (Big_Font, 10_000_000), "a size 500 font was loaded on a budget below its atlas");
       Assert (Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit, "a size 500 font: wrong limit");
       --  255 glyphs cost more than one.
       --  Each glyph asked for costs its full charge, 16 units a cell pixel, drawn or not.
-      Assert (Least (Many_Glyphs) - Least (One_Glyph) >= 254 * Pictlib.Internal.Text.Glyph_Work (12),
+      One_Glyph_Least := Least (One_Glyph, Load (12) + Glyphs (12, 1));
+      Assert (Least (Many_Glyphs, Load (12) + Glyphs (12, 255)) - One_Glyph_Least
+              >= 254 * Pictlib.Internal.Text.Glyph_Work (12),
               "glyphs drawn below the frame cost less than their charge");
       --  Loading a font costs its atlas and its file, which textrender copies whole.
-      Assert (Least (One_Glyph) >= Pictlib.Internal.Text.Load_Work (12, Pictlib.Internal.Text.File_Bytes (Sans)),
+      Assert (One_Glyph_Least >= Load (12),
               "a font load cost less than its atlas and file");
       --  Text counts against an aggregate allocation quota only what it allocates, the font: a hundred full
       --  runs fit a quota a few times the font's size.
@@ -489,7 +518,7 @@ package body Pictlib_Testing.Test_Text is
          Base : aliased constant Bytes := Pic (Black_Under & Mode_Op (0) & Size_Op (12));
          Copy_H : aliased constant Bytes := Pic (Black_Under & Mode_Op (0) & Size_Op (12) & Long_Text (15, 2, "H"));
          Before_Cells : constant Pictlib.Pixel_Count :=
-           Least (Base) + Pictlib.Internal.Text.Load_Work (12, Pictlib.Internal.Text.File_Bytes (Sans))
+           Least (Base, 1_000) + Load (12)
            + Pictlib.Internal.Text.Glyph_Work (12);
       begin
          Assert (not Renders (Copy_H, Before_Cells), "copy-mode text fit a budget that ends before its cells");
@@ -504,18 +533,20 @@ package body Pictlib_Testing.Test_Text is
          Underlined : aliased constant Bytes :=
            Pic (Size_Op (4) & Face_Op (4) & Long_Text (-1, 0, [1 .. 255 => 'A']));
       begin
-         Assert (Least (Underlined) >= Least (Plain) + Width, "an underline below off-frame text cost nothing");
+         Assert (Least (Underlined, Load (4) + Glyphs (4, 255)) >= Least (Plain, Load (4) + Glyphs (4, 255)) + Width,
+                 "an underline below off-frame text cost nothing");
       end;
       --  Reloading an evicted font costs as much as loading it the first time.
       declare
-         First_Round : constant Pictlib.Pixel_Count := Least (Once);
+         First_Round : constant Pictlib.Pixel_Count := Least (Once, Round_Estimate);
       begin
-         Assert (First_Round > 0 and then Least (Twice) >= 2 * First_Round - First_Round / 10,
+         Assert (First_Round > 0 and then Least (Twice, 2 * Round_Estimate) >= 2 * First_Round - First_Round / 10,
                  "fonts evicted and loaded again cost nothing");
       end;
    end Text_Work;
 
-   --  Eight fonts stay loaded; a ninth that fails to load evicts none, and one that loads evicts the oldest.
+   --  Eight fonts stay loaded; a ninth that fails to load evicts none, and one that loads evicts the least
+   --  recently used, which a font asked for again is not.
    procedure Font_Cache (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
       package Text renames Pictlib.Internal.Text;
@@ -524,18 +555,23 @@ package body Pictlib_Testing.Test_Text is
    begin
       declare
          Guard : Text.Textrender_Guard;
-         pragma Unreferenced (Guard);
+
+         function Loads (Path : String; Size : Positive) return Boolean is
+           (Text.Acquire (Cache, Path, Size, Slot, Guard) = Textrender.Success);
       begin
          for Size in 10 .. 17 loop
-            Assert (Text.Acquire (Cache, Sans, Size, Slot) = Textrender.Success, "size" & Size'Image & " did not load");
+            Assert (Loads (Sans, Size), "size" & Size'Image & " did not load");
          end loop;
+         --  Size 10, the oldest, is used again: size 11 is now the least recently used.
+         Assert (Loads (Sans, 10), "a loaded font was not found");
          --  A file that is there but is no font.
-         Assert (Text.Acquire (Cache, "fixtures/README.md", 12, Slot) /= Textrender.Success, "a text file loaded");
+         Assert (not Loads ("fixtures/README.md", 12), "a text file loaded");
          Assert ((for all Size in 10 .. 17 => Text.Cached (Cache, Sans, Size)),
                  "a font that failed to load evicted a loaded one");
-         Assert (Text.Acquire (Cache, Mono, 12, Slot) = Textrender.Success, "a ninth font did not load");
-         Assert (Text.Cached (Cache, Mono, 12) and then not Text.Cached (Cache, Sans, 10)
-                 and then (for all Size in 11 .. 17 => Text.Cached (Cache, Sans, Size)),
+         Assert (Loads (Mono, 12), "a ninth font did not load");
+         Assert (Text.Cached (Cache, Mono, 12) and then not Text.Cached (Cache, Sans, 11)
+                 and then Text.Cached (Cache, Sans, 10)
+                 and then (for all Size in 12 .. 17 => Text.Cached (Cache, Sans, Size)),
                  "a ninth font did not replace only the least recently used one");
       end;
       --  Clear takes the lock itself.
@@ -554,8 +590,10 @@ package body Pictlib_Testing.Test_Text is
          Font : Textrender.Renderer;
          Metric : Textrender.Glyph_Metric;
       begin
-         Assert (Font.Load_Font (Sans, Size, 2 * Size + 2, 2 * Size + 2, 256, 256) = Textrender.Success,
-                 "the font did not load");
+         --  As pictlib loads it, so the check is of pictlib's atlas.
+         Assert (Font.Load_Font (Sans, Size, Pictlib.Internal.Text.Cell (Size), Pictlib.Internal.Text.Cell (Size),
+                                 Pictlib.Internal.Text.Atlas_Side (Size), Pictlib.Internal.Text.Atlas_Side (Size))
+                 = Textrender.Success, "the font did not load");
          Font.Set_Atlas_Eviction (True);
          for Code of Points (Many) loop
             Assert (Font.Get_Glyph (Code, Metric) = Textrender.Success, "a glyph is missing");
@@ -607,8 +645,10 @@ package body Pictlib_Testing.Test_Text is
          Font : Textrender.Renderer;
          Metric : Textrender.Glyph_Metric;
       begin
-         Assert (Font.Load_Font (Sans, Size, 2 * Size + 2, 2 * Size + 2, 256, 256) = Textrender.Success,
-                 "the font did not load");
+         --  As pictlib loads it, so the check is of pictlib's atlas.
+         Assert (Font.Load_Font (Sans, Size, Pictlib.Internal.Text.Cell (Size), Pictlib.Internal.Text.Cell (Size),
+                                 Pictlib.Internal.Text.Atlas_Side (Size), Pictlib.Internal.Text.Atlas_Side (Size))
+                 = Textrender.Success, "the font did not load");
          Font.Set_Atlas_Eviction (True);
          for Code in Pictlib.Byte range 16#21# .. 16#FE# loop
             if Font.Get_Glyph (Text.To_Unicode (Code), Metric) = Textrender.Success
@@ -632,10 +672,18 @@ package body Pictlib_Testing.Test_Text is
             Whole_Storage, Storage : aliased Bytes := [1 .. 3 * Width * Height => 0];
             Decoder : Pictlib.Decoding.Decoder;
             Outcome : Pictlib.Results.Result;
-            --  The font's load and a request per character: a failure beyond it is inside the repaint.
+            --  The font's load and a request per character.
             Requests : constant Pictlib.Pixel_Count :=
               Pictlib.Pixel_Count (Characters'Length) * Glyph + Text.Load_Work (Size, Text.File_Bytes (Sans));
-            Inside_Repaint : Boolean := False;
+            --  Where the bug lived: past the requests, the clip's own cost and the glyph taken again, and short of
+            --  the first repaint's clip walk, the cost of passing every line of the clip.
+            Clip_Alone : aliased constant Bytes := Pic (Clip);
+            Clip_Cost : constant Pictlib.Pixel_Count :=
+              Canvases.Least_Drawing_Work (Clip_Alone, Width, Height, "the clip alone", With_Fonts);
+            Walk : constant Pictlib.Pixel_Count := Added * Lines * (Lines + 1) / 2;
+            Window_Low : constant Pictlib.Pixel_Count := Requests + Clip_Cost + Glyph;
+            Window_High : constant Pictlib.Pixel_Count := Requests + Clip_Cost + Walk;
+            In_Window : Boolean := False;
          begin
             Canvases.Render (Picture, Decoder, Canvases.View (Whole_Storage'Access, Width, Height), Outcome,
                              With_Fonts);
@@ -647,10 +695,8 @@ package body Pictlib_Testing.Test_Text is
                  (Picture, Decoder, Canvases.View (Storage'Access, Width, Height), Outcome, With_Fonts,
                   (Pictlib.Limits.Default_Limits with delta
                      Max_Drawing_Work => Requests + Pictlib.Pixel_Count (Step) * 16_000));
-               if not Pictlib.Results.Succeeded (Outcome)
-                 and then Pictlib."<" (Pictlib.Byte_Count (Requests), Outcome.First_Error.Context.Actual)
-               then
-                  Inside_Repaint := True;
+               if Requests + Pictlib.Pixel_Count (Step) * 16_000 in Window_Low .. Window_High - 1 then
+                  In_Window := True;
                end if;
                Assert ((Pictlib.Results.Succeeded (Outcome) and then Storage = Whole_Storage)
                        or else (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
@@ -659,8 +705,8 @@ package body Pictlib_Testing.Test_Text is
                        & (if Pictlib.Results.Succeeded (Outcome) then "succeeded with glyphs missing"
                           else "failed with " & Outcome.First_Error.Code'Image));
             end loop;
-            --  The sweep reaches the repaint, or it tests nothing.
-            Assert (Inside_Repaint, "no budget of the sweep ran out inside the repaint");
+            --  The sweep reaches the window, or it tests nothing.
+            Assert (In_Window, "no budget of the sweep lies between" & Window_Low'Image & " and" & Window_High'Image);
          end;
       end;
    end Eviction_Over_Budget;

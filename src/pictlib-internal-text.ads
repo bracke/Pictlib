@@ -53,9 +53,14 @@ package Pictlib.Internal.Text is
    --  @param Path TrueType file.
    --  @param Size Pixel size.
    --  @param Slot The renderer's slot.
+   --  @param Held The guard the caller holds: textrender is called only under the lock.
    --  @return Textrender's status of loading the font, Success when it was loaded already.
-   function Acquire (Cache : in out Font_Cache; Path : String; Size : Positive; Slot : out Positive)
-     return Textrender.Status_Code;
+   function Acquire
+     (Cache : in out Font_Cache;
+      Path : String;
+      Size : Positive;
+      Slot : out Positive;
+      Held : Textrender_Guard) return Textrender.Status_Code;
    --  Cached.
    --  @param Cache Cache of loaded fonts.
    --  @param Path TrueType file.
@@ -65,13 +70,22 @@ package Pictlib.Internal.Text is
    --  Renderer.
    --  @param Cache Cache.
    --  @param Slot A slot Acquire returned.
+   --  @param Held The guard the caller holds for as long as it uses the renderer.
    --  @return Its renderer.
-   function Renderer (Cache : aliased in out Font_Cache; Slot : Positive)
+   function Renderer (Cache : aliased in out Font_Cache; Slot : Positive; Held : Textrender_Guard)
      return not null access Textrender.Renderer;
    --  Clear.
    --  @param Cache Cache whose fonts are released.
    procedure Clear (Cache : in out Font_Cache);
 
+   --  Cell.
+   --  @param Size Pixel size.
+   --  @return The side of the square cell a glyph of Size is rasterized into.
+   function Cell (Size : Positive) return Positive;
+   --  Atlas side.
+   --  @param Size Pixel size.
+   --  @return The side of the square atlas a font of Size is loaded with.
+   function Atlas_Side (Size : Positive) return Positive;
    --  Atlas bytes.
    --  @param Size Pixel size.
    --  @return Bytes of the square alpha atlas a font of that size is loaded with.

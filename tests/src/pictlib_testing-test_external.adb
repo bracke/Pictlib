@@ -32,10 +32,7 @@ package body Pictlib_Testing.Test_External is
             declare
                Got : constant Pictlib.Images.RGB_Color := Canvases.Pixel (Output, X, Y);
                Want : constant Pictlib.Images.RGB_Color := Files.Pixel (Source, X, Y);
-               Difference : constant Natural :=
-                 Natural'Max (abs (Integer (Got.Red) - Integer (Want.Red)),
-                              Natural'Max (abs (Integer (Got.Green) - Integer (Want.Green)),
-                                           abs (Integer (Got.Blue) - Integer (Want.Blue))));
+               Difference : constant Natural := Canvases.Difference (Got, Want);
             begin
                Largest := Natural'Max (Largest, Difference);
                if Difference > Tolerance then
@@ -80,13 +77,10 @@ package body Pictlib_Testing.Test_External is
       Expect_Source ("mono_magick.pict", "mono.pbm");
    end ImageMagick_Direct;
 
-   --  Two conforming JPEG decoders may differ by a level or two after the inverse DCT and color conversion.
-   Decoder_Tolerance : constant := 2;
-
    procedure ImageMagick_QuickTime (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
    begin
-      Expect_Source ("truecolor_jpeg.pict", "truecolor_embedded.ppm", Decoder_Tolerance);
-      Expect_Source ("palette_jpeg.pict", "palette_embedded.ppm", Decoder_Tolerance);
+      Expect_Source ("truecolor_jpeg.pict", "truecolor_embedded.ppm", Canvases.JPEG_Decoder_Tolerance);
+      Expect_Source ("palette_jpeg.pict", "palette_embedded.ppm", Canvases.JPEG_Decoder_Tolerance);
    end ImageMagick_QuickTime;
 end Pictlib_Testing.Test_External;

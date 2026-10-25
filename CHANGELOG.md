@@ -134,8 +134,14 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   extent rounded up to whole MCUs, so narrow subsampled JPEGs decode:
   `quicktime.narrow_image` renders a 1 × 16000 progressive 4:2:0 JPEG
   written by jpeglib's encoder, which the unpadded share refused.
-- `text.eviction_over_budget` requires its sweep to reach the repaint, so a
-  drift in the costs it is built on cannot leave it testing nothing.
+- `text.eviction_over_budget` requires a budget of its sweep to lie in the
+  window the bug lived in, computed from the glyph, font-load and clip
+  costs, so a drift in them cannot leave it testing nothing; both eviction
+  tests check pictlib's own atlas geometry.
+- `text.font_cache` tells least-recently-used eviction from first-in,
+  first-out; `text.faces` covers the shadow face; `text.work` searches its
+  least budgets below a ceiling worked out from its fonts and glyphs; the
+  JPEG decoders' tolerance and the jpeglib encoding helper are shared.
 - The picture reader no longer clears the rest of a caller's buffer on
   every short read, which made long payloads from a source that delivers in
   small pieces quadratic in work no budget counted; nor does the source
@@ -144,7 +150,14 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   there is cannot make the decoder raise.
 - A lossless JPEG is `Unsupported_Feature` once its header is read: jpeglib
   decodes one through stack buffers sized by the image, which no budget
-  bounds, so a large one could overflow the stack.
+  bounds, so a large one could overflow the stack. So is a progressive or
+  hierarchical JPEG of more than 8192 blocks (about 175,000 pixels at
+  4:2:0), whose progressive decode keeps a map of 64 bytes a block on the
+  stack.
+- A hierarchical JPEG is held to twice its coefficients against jpeglib's
+  share, since jpeglib keeps a continuation frame's beside the first's.
+- jpeglib's `Invalid_State`, which only malformed data makes when pictlib
+  drives it, is `Embedded_Image_Failed`.
 - jpeglib's share is sized over 32-pixel MCUs, the largest jpeglib's
   sampling factors make, and its coefficient and output limits are that
   share and the image's pixels, so none of jpeglib's own defaults is
@@ -152,6 +165,13 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - The specification describes text cells stretched to their ink, the work
   of copying a region shape, the font file bytes a load is charged, and
   `Font_Unavailable`; `Warning_Record_Limit` is documented as never crossed.
+
+- A filled polygon's edges count against `Max_Total_Allocation_Bytes`
+  besides its points, 104 bytes an edge, so a filled polygon can now cross
+  that limit where it did not.
+- A source's stall or over-reported count names the offset the reader
+  reached and the counts involved, wherever it happens; a stall in the
+  look-ahead used to name the source's own offset and no counts.
 
 ### Internal structure
 
@@ -180,21 +200,25 @@ place:
   planar row layout (alpha, red, green, blue planes) is one definition the
   encoder and the decoder share, and both pixmap header readers share the
   PixMap fields and color table.
-- A shape opcode builds its coverage in one function per kind. A filled
-  polygon's edges count against `Max_Total_Allocation_Bytes` besides its
-  points, and a shape opcode with a reserved verb is never drawn whatever
-  the opcode table says.
+- A shape opcode builds its coverage in one function per kind, and a shape
+  opcode with a reserved verb is never drawn whatever the opcode table says.
 - `PackBits.Pack` packs bytes, the only rows the encoder writes, and states
   its output size in its precondition.
-- `Picture_Stream` judges every reply of a source in one place, so an
-  over-reported count and a stall carry the same context wherever they
-  happen; a clip and a mask cut a row through one helper, which charges
-  the region walk before cutting.
+- `Picture_Stream` judges every reply of a source in one place; a clip and a
+  mask cut a row through one helper, which charges the region walk before
+  cutting.
 - `Pictlib.Fonts` keys font IDs by `Font_ID`.
 - The byte readers carry no opcode of their own: the session attributes
   every failure to its opcode in one place. The container uses the one
   opcode-boundary test, and the encoder surveys colors only for `Auto` and
   `Indexed_8`.
+- The font cache's operations that reach textrender take the textrender
+  guard as a parameter, so a call without the process-wide lock does not
+  compile.
+- The specification tabulates what `Max_Total_Allocation_Bytes` counts at
+  fixed rates, lists embedded JPEG data among what `Recover_When_Safe`
+  recovers, and the invariant registry names the units and tests that
+  enforce RENDER-002 and TASK-001.
 - `Internal.Sessions.Session` is private: its budget, version, strictness
   and retention are read through functions, and its reader is reached only
   for what lies outside an opcode's budget-checked data (the header, opcode

@@ -45,6 +45,12 @@ package body Pictlib.Internal.QuickTime is
    MCU_Side : constant := 32;
    --  The most jpeglib is handed at once.
    Read_Chunk : constant := 4096;
+   --  jpeglib's coefficients: 64 per block, 4 bytes each.
+   Coefficient_Block_Bytes : constant := 64 * 4;
+   --  jpeglib decodes a progressive scan with a map of 64 bytes a block on the stack, sized by the image; a
+   --  decoder may run in a task with a small stack, so pictlib draws no progressive image whose map would be
+   --  larger than this.
+   Progressive_Stack_Bytes : constant := 512 * 1024;
 
    type Pixel_Buffer_Access is access Jpeglib.Streams.Byte_Array;
    procedure Free is new Ada.Unchecked_Deallocation (Jpeglib.Streams.Byte_Array, Pixel_Buffer_Access);
@@ -277,8 +283,9 @@ package body Pictlib.Internal.QuickTime is
               ((case Code is
                    when Jpeglib.Errors.Unsupported_Feature | Jpeglib.Errors.Output_Limit_Exceeded =>
                      Errors.Unsupported_Feature,
-                   when Jpeglib.Errors.Invalid_State | Jpeglib.Errors.Operation_Cancelled
-                      | Jpeglib.Errors.Internal_Invariant_Failed => Errors.Internal_Invariant_Failed,
+                   --  pictlib drives jpeglib's states in order, so Invalid_State comes only from malformed data.
+                   when Jpeglib.Errors.Operation_Cancelled | Jpeglib.Errors.Internal_Invariant_Failed =>
+                     Errors.Internal_Invariant_Failed,
                    when others => Errors.Embedded_Image_Failed),
                Context));
       end Rejected;
@@ -301,13 +308,40 @@ package body Pictlib.Internal.QuickTime is
          --  The JPEG must be the image the description states.
          Jpeglib.Decoding.Finalize (Decoder);
          return Failures.In_Opcode (Event, Errors.Embedded_Image_Failed);
-      elsif Jpeglib.Results.Succeeded (Decoded)
-        and then Jpeglib.Decoding.Header (Decoder).Mode in Jpeglib.Lossless | Jpeglib.Differential_Lossless
-      then
-         --  jpeglib decodes a lossless JPEG through planes it holds on the stack, sized by the image: no budget
-         --  bounds them, so a lossless image is one this renderer does not draw.
-         Jpeglib.Decoding.Finalize (Decoder);
-         return Failures.In_Opcode (Event, Errors.Unsupported_Feature);
+      elsif Jpeglib.Results.Succeeded (Decoded) then
+         declare
+            Info : constant Jpeglib.Decoding.Image_Info := Jpeglib.Decoding.Header (Decoder);
+            Blocks : constant Byte_Count := Byte_Count (Info.Coefficient_Blocks);
+            --  A hierarchical image's continuation frames may be progressive whatever its first frame is.
+            Progressive : constant Boolean :=
+              Info.Mode in Jpeglib.Progressive_DCT | Jpeglib.Differential_Progressive_DCT or else Info.Hierarchical;
+         begin
+            if Info.Mode in Jpeglib.Lossless | Jpeglib.Differential_Lossless
+              or else (Progressive and then Blocks > Progressive_Stack_Bytes / 64)
+            then
+               --  jpeglib would decode it through stack buffers sized by the image, which no budget bounds: a
+               --  lossless image's planes, a large progressive image's coefficient map. This renderer does not
+               --  draw it.
+               Jpeglib.Decoding.Finalize (Decoder);
+               return Failures.In_Opcode (Event, Errors.Unsupported_Feature);
+            elsif Info.Hierarchical
+              and then Checked_Arithmetic.Saturating_Multiply (2 * Coefficient_Block_Bytes, Blocks) > Share
+            then
+               --  A continuation frame's coefficients are held beside the first frame's: twice what jpeglib checks
+               --  against its share.
+               Jpeglib.Decoding.Finalize (Decoder);
+               return Results.Failure
+                 (Errors.Make
+                    (Errors.Limit_Exceeded,
+                     (Sessions.Context_Of (Event) with delta
+                        Limit => Allocation_Byte_Limit,
+                        Expected => Checked_Arithmetic.Saturating_Add (Byte_Count (Bytes), Share),
+                        Actual =>
+                          Checked_Arithmetic.Saturating_Add
+                            (Byte_Count (Bytes),
+                             Checked_Arithmetic.Saturating_Multiply (2 * Coefficient_Block_Bytes, Blocks)))));
+            end if;
+         end;
       end if;
       if Jpeglib.Results.Succeeded (Decoded) then
          Pixels := new Jpeglib.Streams.Byte_Array (1 .. Bytes);

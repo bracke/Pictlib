@@ -67,6 +67,15 @@ package Pictlib_Testing.Canvases is
       Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
       High : Pictlib.Pixel_Count := 1_073_741_824) return Pictlib.Pixel_Count;
 
+   --  How far two conforming JPEG decoders, libjpeg and jpeglib, may differ in a component of the same pixel,
+   --  after the inverse DCT and color conversion.
+   JPEG_Decoder_Tolerance : constant := 2;
+   --  Difference.
+   --  @return The largest difference of a component of Left from the same component of Right.
+   function Difference (Left, Right : Pictlib.Images.RGB_Color) return Natural is
+     (Natural'Max (abs (Integer (Left.Red) - Integer (Right.Red)),
+                   Natural'Max (abs (Integer (Left.Green) - Integer (Right.Green)),
+                                abs (Integer (Left.Blue) - Integer (Right.Blue)))));
    --  Pixel.
    --  @return The color at X, Y of an RGB_24 view.
    function Pixel (Output : Pictlib.Images.Mutable_Image_View; X, Y : Natural) return Pictlib.Images.RGB_Color;

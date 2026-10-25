@@ -22,7 +22,7 @@ package body Pictlib.Internal.Typesetting is
      (Sessions.Reject_Or_Warn
         (S, Errors.Font_Unavailable, Errors.Approximated_Rendering, Errors.Data_Loss, Sessions.Context_Of (Event)));
 
-   --  The characters, with the font in Slot loaded; called under the textrender lock.
+   --  The characters, with the font in Slot loaded; called under the textrender lock, which Held is.
    function Draw_Characters
      (P : in out Rendering.Painter;
       S : in out Sessions.Session;
@@ -30,7 +30,8 @@ package body Pictlib.Internal.Typesetting is
       Characters : Streams.Byte_Array;
       Slot : Positive;
       Kind : Transfer_Modes.Mode_Kind;
-      Size : Positive) return Results.Result;
+      Size : Positive;
+      Held : Text.Textrender_Guard) return Results.Result;
 
    function Draw
      (P : in out Rendering.Painter;
@@ -84,14 +85,14 @@ package body Pictlib.Internal.Typesetting is
       end if;
 
       declare
-         --  Every textrender call below is made under the process-wide textrender lock.
+         --  Every textrender call below is made under the process-wide textrender lock, which the calls that
+         --  reach textrender require.
          Guard : Text.Textrender_Guard;
-         pragma Unreferenced (Guard);
       begin
-         if Text.Acquire (P.Font_Cache, Path, Size, Slot) /= Textrender.Success then
+         if Text.Acquire (P.Font_Cache, Path, Size, Slot, Guard) /= Textrender.Success then
             return Unavailable (S, Event);
          end if;
-         Outcome := Draw_Characters (P, S, Event, Characters, Slot, Kind, Size);
+         Outcome := Draw_Characters (P, S, Event, Characters, Slot, Kind, Size, Guard);
       end;
       return Outcome;
    end Draw;
@@ -103,10 +104,11 @@ package body Pictlib.Internal.Typesetting is
       Characters : Streams.Byte_Array;
       Slot : Positive;
       Kind : Transfer_Modes.Mode_Kind;
-      Size : Positive) return Results.Result
+      Size : Positive;
+      Held : Text.Textrender_Guard) return Results.Result
    is
       State : Text.Text_State renames P.Port.Text_State;
-      Font : constant not null access Textrender.Renderer := Text.Renderer (P.Font_Cache, Slot);
+      Font : constant not null access Textrender.Renderer := Text.Renderer (P.Font_Cache, Slot, Held);
       Style : constant Textrender.Font_Style :=
         (if Has (State.Face, Text.Italic) then Textrender.Italic else Textrender.Regular);
       Bold : constant Natural := (if Has (State.Face, Text.Bold) then 1 else 0);

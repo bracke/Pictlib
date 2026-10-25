@@ -265,8 +265,10 @@ are retained, never interpreted.
   more than `dataSize` bytes); the decoded RGB image is held on the heap. A JPEG whose size is not
   the description's, or whose data `jpeglib` finds malformed, is `Embedded_Image_Failed`;
   `Recover_When_Safe` keeps what was drawn before it as a partial picture. A JPEG feature `jpeglib`
-  does not decode, and a lossless JPEG (which `jpeglib` decodes through stack buffers no budget
-  bounds), is treated like another codec, below. Any other codec, a non-empty matte (an alpha
+  does not decode, a lossless JPEG, and a progressive or hierarchical JPEG of more than 8192 blocks
+  (`jpeglib` decodes these through stack buffers sized by the image, which no budget bounds) are
+  treated like another codec, below. A hierarchical JPEG's coefficients count twice against
+  `jpeglib`'s share, since a continuation frame's are held beside the first frame's. Any other codec, a non-empty matte (an alpha
   image of its own), and a matrix other than positive scaling plus translation are
   `Unsupported_Feature` in `Strict`; otherwise the image is skipped (the matte ignored) with an
   `Approximated_Rendering` warning.
@@ -411,8 +413,8 @@ so another view can be given. A frame above `Max_Canvas_Pixels` fails with `Limi
 leaves the decoder `Failed`: no view can render it. Drawing opcodes a release does not render yet
 fail with `Unsupported_Feature` in `Strict` and are skipped with an `Approximated_Rendering`
 warning otherwise; port state they depend on is tracked. In `Recover_When_Safe`, malformed
-picture data (truncation, malformed regions, pixmaps, PackBits, color tables, patterns or opcode
-lengths) ends rendering with success and a `Partial_Picture` warning: what was drawn stands, the
+picture data (truncation, malformed regions, pixmaps, PackBits, color tables, patterns, opcode
+lengths or embedded JPEG data) ends rendering with success and a `Partial_Picture` warning: what was drawn stands, the
 rest is background. A missing end opcode is not malformed data: every opcode was read whole, so it
 finishes with a warning in both lenient modes, as below. Limits, stream failures and unsupported features are
 never recovered.
@@ -493,6 +495,18 @@ before or as the work is done, whether or not anything is drawn, and nothing is 
 
 A unit is meant to be about one pixel's work; measured, it is 50–150 ns, so the default of 2^30
 bounds a picture to about a minute.
+
+`Max_Total_Allocation_Bytes`, when set, counts every allocation a session admits, never given back,
+and storage that is no single allocation at fixed rates:
+
+| Storage | Bytes counted |
+| --- | --- |
+| a retained metadata item or font name | its bytes, plus 128 |
+| a polygon drawn | 8 per point, plus 104 per edge when it is filled |
+| a region read | 4 per byte of it, for its scanlines and inversion points |
+| a region shape drawn | 8 per unit of its region's size, for the copy moved to the origin |
+| building a shape | 256 per unit of shape work, the spans it can make; building stops at what the total still admits |
+| a QuickTime image | its pixels, and `jpeglib`'s share for its own buffers |
 
 ## 10. Errors and diagnostics
 

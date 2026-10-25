@@ -32,7 +32,6 @@ package body Pictlib_Testing.Test_QuickTime is
    --  small.jpg is 8x6; small_decoded.ppm is libjpeg's decoding of it.
    Image_Width : constant := 8;
    Image_Height : constant := 6;
-   Decoder_Tolerance : constant := 2;
 
    function JPEG return Bytes is (Files.Load ("external/small.jpg").all);
 
@@ -65,10 +64,7 @@ package body Pictlib_Testing.Test_QuickTime is
                   declare
                      Want : constant Pictlib.Images.RGB_Color := Files.Pixel (Reference, Source_X, Source_Y);
                   begin
-                     if abs (Integer (Got.Red) - Integer (Want.Red)) > Decoder_Tolerance
-                       or else abs (Integer (Got.Green) - Integer (Want.Green)) > Decoder_Tolerance
-                       or else abs (Integer (Got.Blue) - Integer (Want.Blue)) > Decoder_Tolerance
-                     then
+                     if Canvases.Difference (Got, Want) > Canvases.JPEG_Decoder_Tolerance then
                         Wrong := Wrong + 1;
                      end if;
                   end;
@@ -124,12 +120,15 @@ package body Pictlib_Testing.Test_QuickTime is
       return False;
    end Nothing;
 
-   --  An Image_Width x Image_Height RGB image as jpeglib's encoder writes it with Settings.
-   function Encoded_JPEG (Settings : Jpeglib.Encoding.Options) return Bytes is
-      use type Jpeglib.Byte_Count;
-      Pixels : constant Jpeglib.Streams.Byte_Array_Access :=
-        new Jpeglib.Streams.Byte_Array (1 .. 3 * Image_Width * Image_Height);
-      Encoded : constant Jpeglib.Streams.Byte_Array_Access := new Jpeglib.Streams.Byte_Array (1 .. 100_000);
+   --  A Width x Height RGB image as jpeglib's encoder writes it with Settings.
+   function Encoded_JPEG
+     (Settings : Jpeglib.Encoding.Options;
+      Width : Positive := Image_Width;
+      Height : Positive := Image_Height) return Bytes
+   is
+      Pixels : constant Jpeglib.Streams.Byte_Array_Access := new Jpeglib.Streams.Byte_Array (1 .. 3 * Width * Height);
+      Encoded : constant Jpeglib.Streams.Byte_Array_Access :=
+        new Jpeglib.Streams.Byte_Array (1 .. 3 * Width * Height + 100_000);
       Output : aliased Jpeglib.Streams.Fixed_Buffer_Destination;
       Encoder : Jpeglib.Encoding.Encoder;
       Result : Jpeglib.Results.Result;
@@ -140,9 +139,9 @@ package body Pictlib_Testing.Test_QuickTime is
       Jpeglib.Streams.Open (Output, Encoded);
       Jpeglib.Encoding.Initialize (Encoder, Output'Access, Settings);
       Result := Jpeglib.Encoding.Encode_Image
-        (Encoder, (Descriptor => (Width => Image_Width, Height => Image_Height, Format => Jpeglib.Images.RGB_24,
-                                  Stride => Jpeglib.Row_Stride (3 * Image_Width),
-                                  Accessible_Bytes => 3 * Image_Width * Image_Height),
+        (Encoder, (Descriptor => (Width => Jpeglib.Image_Width (Width), Height => Jpeglib.Image_Height (Height),
+                                  Format => Jpeglib.Images.RGB_24, Stride => Jpeglib.Row_Stride (3 * Width),
+                                  Accessible_Bytes => Jpeglib.Byte_Count (3 * Width * Height)),
                    Storage => Pixels));
       if Jpeglib.Results.Succeeded (Result) then
          Result := Jpeglib.Encoding.Finish (Encoder);
@@ -298,6 +297,53 @@ package body Pictlib_Testing.Test_QuickTime is
          Assert (Pictlib.Results.Succeeded (Outcome)
                  and then Recorders.Has_Warning (Decoder, Errors.Approximated_Rendering),
                  "a lossless JPEG was not skipped: " & Outcome.First_Error.Code'Image);
+      end;
+      --  A progressive JPEG is decoded through a coefficient map on the stack: one whose map would pass the bound
+      --  (8192 blocks: 600 x 600 at 4:2:0 has 8664) is unsupported, a smaller one drawn.
+      declare
+         Progressive : constant Jpeglib.Encoding.Options :=
+           (Progressive => Jpeglib.Encoding.Balanced_Progressive, Subsampling => Jpeglib.Encoding.Subsampling_420,
+            others => <>);
+         Large : aliased constant Bytes :=
+           Image (QuickTime ("jpeg", 600, 600, Encoded_JPEG (Progressive, 600, 600)), 8, 6);
+         Small : aliased constant Bytes :=
+           Image (QuickTime ("jpeg", 500, 500, Encoded_JPEG (Progressive, 500, 500)), 8, 6);
+      begin
+         Canvases.Expect_Failure (Large, 8, 6, Errors.Unsupported_Feature, "large progressive JPEG", 16#8200#);
+         Canvases.Render (Small, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome);
+         Assert (Pictlib.Results.Succeeded (Outcome),
+                 "a small progressive JPEG failed with " & Outcome.First_Error.Code'Image);
+      end;
+      --  A hierarchical JPEG holds a continuation frame's coefficients beside the first frame's: a budget that
+      --  covers one set of them but not two is over the allocation limit.
+      declare
+         use type Pictlib.Byte_Count;
+         Data : constant Bytes :=
+           Encoded_JPEG ((Mode => Jpeglib.Encoding.Hierarchical_Sequential_DCT, others => <>), 64, 64);
+         Hierarchical : aliased constant Bytes := Image (QuickTime ("jpeg", 64, 64, Data), 8, 6);
+         Source : aliased Jpeglib.Streams.Memory_Source;
+         Probe : Jpeglib.Decoding.Decoder;
+         Header_Read : Jpeglib.Results.Result;
+         Blocks : Pictlib.Byte_Count := 0;
+      begin
+         Jpeglib.Streams.Open
+           (Source, new Jpeglib.Streams.Byte_Array'([for Item of Data => Jpeglib.Byte (Item)]));
+         Jpeglib.Decoding.Initialize (Probe, Source'Unchecked_Access);
+         Header_Read := Jpeglib.Decoding.Read_Header (Probe);
+         Assert (Jpeglib.Results.Succeeded (Header_Read) and then Jpeglib.Decoding.Header (Probe).Hierarchical,
+                 "jpeglib did not write a hierarchical JPEG");
+         Blocks := Pictlib.Byte_Count (Jpeglib.Decoding.Header (Probe).Coefficient_Blocks);
+         Jpeglib.Decoding.Finalize (Probe);
+         Canvases.Render (Hierarchical, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome);
+         Assert (Pictlib.Results.Succeeded (Outcome),
+                 "a hierarchical JPEG failed with " & Outcome.First_Error.Code'Image);
+         --  The pixels and one set of coefficients, but not two.
+         Canvases.Render (Hierarchical, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome,
+                          Budget => (Pictlib.Limits.Default_Limits with delta
+                                       Max_Allocation_Bytes => 3 * 64 * 64 + 2 * 256 * Blocks - 1));
+         Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded
+                 and then Outcome.First_Error.Context.Limit = Pictlib.Allocation_Byte_Limit,
+                 "a hierarchical JPEG's second coefficients were not counted: " & Outcome.First_Error.Code'Image);
       end;
       --  A JPEG jpeglib cannot decode is unsupported, like another codec: strictly a failure, otherwise skipped.
       Canvases.Expect_Failure (Unsupported_JPEG, 8, 6, Errors.Unsupported_Feature, "JPEG with DNL", 16#8200#);
@@ -495,42 +541,19 @@ package body Pictlib_Testing.Test_QuickTime is
    --  its MCU-padded extent, many times its pixels, and it renders under the default limits.
    procedure Narrow_Image (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
-      use type Jpeglib.Byte_Count;
       Tall : constant := 16_000;
-      Pixels : constant Jpeglib.Streams.Byte_Array_Access := new Jpeglib.Streams.Byte_Array (1 .. 3 * Tall);
-      Encoded : constant Jpeglib.Streams.Byte_Array_Access := new Jpeglib.Streams.Byte_Array (1 .. 4_000_000);
-      Output : aliased Jpeglib.Streams.Fixed_Buffer_Destination;
-      Encoder : Jpeglib.Encoding.Encoder;
-      Result : Jpeglib.Results.Result;
+      Picture : aliased constant Bytes :=
+        Image (QuickTime ("jpeg", 1, Tall,
+                          Encoded_JPEG ((Progressive => Jpeglib.Encoding.Balanced_Progressive,
+                                         Subsampling => Jpeglib.Encoding.Subsampling_420, others => <>), 1, Tall)),
+               1, Tall);
+      Storage : aliased Bytes := [1 .. 3 * Tall => 0];
+      Decoder : Pictlib.Decoding.Decoder;
+      Outcome : Pictlib.Results.Result;
    begin
-      for Index in Pixels'Range loop
-         Pixels (Index) := Jpeglib.Byte ((Index * 7) mod 256);
-      end loop;
-      Jpeglib.Streams.Open (Output, Encoded);
-      Jpeglib.Encoding.Initialize
-        (Encoder, Output'Access,
-         (Progressive => Jpeglib.Encoding.Balanced_Progressive, Subsampling => Jpeglib.Encoding.Subsampling_420,
-          others => <>));
-      Result := Jpeglib.Encoding.Encode_Image
-        (Encoder, (Descriptor => (Width => 1, Height => Tall, Format => Jpeglib.Images.RGB_24, Stride => 3,
-                                  Accessible_Bytes => 3 * Tall),
-                   Storage => Pixels));
-      if Jpeglib.Results.Succeeded (Result) then
-         Result := Jpeglib.Encoding.Finish (Encoder);
-      end if;
-      Assert (Jpeglib.Results.Succeeded (Result), "jpeglib did not encode the narrow image");
-      declare
-         Length : constant Natural := Natural (Output.Offset);
-         Data : constant Bytes := [for Index in 1 .. Length => Pictlib.Byte (Encoded (Index))];
-         Picture : aliased constant Bytes := Image (QuickTime ("jpeg", 1, Tall, Data), 1, Tall);
-         Storage : aliased Bytes := [1 .. 3 * Tall => 0];
-         Decoder : Pictlib.Decoding.Decoder;
-         Outcome : Pictlib.Results.Result;
-      begin
-         Canvases.Render (Picture, Decoder, Canvases.View (Storage'Access, 1, Tall), Outcome);
-         Assert (Pictlib.Results.Succeeded (Outcome),
-                 "a narrow progressive JPEG failed with " & Outcome.First_Error.Code'Image & ", expected"
-                 & Outcome.First_Error.Context.Expected'Image & ", actual" & Outcome.First_Error.Context.Actual'Image);
-      end;
+      Canvases.Render (Picture, Decoder, Canvases.View (Storage'Access, 1, Tall), Outcome);
+      Assert (Pictlib.Results.Succeeded (Outcome),
+              "a narrow progressive JPEG failed with " & Outcome.First_Error.Code'Image & ", expected"
+              & Outcome.First_Error.Context.Expected'Image & ", actual" & Outcome.First_Error.Context.Actual'Image);
    end Narrow_Image;
 end Pictlib_Testing.Test_QuickTime;

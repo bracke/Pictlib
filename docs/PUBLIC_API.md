@@ -27,7 +27,8 @@ Available since Gate M1:
 - `Pictlib.Metadata` — `Item_Kind`, `Retention_Policy`, `Item_Info`.
 - `Pictlib.Decoding` — `Decoder` with `Initialize`, `Reset`, `Read_Header`,
   `Header`, `Enumerate` through an `Opcode_Visitor`, metadata and warning
-  queries, `Last_Error`, `Cancel`, `Finalize`.
+  queries, `State` and its `Decoder_State`, `Last_Error`, `Cancel`,
+  `Finalize`.
 
 Available since Gate M2:
 
@@ -49,6 +50,7 @@ were removed; they were never enforced (the renderer allocates no canvas).
 
 Available since Gate M6:
 
-- `Pictlib.Encoding` — `Layout_Kind`, `Options`, `Encoder` with `Initialize`,
-  `Encode`, `Finish`, `Layout_Used`, `Bytes_Written`, `Last_Error`, `Cancel`,
+- `Pictlib.Encoding` — `Layout_Kind`, `Options`, `Default_Mono_Threshold`,
+  `Encoder` with `Initialize`, `Encode`, `Finish`, `Layout_Used`,
+  `Bytes_Written`, `State` and its `Encoder_State`, `Last_Error`, `Cancel`,
   `Finalize`.
