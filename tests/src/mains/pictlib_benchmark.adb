@@ -63,7 +63,7 @@ procedure Pictlib_Benchmark is
            (Pictlib_Testing.Samples.View (Source, Width, Height), (Layout => Kind, others => <>),
             Room => 8 * Width * Height);
          if not Pictlib.Results.Succeeded (Picture.Outcome) then
-            Ada.Text_IO.Put_Line (Kind'Image & ": encode failed");
+            Pictlib_Testing.Tools.Fail (Kind'Image & ": encode failed");
             return;
          end if;
       end loop;
@@ -72,7 +72,7 @@ procedure Pictlib_Benchmark is
       Started := Ada.Calendar.Clock;
       for Round in 1 .. Rounds loop
          if not Render (Encoded, Width, Height) then
-            Ada.Text_IO.Put_Line (Kind'Image & ": render failed");
+            Pictlib_Testing.Tools.Fail (Kind'Image & ": render failed");
             return;
          end if;
       end loop;
@@ -88,6 +88,7 @@ procedure Pictlib_Benchmark is
       Pictlib.Streams.Open (Source, Pictlib.Streams.Const_Byte_Array_Access (Data));
       Pictlib.Decoding.Initialize (Decoder, Source'Access);
       if not Pictlib.Results.Succeeded (Pictlib.Decoding.Read_Header (Decoder)) then
+         Pictlib_Testing.Tools.Fail (Ada.Directories.Simple_Name (Path) & ": header failed");
          return;
       end if;
       declare
@@ -99,6 +100,8 @@ procedure Pictlib_Benchmark is
          if Render (Pictlib.Streams.Byte_Array_Access (Data), Frame_Width, Frame_Height) then
             Report (Ada.Directories.Simple_Name (Path) & " render", Frame_Width * Frame_Height,
                     Ada.Calendar.Clock - Started);
+         else
+            Pictlib_Testing.Tools.Fail (Ada.Directories.Simple_Name (Path) & ": render failed");
          end if;
       end;
    end Vector_Picture;
@@ -106,8 +109,10 @@ begin
    if not Pictlib_Testing.Tools.Enter_Tests_Directory then
       return;
    end if;
+   Pictlib_Testing.Tools.Start_Report ("pictlib_benchmark");
    Layout (Pictlib_Testing.Samples.Gradient, Pictlib.Encoding.Direct_32);
    Layout (Pictlib_Testing.Samples.Three_Colors, Pictlib.Encoding.Indexed_8);
    Layout (Pictlib_Testing.Samples.Black_And_White, Pictlib.Encoding.Mono_1);
    Vector_Picture ("fixtures/real_world/libreoffice/pass/ooo25876-2.pct");
+   Pictlib_Testing.Tools.Finish_Report;
 end Pictlib_Benchmark;

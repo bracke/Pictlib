@@ -60,7 +60,9 @@ package body Pictlib.Decoding is
 
    function Read_Header (Object : in out Decoder) return Results.Result is
    begin
-      if Object.Current_State /= Ready then
+      if Object.Visiting then
+         return Results.Failure (Errors.Invalid_State);
+      elsif Object.Current_State /= Ready then
          return Wrong_State (Object);
       end if;
       declare
@@ -126,14 +128,18 @@ package body Pictlib.Decoding is
       return Results.Success;
    end Step;
 
-   function Enumerate (Object : in out Decoder; Visitor : in out Opcode_Visitor'Class) return Results.Result is
+   --  Enumerate while Visiting is set. A visitor may cancel, reset or finalize the decoder: the state it leaves
+   --  stands, and enumeration ends with what a call in that state gets.
+   function Enumerate_Opcodes (Object : in out Decoder; Visitor : in out Opcode_Visitor'Class)
+     return Results.Result
+   is
+      Action : Visit_Action;
    begin
-      if Object.Current_State /= Header_Read then
-         return Wrong_State (Object);
-      end if;
-
       for Index in 1 .. Object.Inner.Header_Event_Count loop
-         if Visitor.Visit (Object.Inner.Header_Events (Index)) = Stop then
+         Action := Visitor.Visit (Object.Inner.Header_Events (Index));
+         if Object.Current_State /= Header_Read then
+            return Wrong_State (Object);
+         elsif Action = Stop then
             Object.Current_State := Stopped;
             return Results.Success;
          end if;
@@ -150,7 +156,11 @@ package body Pictlib.Decoding is
             elsif Kind = Ended_By_Input then
                Object.Current_State := Finished;
                return Results.Success;
-            elsif Visitor.Visit (Event) = Stop and then Kind = More then
+            end if;
+            Action := Visitor.Visit (Event);
+            if Object.Current_State /= Header_Read then
+               return Wrong_State (Object);
+            elsif Action = Stop and then Kind = More then
                Object.Current_State := Stopped;
                return Results.Success;
             elsif Kind = Ended_By_End_Opcode then
@@ -165,6 +175,22 @@ package body Pictlib.Decoding is
             end if;
          end;
       end loop;
+   end Enumerate_Opcodes;
+
+   function Enumerate (Object : in out Decoder; Visitor : in out Opcode_Visitor'Class) return Results.Result is
+   begin
+      if Object.Visiting then
+         return Results.Failure (Errors.Invalid_State);
+      elsif Object.Current_State /= Header_Read then
+         return Wrong_State (Object);
+      end if;
+      Object.Visiting := True;
+      declare
+         Outcome : constant Results.Result := Enumerate_Opcodes (Object, Visitor);
+      begin
+         Object.Visiting := False;
+         return Outcome;
+      end;
    end Enumerate;
 
    --  Malformed picture data, after which what was drawn so far may stand as a partial picture.
@@ -180,7 +206,11 @@ package body Pictlib.Decoding is
       Pixels : constant Pixel_Count :=
         Pixel_Count (Geometry.Width (Frame)) * Pixel_Count (Geometry.Height (Frame));
    begin
-      if not Images.Is_Valid (Output)
+      --  The frame first: no view can render a frame over the canvas limit, so no view is worth correcting.
+      if Pixels > Budget.Max_Canvas_Pixels then
+         return Internal.Failures.Over_Limit
+           (Canvas_Pixel_Limit, Byte_Count (Budget.Max_Canvas_Pixels), Byte_Count (Pixels));
+      elsif not Images.Is_Valid (Output)
         or else Integer (Output.Descriptor.Width) /= Geometry.Width (Frame)
         or else Integer (Output.Descriptor.Height) /= Geometry.Height (Frame)
       then
@@ -190,9 +220,6 @@ package body Pictlib.Decoding is
                (Expected => Byte_Count (Pixels),
                 Actual => Byte_Count (Output.Descriptor.Width) * Byte_Count (Output.Descriptor.Height),
                 others => <>)));
-      elsif Pixels > Budget.Max_Canvas_Pixels then
-         return Internal.Failures.Over_Limit
-           (Canvas_Pixel_Limit, Byte_Count (Budget.Max_Canvas_Pixels), Byte_Count (Pixels));
       elsif Output.Descriptor.Accessible_Bytes > Budget.Max_Output_Bytes then
          return Internal.Failures.Over_Limit
            (Output_Byte_Limit, Budget.Max_Output_Bytes, Output.Descriptor.Accessible_Bytes);
@@ -202,7 +229,9 @@ package body Pictlib.Decoding is
 
    function Render (Object : in out Decoder; Output : Images.Mutable_Image_View) return Results.Result is
    begin
-      if Object.Current_State /= Header_Read then
+      if Object.Visiting then
+         return Results.Failure (Errors.Invalid_State);
+      elsif Object.Current_State /= Header_Read then
          return Wrong_State (Object);
       end if;
       declare

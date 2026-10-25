@@ -108,10 +108,15 @@ package body Pictlib.Internal.Opcode_Reader is
          return Outcome;
       end if;
       if Data'Length < 3 or else Natural (Data (3)) > Data'Length - 3 then
-         Bytes.Free (Data);
-         return Sessions.Reject_Or_Warn
-           (S, Errors.Opcode_Length_Invalid, Errors.Data_Loss, Errors.Data_Loss,
-            (Sessions.Context_Of (Event) with delta Source => 0, Expected => 3, Actual => Length));
+         declare
+            --  The ID and length byte, and the name when the length byte is there.
+            Needed : constant Byte_Count := (if Data'Length < 3 then 3 else 3 + Byte_Count (Data (3)));
+         begin
+            Bytes.Free (Data);
+            return Sessions.Reject_Or_Warn
+              (S, Errors.Opcode_Length_Invalid, Errors.Data_Loss, Errors.Data_Loss,
+               (Sessions.Context_Of (Event) with delta Source => 0, Expected => Needed, Actual => Length));
+         end;
       end if;
       declare
          Name_Length : constant Natural := Natural (Data (3));

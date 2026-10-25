@@ -135,6 +135,8 @@ package Pictlib.Decoding is
 private
    type Decoder is limited record
       Current_State : Decoder_State := Created;
+      --  True while Enumerate calls a visitor, which may not read the picture again under it.
+      Visiting : Boolean := False;
       Decode_Options : Options;
       Inner : Internal.Decoder_State.State;
       First_Error : Errors.Error := Errors.Make (Errors.No_Error);

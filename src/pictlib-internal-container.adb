@@ -45,11 +45,10 @@ package body Pictlib.Internal.Container is
               In_Opcode => False)
       else Streams.Skip_Exact (S.Stream.all, File_Header_Bytes));
 
+   --  A frame needs a pixel each way; an empty or inverted side counts as none, since counts are not signed.
    function Check_Frame (S : Sessions.Session; Frame : Geometry.Rect) return Results.Result is
      (if Geometry.Is_Empty (Frame)
-      then Sessions.Fail
-             (S, Errors.Header_Invalid,
-              Actual => Byte_Count (Integer'Max (0, Integer'Min (Geometry.Width (Frame), Geometry.Height (Frame)))))
+      then Sessions.Fail (S, Errors.Header_Invalid, Expected => 1, Actual => 0)
       else Failures.Check_Frame_Size (Geometry.Width (Frame), Geometry.Height (Frame), S.Budget, S.Offset));
 
    --  The 24 bytes of HeaderOp data. Version -1 (a long) carries fixed-point bounds; version -2 (a word)
@@ -251,9 +250,6 @@ package body Pictlib.Internal.Container is
       if Results.Succeeded (Outcome) then
          Info.Has_Header_Opcode := True;
          Sessions.Set_Version (S, Info.Version);
-         if Info.Version /= Extended_Version_2 then
-            Info.Source_Rect := Info.Frame;
-         end if;
       end if;
       return Outcome;
    end Read_Header_Op;

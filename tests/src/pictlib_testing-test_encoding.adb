@@ -219,6 +219,9 @@ package body Pictlib_Testing.Test_Encoding is
          end loop;
          Assert (Pictlib.Decoding.Warning_Count (Decoder) = 0, Label & ": the output draws warnings");
          Assert (Natural (Events.Events (6).Offset) + 2 = Picture.Data'Length, Label & ": bytes after OpEndPic");
+         --  The bits opcode at picture offset 54: the byte offsets the checks below read assume it.
+         Assert (Natural (Events.Events (5).Offset) = Header_Bytes + 54,
+                 Label & ": the bits opcode moved to" & Events.Events (5).Offset'Image);
       end Check;
    begin
       Check (Samples.Gradient, Pictlib.Opcodes.Direct_Bits_Rect, (Layout => Encoding.Direct_32, others => <>),

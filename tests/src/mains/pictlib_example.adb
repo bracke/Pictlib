@@ -1,5 +1,6 @@
 --  The README's example: encode a small RGB image as a PICT in memory, then decode the picture and render it
 --  back into a view of its frame's size. It is built with the tests crate so it stays true to the API.
+with Ada.Command_Line;
 with Ada.Text_IO;
 with Pictlib;
 with Pictlib.Decoding;
@@ -40,6 +41,7 @@ begin
    end if;
    if not Pictlib.Results.Succeeded (Outcome) then
       Ada.Text_IO.Put_Line ("encode failed: " & Outcome.First_Error.Code'Image);
+      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
       return;
    end if;
 
@@ -60,6 +62,7 @@ begin
          Ada.Text_IO.Put_Line ("a" & Length'Image & "-byte picture decoded back to its pixels");
       else
          Ada.Text_IO.Put_Line ("decode failed: " & Outcome.First_Error.Code'Image);
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
       end if;
    end;
 end Pictlib_Example;

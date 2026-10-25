@@ -230,7 +230,8 @@ package body Pictlib_Testing.Source_Policy is
          begin
             exit when Closing = 0;
             Blocks := Blocks + 1;
-            if Ada.Strings.Fixed.Index (Example, Readme (Start .. Closing)) = 0 then
+            --  Anchored at a line start, so a block is whole lines of the example, indentation included.
+            if Ada.Strings.Fixed.Index (Example, ASCII.LF & Readme (Start .. Closing)) = 0 then
                Fail ("README.md: an Ada block is not the text of tests/src/mains/pictlib_example.adb");
             end if;
             From := Closing + Close_Fence'Length;

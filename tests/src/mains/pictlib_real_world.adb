@@ -2,6 +2,7 @@
 --  and recoverably, with the test fonts. An exception escaping pictlib is a defect. Each outcome is printed as
 --  "<file> <strict enumerate> <compatible render> <recovering render>" and compared with
 --  fixtures/real_world/expected.txt; --update rewrites that file. Runs from anywhere below the pictlib tree.
+with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Files;
 with Pictlib_Testing.Fonts;
 with Pictlib_Testing.Tools;
@@ -78,7 +79,11 @@ procedure Pictlib_Real_World is
       return Code_Of (Outcome);
    end Enumerate;
 
-   function Render (Data : Bytes_Access; Strictness : Pictlib.Strictness_Mode) return String is
+   --  Render Data, and when Reference names a raster, require the render to match it within the JPEG decoders'
+   --  tolerance, pixel for pixel.
+   function Render (Data : Bytes_Access; Strictness : Pictlib.Strictness_Mode; Reference : String := "")
+     return String
+   is
       Source : aliased Pictlib.Streams.Memory_Source;
       Decoder : Pictlib.Decoding.Decoder;
       Table : constant Pictlib.Fonts.Font_Table := Pictlib_Testing.Fonts.Test_Table;
@@ -102,6 +107,33 @@ procedure Pictlib_Real_World is
             Storage => Storage);
       begin
          Outcome := Pictlib.Decoding.Render (Decoder, View);
+         if Pictlib.Results.Succeeded (Outcome) and then Reference'Length > 0 then
+            declare
+               Raster : Pictlib_Testing.Files.Raster;
+               Wrong : Natural := 0;
+            begin
+               if not Pictlib_Testing.Files.Read_Raster (Reference, Raster)
+                 or else Raster.Width /= Width or else Raster.Height /= Height
+               then
+                  Pictlib_Testing.Tools.Fail (Reference & ": not a raster of the picture's frame");
+               else
+                  for Y in 0 .. Height - 1 loop
+                     for X in 0 .. Width - 1 loop
+                        if Pictlib_Testing.Canvases.Difference
+                             (Pictlib_Testing.Canvases.Pixel (View, X, Y), Pictlib_Testing.Files.Pixel (Raster, X, Y))
+                           > Pictlib_Testing.Canvases.JPEG_Decoder_Tolerance
+                        then
+                           Wrong := Wrong + 1;
+                        end if;
+                     end loop;
+                  end loop;
+                  if Wrong > 0 then
+                     Pictlib_Testing.Tools.Fail
+                       (Reference & ":" & Wrong'Image & " pixels differ from the reference");
+                  end if;
+               end if;
+            end;
+         end if;
          Free (Storage);
          if Pictlib.Results.Succeeded (Outcome) then
             for Index in 1 .. Pictlib.Decoding.Warning_Count (Decoder) loop
@@ -138,7 +170,9 @@ procedure Pictlib_Real_World is
                   Line : Unbounded_String;
                begin
                   Line := To_Unbounded_String (Enumerate (Data));
-                  Append (Line, " " & Render (Data, Pictlib.Compatible));
+                  Append (Line, " " & Render
+                            (Data, Pictlib.Compatible,
+                             (if Exists (Path & ".reference.ppm") then Path & ".reference.ppm" else "")));
                   Append (Line, " " & Render (Data, Pictlib.Recover_When_Safe));
                   Results_Now.Include (Relative, To_String (Line));
                   Free (Data);

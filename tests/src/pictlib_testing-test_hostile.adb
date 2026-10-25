@@ -434,6 +434,13 @@ package body Pictlib_Testing.Test_Hostile is
                        (Pictlib.Limits.Default_Limits with delta Max_Total_Allocation_Bytes => 455));
       Assert (Pictlib.Results.Succeeded (Outcome) and then Recorders.Has_Warning (Decoder, Errors.Partial_Picture),
               "a partial picture on a spent allocation quota did not say so: " & Outcome.First_Error.Code'Image);
+      --  And they do take all of it: a byte less and the buffers are over the quota.
+      Canvases.Render (Empty_Rows, Decoder, Canvases.View (Storage'Access, 64, 1_000), Outcome,
+                       (Strictness => Pictlib.Recover_When_Safe, others => <>),
+                       (Pictlib.Limits.Default_Limits with delta Max_Total_Allocation_Bytes => 454));
+      Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded
+              and then Outcome.First_Error.Context.Limit = Pictlib.Total_Allocation_Byte_Limit,
+              "the row buffers did not take the whole quota: " & Outcome.First_Error.Code'Image);
       --  Rows are charged as they are converted, drawn or not.
       Small.Max_Drawing_Work := 10;
       Canvases.Expect_Failure (Wide, 16, 1, Errors.Limit_Exceeded, "row conversion over budget", 16#98#,

@@ -187,6 +187,15 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - A QuickTime image's pixel buffer is admitted like every other allocation,
   so its failure names `Max_Allocation_Bytes`, and the pixels and jpeglib's
   share are charged to the session's total separately.
+- A visitor that cancels, resets or finalizes its decoder from inside
+  `Enumerate` ends the enumeration there, and the state it leaves stands,
+  so a cancelled decoder answers `Operation_Cancelled` until `Reset`; a
+  visitor that calls `Read_Header`, `Enumerate` or `Render` from inside is
+  refused with `Invalid_State` instead of draining the stream under it.
+- `Render` judges the frame against `Max_Canvas_Pixels` before the view, so
+  a frame no view can render fails the decoder however wrong the view.
+- A malformed fontName names the length its name needs; an empty or
+  inverted frame names the one pixel each way it needs.
 - ChExtra is read as the 4.12 fixed-point value QuickDraw records, and
   widens every character but the space, as Inside Macintosh says; it was
   read as whole pixels and widened spaces too.
@@ -204,13 +213,19 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   fixed rates, lists embedded JPEG data among what `Recover_When_Safe`
   recovers, and the invariant registry names the units and tests that
   enforce RENDER-002 and TASK-001.
+- The specification states a retained item's real charge (its bytes twice,
+  read and kept, plus 128), that truncation is recovered as a partial
+  picture under `Recover_When_Safe` like any malformed data, and lists
+  `pictlib_example` among the tools.
 - The specification no longer promises a caller-chosen render rectangle or a
   public transfer-mode type; `Decoding.Render`, `Decoding.Initialize` and
   `Encoding.Layout_Kind` describe what they do now.
 - The README shows how to encode and decode, in the words of
-  `pictlib_example`, which the tests crate builds and `pictlib_check` holds
-  the README to; `pictlib_api_consumer` names every public subprogram by its
-  profile, so a change to one breaks the build.
+  `pictlib_example`, which the tests crate builds and `pictlib_check` runs
+  and holds the README to, line for line; `pictlib_api_consumer` renames
+  every public subprogram, so a change to a parameter's or result's type, a
+  parameter's mode or the number of parameters breaks the build (Ada does not
+  compare a renaming's subtypes, names or defaults).
 
 ### Internal structure
 
@@ -286,6 +301,15 @@ All tooling is Ada, in the `tests` crate:
 - The library and the tests crate build with `-gnatwe`: a warning or style
   finding in any unit either compiles fails the build, so `pictlib_check`
   cannot pass with one.
+- `pictlib_check` runs `pictlib_example`, and `pictlib_benchmark` fails
+  like the other tools when an encode or render fails.
+- `pictlib_real_world` checks a picture against another decoder's raster
+  when one is committed beside it: `tdf92789.pct` against ImageMagick's,
+  within 2 of each component; its outcomes alone were pictlib's own record.
+- The stress tests clear the view before each reused decoder's render and
+  tie every limit-matrix call to the limit it targets; the spent-quota test
+  is guarded from below too; the encoder tests anchor the byte offsets they
+  read to where the bits opcode is.
 - The tests crate has one seeded pseudo-random generator
   (`Pictlib_Testing.Random`) and one file loader; the encoder tests check
   the alpha plane's values byte for byte, independently of the decoder.

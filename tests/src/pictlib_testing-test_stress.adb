@@ -111,6 +111,8 @@ package body Pictlib_Testing.Test_Stress is
                Pictlib.Streams.Open (Source, Picture'Unchecked_Access);
                Decoding.Reset (Decoder, Source'Access);
                Outcome := Decoding.Read_Header (Decoder);
+               --  A sentinel, so a render that writes nothing cannot pass on the last round's pixels.
+               Storage := [others => 16#EE#];
                Outcome := Decoding.Render (Decoder, View);
                Assert (Pictlib.Results.Succeeded (Outcome) and then Storage = Expected,
                        "a reused decoder rendered differently in round" & Round'Image);
@@ -171,9 +173,17 @@ package body Pictlib_Testing.Test_Stress is
       Picture : constant Bytes := Everything;
       Retained : constant Decoding.Options :=
         (Fonts => Fonts, Retention => (others => True), others => <>);
-      Seen : array (Pictlib.Limit_Kind) of Boolean := [Pictlib.No_Limit => True, others => False];
+      --  Warning_Record_Limit names a cap that is never crossed: its call checks the cap keeps nothing.
+      Seen : array (Pictlib.Limit_Kind) of Boolean :=
+        [Pictlib.No_Limit | Pictlib.Warning_Record_Limit => True, others => False];
 
-      procedure Decode (Budget : Pictlib.Limits.Limit_Set; Options : Decoding.Options; Render_It : Boolean) is
+      --  Decode under Budget, expecting Expected to be reported, or success when it is No_Limit.
+      procedure Decode
+        (Budget : Pictlib.Limits.Limit_Set;
+         Options : Decoding.Options;
+         Render_It : Boolean;
+         Expected : Pictlib.Limit_Kind)
+      is
          Data : aliased constant Bytes := Picture;
          Source : aliased Pictlib.Streams.Memory_Source;
          Decoder : Decoding.Decoder;
@@ -189,12 +199,19 @@ package body Pictlib_Testing.Test_Stress is
               (if Render_It then Decoding.Render (Decoder, Canvases.View (Storage'Access, 48, 24))
                else Decoding.Enumerate (Decoder, Visitor));
          end if;
-         if Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded then
-            Seen (Outcome.First_Error.Context.Limit) := True;
+         if Expected = Pictlib.No_Limit then
+            Assert (Pictlib.Results.Succeeded (Outcome),
+                    "an unlimited decode failed: " & Outcome.First_Error.Code'Image);
+         else
+            Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
+                    and then Outcome.First_Error.Context.Limit = Expected,
+                    "a budget for " & Expected'Image & " reported " & Outcome.First_Error.Code'Image & " "
+                    & Outcome.First_Error.Context.Limit'Image);
+            Seen (Expected) := True;
          end if;
-         if Budget.Max_Warning_Records = 0 and then Decoding.Warning_Count (Decoder) = 0 then
+         if Budget.Max_Warning_Records = 0 then
             --  Warnings are capped, not failed: a zero cap keeps none.
-            Seen (Pictlib.Warning_Record_Limit) := True;
+            Assert (Decoding.Warning_Count (Decoder) = 0, "a zero warning cap kept a warning");
          end if;
       end Decode;
 
@@ -208,27 +225,30 @@ package body Pictlib_Testing.Test_Stress is
          Pictlib.Streams.Open (Output, Storage);
          Pictlib.Encoding.Initialize (Encoder, Output'Access, Encode_Limits => Budget);
          Outcome := Pictlib.Encoding.Encode (Encoder, Samples.View (Source, 40, 4));
-         if Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded then
-            Seen (Outcome.First_Error.Context.Limit) := True;
-         end if;
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
+                 and then Outcome.First_Error.Context.Limit = Pictlib.Output_Byte_Limit,
+                 "the encoder's output budget reported " & Outcome.First_Error.Context.Limit'Image);
       end Encode;
    begin
-      Decode ((Defaults with delta Max_Frame_Width => 47), Retained, False);
-      Decode ((Defaults with delta Max_Frame_Height => 23), Retained, False);
-      Decode ((Defaults with delta Max_Canvas_Pixels => 100), Retained, True);
-      Decode ((Defaults with delta Max_Picture_Bytes => 100), Retained, False);
-      Decode ((Defaults with delta Max_Opcodes => 4), Retained, False);
-      Decode ((Defaults with delta Max_Opcode_Bytes => 20), Retained, False);
-      Decode ((Defaults with delta Max_Region_Bytes => 9), Retained, False);
-      Decode ((Defaults with delta Max_Drawing_Work => 100), Retained, True);
-      Decode ((Defaults with delta Max_Retained_Metadata_Bytes => 3), Retained, False);
-      Decode ((Defaults with delta Max_Metadata_Items => 0), Retained, False);
-      Decode ((Defaults with delta Max_Allocation_Bytes => 100), Retained, True);
-      Decode ((Defaults with delta Max_Total_Allocation_Bytes => 0), Retained, False);
-      Decode ((Defaults with delta Max_Output_Bytes => 100), Retained, True);
-      Decode ((Defaults with delta Max_Embedded_Image_Bytes => 100), Retained, True);
-      Decode ((Defaults with delta Max_Embedded_Image_Pixels => 10), Retained, True);
-      Decode ((Defaults with delta Max_Warning_Records => 0), Retained, True);
+      Decode ((Defaults with delta Max_Frame_Width => 47), Retained, False, Pictlib.Frame_Width_Limit);
+      Decode ((Defaults with delta Max_Frame_Height => 23), Retained, False, Pictlib.Frame_Height_Limit);
+      Decode ((Defaults with delta Max_Canvas_Pixels => 100), Retained, True, Pictlib.Canvas_Pixel_Limit);
+      Decode ((Defaults with delta Max_Picture_Bytes => 100), Retained, False, Pictlib.Picture_Byte_Limit);
+      Decode ((Defaults with delta Max_Opcodes => 4), Retained, False, Pictlib.Opcode_Count_Limit);
+      Decode ((Defaults with delta Max_Opcode_Bytes => 20), Retained, False, Pictlib.Opcode_Byte_Limit);
+      Decode ((Defaults with delta Max_Region_Bytes => 9), Retained, False, Pictlib.Region_Byte_Limit);
+      Decode ((Defaults with delta Max_Drawing_Work => 100), Retained, True, Pictlib.Drawing_Work_Limit);
+      Decode ((Defaults with delta Max_Retained_Metadata_Bytes => 3), Retained, False,
+              Pictlib.Retained_Metadata_Byte_Limit);
+      Decode ((Defaults with delta Max_Metadata_Items => 0), Retained, False, Pictlib.Metadata_Item_Limit);
+      Decode ((Defaults with delta Max_Allocation_Bytes => 100), Retained, True, Pictlib.Allocation_Byte_Limit);
+      Decode ((Defaults with delta Max_Total_Allocation_Bytes => 0), Retained, False,
+              Pictlib.Total_Allocation_Byte_Limit);
+      Decode ((Defaults with delta Max_Output_Bytes => 100), Retained, True, Pictlib.Output_Byte_Limit);
+      Decode ((Defaults with delta Max_Embedded_Image_Bytes => 100), Retained, True, Pictlib.Embedded_Image_Byte_Limit);
+      Decode ((Defaults with delta Max_Embedded_Image_Pixels => 10), Retained, True,
+              Pictlib.Embedded_Image_Pixel_Limit);
+      Decode ((Defaults with delta Max_Warning_Records => 0), Retained, True, Pictlib.No_Limit);
       Encode ((Defaults with delta Max_Output_Bytes => 100));
       declare
          Polygon : aliased constant Bytes :=
@@ -244,7 +264,9 @@ package body Pictlib_Testing.Test_Stress is
          if Pictlib.Results.Succeeded (Outcome) then
             Outcome := Decoding.Enumerate (Decoder, Visitor);
          end if;
-         Seen (Outcome.First_Error.Context.Limit) := True;
+         Assert (Outcome.First_Error.Context.Limit = Pictlib.Polygon_Point_Limit,
+                 "a polygon budget reported " & Outcome.First_Error.Context.Limit'Image);
+         Seen (Pictlib.Polygon_Point_Limit) := True;
       end;
       for Kind in Seen'Range loop
          Assert (Seen (Kind), "no input reports the limit " & Kind'Image);

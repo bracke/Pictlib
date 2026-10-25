@@ -428,8 +428,9 @@ never recovered.
 The decoder reads nothing after the end opcode unless `Require_End_Of_Input` is set; then one more
 byte fails with `Trailing_Data` in `Strict` and is a warning otherwise. Input that ends at an
 opcode boundary without the end opcode fails with `Missing_End_Opcode` in `Strict` and finishes
-with a warning otherwise; input that ends inside an opcode always fails with
-`Source_Unexpected_End`. A version 2 picture without `HeaderOp` fails with `Header_Invalid` in
+with a warning otherwise; input that ends inside an opcode fails with `Source_Unexpected_End`
+in every mode, which `Render` under `Recover_When_Safe` then recovers as a partial picture,
+like any truncation. A version 2 picture without `HeaderOp` fails with `Header_Invalid` in
 `Strict`; otherwise it is treated as version 2 at 72 dpi with a warning and the opcode read in its
 place is enumerated. The warning log holds `Max_Warning_Records` entries; when it overflows, the
 last entry becomes `Warnings_Suppressed`, in the context of the first warning suppressed and with
@@ -511,7 +512,7 @@ and storage that is no single allocation at fixed rates:
 
 | Storage | Bytes counted |
 | --- | --- |
-| a retained metadata item or font name | its bytes, plus 128 |
+| a retained metadata item or font name | its bytes twice, the buffer it is read into and the copy kept, plus 128 |
 | a polygon read | 8 per point |
 | a polygon drawn | 8 per point again, for the copy drawn, plus 104 per edge when it is filled |
 | a region read | 4 per byte of it, for its scanlines and inversion points |
@@ -550,7 +551,8 @@ pictlib/
 Root `alire.toml`: `name = "pictlib"`, `0.1.0-dev`, MIT, `gnat_native = "^15"`, `jpeglib` and
 `textrender` pinned by path (`../jpeglib`, `../textrender`). Child crate `tests` depends on `pictlib`,
 `aunit ^26.0.0`, `project_tools` and `textrender` (its text oracle). Test binaries: `pictlib_tests` (AUnit),
-`pictlib_check` (the library build, the source policy and the AUnit suite), `pictlib_real_world`
+`pictlib_check` (the library build, the source policy, the AUnit suite and the README's example),
+`pictlib_example` (the README's example, which it runs), `pictlib_real_world`
 (the real-world corpus against its recorded outcomes), `pictlib_fuzz` (mutation fuzzing),
 `pictlib_prove` (the SPARK proof profile), `pictlib_conformance` (encoder output read by ImageMagick
 and by LibreOffice's own PICT import, exact), `pictlib_benchmark` (throughput, informational) and

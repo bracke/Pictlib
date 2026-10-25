@@ -5,9 +5,11 @@ with Pictlib.Decoding;
 with Pictlib.Errors;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Limits;
+with Pictlib.Pictures;
 with Pictlib.Results;
 with Pictlib.Streams;
 with Pictlib_Testing.Builders;
+with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Recorders;
 
 package body Pictlib_Testing.Test_Decoder is
@@ -63,6 +65,31 @@ package body Pictlib_Testing.Test_Decoder is
    overriding function Offset (Object : Overreporting) return Pictlib.Source_Offset is (Object.Inner.Offset);
    overriding function Skip
      (Object : in out Overreporting; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result;
+
+   --  A visitor that, at its first opcode, cancels its decoder, or tries to enumerate it again.
+   type Meddling is new Decoding.Opcode_Visitor with record
+      Target : access Decoding.Decoder;
+      Cancels : Boolean := True;
+      Visits : Natural := 0;
+      Nested : Pictlib.Results.Result := Pictlib.Results.Success;
+   end record;
+   overriding function Visit (Object : in out Meddling; Event : Pictlib.Pictures.Opcode_Event)
+     return Decoding.Visit_Action;
+
+   overriding function Visit (Object : in out Meddling; Event : Pictlib.Pictures.Opcode_Event)
+     return Decoding.Visit_Action
+   is
+      pragma Unreferenced (Event);
+      Inner : Recorders.Null_Visitor;
+   begin
+      Object.Visits := Object.Visits + 1;
+      if Object.Visits = 1 and then Object.Cancels then
+         Decoding.Cancel (Object.Target.all);
+      elsif Object.Visits = 1 then
+         Object.Nested := Decoding.Enumerate (Object.Target.all, Inner);
+      end if;
+      return Decoding.Continue;
+   end Visit;
 
    overriding function Skip
      (Object : in out Overreporting; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result
@@ -203,6 +230,40 @@ package body Pictlib_Testing.Test_Decoder is
       Recorders.Decode (Picture, Decoder, Events, Outcome);
       Decoding.Cancel (Decoder);
       Assert (Decoding.State (Decoder) = Decoding.Finished, "cancelling a finished decoder changed its state");
+
+      --  Cancelled from inside a visit: enumeration stops there, and the decoder stays cancelled.
+      declare
+         Inside : aliased Decoding.Decoder;
+         Canceller : Meddling := (Target => Inside'Unchecked_Access, others => <>);
+         Storage : aliased Bytes := [1 .. 3 * 8 * 4 => 0];
+      begin
+         Pictlib.Streams.Open (Source, Picture'Access);
+         Decoding.Initialize (Inside, Source'Access);
+         Outcome := Decoding.Read_Header (Inside);
+         Assert (Pictlib.Results.Succeeded (Outcome), "the header was not read");
+         Outcome := Decoding.Enumerate (Inside, Canceller);
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Operation_Cancelled and then Canceller.Visits = 1
+                 and then Decoding.State (Inside) = Decoding.Cancelled,
+                 "a decoder cancelled by its visitor read on, or forgot it was cancelled");
+         Outcome := Decoding.Render (Inside, Canvases.View (Storage'Access, 8, 4));
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Operation_Cancelled,
+                 "a decoder cancelled by its visitor rendered");
+      end;
+      --  Enumerating again from inside a visit is refused; the outer enumeration goes on to the end.
+      declare
+         Inside : aliased Decoding.Decoder;
+         Reenterer : Meddling := (Target => Inside'Unchecked_Access, Cancels => False, others => <>);
+      begin
+         Pictlib.Streams.Open (Source, Picture'Access);
+         Decoding.Initialize (Inside, Source'Access);
+         Outcome := Decoding.Read_Header (Inside);
+         Assert (Pictlib.Results.Succeeded (Outcome), "the header was not read");
+         Outcome := Decoding.Enumerate (Inside, Reenterer);
+         Assert (Reenterer.Nested.First_Error.Code = Pictlib.Errors.Invalid_State,
+                 "a visitor enumerated its decoder again");
+         Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.State (Inside) = Decoding.Finished,
+                 "a refused nested enumeration disturbed the outer one");
+      end;
    end Cancellation;
 
    procedure Reset_Reuses_The_Decoder (T : in out AUnit.Test_Cases.Test_Case'Class) is

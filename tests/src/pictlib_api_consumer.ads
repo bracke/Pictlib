@@ -48,7 +48,9 @@ package Pictlib_API_Consumer is
       Pictlib.Capabilities.Text_Rendering, Pictlib.Capabilities.QuickTime_JPEG_Decoding,
       Pictlib.Capabilities.Metadata_Retention, Pictlib.Capabilities.Raster_Encoding];
 
-   --  Every public subprogram, by its profile: a change to one breaks this unit.
+   --  Every public subprogram, renamed by its profile: a change to a parameter's or result's type, a parameter's
+   --  mode, or the number of parameters breaks this unit. Ada does not compare a renaming's parameter subtypes,
+   --  names or defaults with the subprogram's, so this unit does not catch changes to those.
 
    --  Decoding.
    procedure Initialize
@@ -132,6 +134,28 @@ package Pictlib_API_Consumer is
      renames Pictlib.Streams.Skip_Exact;
    function Write_All (Object : in out Destination'Class; Buffer : Pictlib.Streams.Byte_Array)
      return Pictlib.Results.Result renames Pictlib.Streams.Write_All;
+
+   --  Geometry and results.
+   function Width (Item : Pictlib.Geometry.Rect) return Integer renames Pictlib.Geometry.Width;
+   function Height (Item : Pictlib.Geometry.Rect) return Integer renames Pictlib.Geometry.Height;
+   function Is_Empty (Item : Pictlib.Geometry.Rect) return Boolean renames Pictlib.Geometry.Is_Empty;
+   function Succeeded_Result return Pictlib.Results.Result renames Pictlib.Results.Success;
+   function Failure (Code : Pictlib.Errors.Error_Code) return Pictlib.Results.Result renames Pictlib.Results.Failure;
+   function Failure (Item : Pictlib.Errors.Error) return Pictlib.Results.Result renames Pictlib.Results.Failure;
+   function Succeeded (Item : Pictlib.Results.Result) return Boolean renames Pictlib.Results.Succeeded;
+
+   --  The memory source's and the fixed destination's operations.
+   function Read (Object : in out Pictlib.Streams.Memory_Source; Buffer : out Pictlib.Streams.Byte_Array)
+     return Pictlib.Streams.Source_Result renames Pictlib.Streams.Read;
+   function Offset (Object : Pictlib.Streams.Memory_Source) return Pictlib.Source_Offset renames Pictlib.Streams.Offset;
+   function Skip (Object : in out Pictlib.Streams.Memory_Source; Count : Pictlib.Byte_Count)
+     return Pictlib.Streams.Source_Result renames Pictlib.Streams.Skip;
+   function Write (Object : in out Pictlib.Streams.Fixed_Buffer_Destination; Buffer : Pictlib.Streams.Byte_Array)
+     return Pictlib.Streams.Destination_Result renames Pictlib.Streams.Write;
+   function Offset (Object : Pictlib.Streams.Fixed_Buffer_Destination) return Pictlib.Destination_Offset
+     renames Pictlib.Streams.Offset;
+   function Flush (Object : in out Pictlib.Streams.Fixed_Buffer_Destination) return Pictlib.Errors.Error
+     renames Pictlib.Streams.Flush;
 
    --  Opcodes and errors.
    function Rule_For (Op : Pictlib.Opcode) return Pictlib.Opcodes.Length_Rule renames Pictlib.Opcodes.Rule_For;

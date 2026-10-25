@@ -47,8 +47,8 @@ header's native resolution is not implemented. See
 Encode an image into a picture, then decode the picture and render it into a
 view of its frame's size. This is the body of
 [`pictlib_example`](tests/src/mains/pictlib_example.adb), which the tests crate
-builds, so the code stays true to the API (`pictlib_check` holds this README to
-it):
+builds and `pictlib_check` runs, so the code stays true to the API
+(`pictlib_check` also holds this README to it, line for line):
 
 ```ada
    --  Encode: one image becomes one picture.
@@ -60,6 +60,7 @@ it):
    end if;
    if not Pictlib.Results.Succeeded (Outcome) then
       Ada.Text_IO.Put_Line ("encode failed: " & Outcome.First_Error.Code'Image);
+      Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
       return;
    end if;
 
@@ -80,6 +81,7 @@ it):
          Ada.Text_IO.Put_Line ("a" & Length'Image & "-byte picture decoded back to its pixels");
       else
          Ada.Text_IO.Put_Line ("decode failed: " & Outcome.First_Error.Code'Image);
+         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
       end if;
    end;
 ```

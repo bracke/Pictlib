@@ -2,7 +2,8 @@
 --  The policy holds independent of what an incremental build recompiled: lines of at most 120 characters in
 --  every Ada source of both crates, GNATdoc tags on every public subprogram of the public packages,
 --  production units that depend only on Ada, Interfaces, GNAT, pictlib, jpeglib's public packages and
---  textrender, and an invariant registry true to the suite. --policy-only checks the sources alone. Run from
+--  textrender, an invariant registry true to the suite, and a README whose example is the example program,
+--  which runs. --policy-only checks the sources alone. Run from
 --  anywhere below the pictlib tree, after `alr --chdir tests build`.
 with Ada.Directories;
 with Ada.Strings.Unbounded;
@@ -82,6 +83,10 @@ begin
       if not Policy_Only then
          Run ("unit tests", Root & "/tests",
               Root & "/tests/bin/pictlib_tests" & Pictlib_Testing.Tools.Executable_Suffix,
+              [1 .. 0 => Null_Unbounded_String]);
+         --  The README's example runs too, so what it shows is code that works, not only code that compiles.
+         Run ("README example", Root & "/tests",
+              Root & "/tests/bin/pictlib_example" & Pictlib_Testing.Tools.Executable_Suffix,
               [1 .. 0 => Null_Unbounded_String]);
       end if;
    end if;
