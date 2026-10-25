@@ -296,6 +296,9 @@ package body Pictlib_Testing.Test_QuickTime is
       Short_Description : aliased constant Bytes :=
         Image (QuickTime ("jpeg", Image_Width, Image_Height, Whole, Description_Size => 80), 8, 6);
       Overlong : constant Bytes := Plain (Whole);
+      Broken_ICC : aliased constant Bytes :=
+        Image (Plain (Whole (1 .. 2) & [16#FF#, 16#E2#, 0, 20] & Text ("ICC_PROFILE") & [0, 2, 2, 0, 0, 0, 0]
+                      & Whole (3 .. Whole'Last)), 8, 6);
       --  dataSize claims more than the opcode holds.
       Past_The_Opcode : aliased constant Bytes :=
         Image (Overlong (1 .. 6 + 68 + 44) & L (100_000) & Overlong (6 + 68 + 49 .. Overlong'Last), 8, 6);
@@ -311,6 +314,12 @@ package body Pictlib_Testing.Test_QuickTime is
       Canvases.Expect_Failure (Filled_By_Matte, 8, 6, Errors.Opcode_Length_Invalid, "matte fills the opcode", 16#8200#,
                                (Strictness => Pictlib.Compatible, others => <>));
       Canvases.Expect_Failure (Truncated, 8, 6, Errors.Embedded_Image_Failed, "truncated JPEG", 16#8200#);
+      --  Malformed metadata is malformed data, not a limit: an ICC profile's second fragment without its first.
+      Canvases.Expect_Failure (Broken_ICC, 8, 6, Errors.Embedded_Image_Failed, "a broken ICC chain", 16#8200#);
+      Canvases.Render (Broken_ICC, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome,
+                       (Strictness => Pictlib.Recover_When_Safe, others => <>));
+      Assert (Pictlib.Results.Succeeded (Outcome) and then Recorders.Has_Warning (Decoder, Errors.Partial_Picture),
+              "a broken ICC chain did not leave a partial picture: " & Outcome.First_Error.Code'Image);
       Canvases.Expect_Failure (Garbage, 8, 6, Errors.Embedded_Image_Failed, "not a JPEG", 16#8200#);
       Canvases.Expect_Failure (Wrong_Size, 9, 6, Errors.Embedded_Image_Failed, "description size disagrees",
                                16#8200#);
@@ -405,8 +414,11 @@ package body Pictlib_Testing.Test_QuickTime is
          --  jpeglib running out of that budget is the allocation limit, never recovered as a partial picture.
          Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded
                  and then Outcome.First_Error.Context.Limit = Pictlib.Allocation_Byte_Limit
-                 and then Outcome.First_Error.Context.Has_Underlying_Code,
-                 "jpeglib's allocation limit was reported as " & Outcome.First_Error.Code'Image);
+                 and then Outcome.First_Error.Context.Has_Underlying_Code
+                 and then Outcome.First_Error.Context.Expected = Pictlib.Byte_Count (Least_Jpeglib) + 143
+                 and then Outcome.First_Error.Context.Actual > Outcome.First_Error.Context.Expected,
+                 "jpeglib's allocation limit was reported as " & Outcome.First_Error.Code'Image & ", expected"
+                 & Outcome.First_Error.Context.Expected'Image);
          Canvases.Render (Picture, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome,
                           (Strictness => Pictlib.Recover_When_Safe, others => <>),
                           (Defaults with delta Max_Allocation_Bytes => Pictlib.Byte_Count (Least_Jpeglib) + 143));

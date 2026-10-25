@@ -281,10 +281,13 @@ are retained, never interpreted.
 - While rendering, QuickTime payloads are read by the decoder and are not retained as metadata;
   enumeration retains them when the policy asks.
 - `jpeglib` errors keep the `jpeglib` code as the underlying code and map to pictlib's: its pixel
-  limit to `Limit_Exceeded` on `Max_Embedded_Image_Pixels`, its allocation limits to
-  `Limit_Exceeded` on `Max_Allocation_Bytes` (whose share it decodes within), its unsupported
-  features to `Unsupported_Feature`, its own invariants to `Internal_Invariant_Failed`, and
-  malformed JPEG data to `Embedded_Image_Failed`. Only the last is ever recovered.
+  limit to `Limit_Exceeded` on `Max_Embedded_Image_Pixels`; its buffers outgrowing their share to
+  `Limit_Exceeded` on `Max_Allocation_Bytes`, whose expected count is the image's pixels plus that
+  share; a frame of more components than it decodes, and its other unsupported features, to
+  `Unsupported_Feature`; its own invariants to `Internal_Invariant_Failed`; and malformed JPEG data,
+  malformed metadata included, to `Embedded_Image_Failed`. Only the last is ever recovered.
+- `jpeglib`'s share is what `Max_Allocation_Bytes` leaves once the pixels are admitted, but no more
+  than 8 times the image's RGB bytes over its extent rounded up to 16-pixel MCUs, plus 1 MiB.
 
 ## 4. Package layout
 

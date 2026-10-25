@@ -288,6 +288,8 @@ package body Pictlib.Internal.Typesetting is
                   Outcome := Restart_Run (Cell_Count);
                end if;
             end;
+            --  A failed restart ends the text: a later, smaller charge must not paper over it.
+            exit when not Results.Succeeded (Outcome);
          end if;
       end loop;
       if Results.Succeeded (Outcome) and then Cell_Count >= Run_First then

@@ -34,19 +34,25 @@ package body Pictlib.Internal.Picture_Stream is
      (Object.Buffer (Object.First + Index - 1));
 
    --  The budget is spent: the next byte would be one past it.
+   --  The source offset Ahead bytes past what the reader consumed, saturating: a source may report any offset.
+   function At_Offset (Object : Reader; Ahead : Natural := 0) return Source_Offset is
+     (if Object.Base > Source_Offset'Last - Source_Offset (Object.Consumed) - Source_Offset (Ahead)
+      then Source_Offset'Last
+      else Object.Base + Source_Offset (Object.Consumed) + Source_Offset (Ahead));
+
    function Over_Budget (Object : Reader) return Errors.Error is
      (Failures.Over_Limit
-        (Picture_Byte_Limit, Object.Max_Bytes, Object.Consumed + 1, Object.Base + Source_Offset (Object.Consumed))
+        (Picture_Byte_Limit, Object.Max_Bytes, Object.Consumed + 1, At_Offset (Object))
         .First_Error);
 
    --  Bytes the reader may still deliver.
    function Remaining_Budget (Object : Reader) return Byte_Count is
      (if Object.Consumed >= Object.Max_Bytes then 0 else Object.Max_Bytes - Object.Consumed);
 
-   --  The one judgement of a source's reply to a request of Requested bytes made at At_Offset: its own failure;
+   --  The one judgement of a source's reply to a request of Requested bytes made at Where: its own failure;
    --  Internal_Invariant_Failed when it claims more than it was asked for, since the reader's offsets could no
    --  longer be trusted; Source_Zero_Progress when it delivers nothing short of the end.
-   function Judged (Step : Streams.Source_Result; Requested : Byte_Count; At_Offset : Source_Offset)
+   function Judged (Step : Streams.Source_Result; Requested : Byte_Count; Where : Source_Offset)
      return Errors.Error is
    begin
       if Errors.Is_Fatal (Step.Error) then
@@ -54,9 +60,9 @@ package body Pictlib.Internal.Picture_Stream is
       elsif Step.Count > Requested then
          return Errors.Make
            (Errors.Internal_Invariant_Failed,
-            (Source => At_Offset, Expected => Requested, Actual => Step.Count, others => <>));
+            (Source => Where, Expected => Requested, Actual => Step.Count, others => <>));
       elsif Step.Count = 0 and then Requested > 0 and then not Step.End_Of_Input then
-         return Errors.Make (Errors.Source_Zero_Progress, (Source => At_Offset, others => <>));
+         return Errors.Make (Errors.Source_Zero_Progress, (Source => Where, others => <>));
       end if;
       return Errors.Make (Errors.No_Error);
    end Judged;
@@ -68,7 +74,7 @@ package body Pictlib.Internal.Picture_Stream is
       Requested : Byte_Count) return Streams.Source_Result
    is
       Failure : constant Errors.Error :=
-        Judged (Step, Requested, Object.Base + Source_Offset (Object.Consumed));
+        Judged (Step, Requested, At_Offset (Object));
    begin
       if Errors.Is_Fatal (Failure) then
          return (Error => Failure, Count => 0, End_Of_Input => False);
@@ -102,7 +108,7 @@ package body Pictlib.Internal.Picture_Stream is
             --  Buffered bytes are not consumed yet, so the reply is judged where the buffer ends.
             Failure : constant Errors.Error :=
               Judged (Step, Byte_Count (Wanted - Object.Last),
-                      Object.Base + Source_Offset (Object.Consumed) + Source_Offset (Buffered (Object)));
+                      At_Offset (Object, Buffered (Object)));
          begin
             if Errors.Is_Fatal (Failure) then
                return Results.Failure (Failure);
@@ -121,9 +127,10 @@ package body Pictlib.Internal.Picture_Stream is
 
    function Picture_Offset (Object : Reader) return Byte_Count is (Object.Consumed - Object.Picture_Origin);
 
+   --  Only the bytes delivered are defined: clearing the rest on every call would make a caller that asks again
+   --  for what is left, as Read_Exact does, clear the same bytes over and over.
    overriding function Read (Object : in out Reader; Buffer : out Streams.Byte_Array) return Streams.Source_Result is
    begin
-      Buffer := [others => 0];
       if Object.Input = null then
          return (Error => Errors.Make (Errors.Source_Read_Failed), Count => 0, End_Of_Input => False);
       elsif Buffer'Length = 0 then
@@ -180,7 +187,7 @@ package body Pictlib.Internal.Picture_Stream is
    end Probe_Past_End;
 
    overriding function Offset (Object : Reader) return Source_Offset is
-     (Object.Base + Source_Offset (Object.Consumed));
+     (At_Offset (Object));
 
    overriding function Skip (Object : in out Reader; Count : Byte_Count) return Streams.Source_Result is
    begin

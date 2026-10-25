@@ -124,6 +124,20 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - With the file header on, an encoder over `Max_Output_Bytes` reports that
   limit as set, the header counted, at the file offset.
 - `Warnings_Suppressed` carries the number of warnings suppressed.
+- A text opcode ends at the first failure while the glyphs an atlas
+  eviction displaced are painted again; a later, smaller charge no longer
+  lets drawing go on past the work limit.
+- Malformed JPEG metadata, a broken ICC chain among it, is
+  `Embedded_Image_Failed` again, and a frame of more components than
+  jpeglib decodes is `Unsupported_Feature`; jpeglib's buffers outgrowing
+  their share name the share they had. That share is sized over the image's
+  extent rounded up to 16-pixel MCUs, so narrow subsampled JPEGs decode.
+- The picture reader no longer clears the rest of a caller's buffer on
+  every short read, which made long payloads from a source that delivers in
+  small pieces quadratic in work no budget counted; nor does the source
+  jpeglib reads QuickTime images through.
+- Source offsets saturate, so a source reporting offsets near the largest
+  there is cannot make the decoder raise.
 - The specification describes text cells stretched to their ink, the work
   of copying a region shape, the font file bytes a load is charged, and
   `Font_Unavailable`; `Warning_Record_Limit` is documented as never crossed.

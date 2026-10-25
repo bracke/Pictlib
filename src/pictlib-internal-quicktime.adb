@@ -36,10 +36,13 @@ package body Pictlib.Internal.QuickTime is
    Fract_One : constant := 16#4000_0000#;
    --  Decoded pixels are RGB.
    Bytes_Per_Pixel : constant := 3;
-   --  jpeglib's own buffers may take at most this many times the pixels, plus Jpeglib_Fixed_Bytes: what a
-   --  progressive decode of that size needs, so one image does not take a session's whole allocation quota.
+   --  jpeglib's own buffers may take at most this many times the image's RGB bytes, counted over its MCU-padded
+   --  extent, plus Jpeglib_Fixed_Bytes: what a progressive decode of that size needs, however narrow the image
+   --  and however its chroma is subsampled, so one image does not take a session's whole allocation quota.
    Jpeglib_Pixel_Factor : constant := 8;
    Jpeglib_Fixed_Bytes : constant := 1_048_576;
+   --  The largest MCU side, 16 pixels for 2:1 subsampling.
+   MCU_Side : constant := 16;
    --  The most jpeglib is handed at once.
    Read_Chunk : constant := 4096;
 
@@ -194,7 +197,8 @@ package body Pictlib.Internal.QuickTime is
          Chunk : Streams.Byte_Array (1 .. Count);
          Step : Results.Result;
       begin
-         Buffer := [others => 0];
+         --  Only the bytes delivered are defined, as for any source: clearing the rest on every call would clear
+         --  jpeglib's buffer over and over.
          if Count = 0 then
             return (Result => Jpeglib.Errors.Make (Jpeglib.Errors.No_Error), Count => 0, End_Of_Input => True);
          end if;
@@ -231,13 +235,21 @@ package body Pictlib.Internal.QuickTime is
       Decoded : Jpeglib.Results.Result;
       Bytes : constant Natural := Bytes_Per_Pixel * Item.Width * Item.Height;
 
-      --  What jpeglib's failure means for the picture. Its limits are pictlib's limits, a JPEG feature it lacks is
-      --  an unsupported feature and its own invariants are an internal failure, none of them recovered; only
-      --  malformed JPEG data is Embedded_Image_Failed. jpeglib's code is kept as the underlying one.
+      --  What jpeglib's failure means for the picture. Its pixel and buffer limits are pictlib's limits, a JPEG
+      --  feature it lacks is an unsupported feature and its own invariants are an internal failure, none of them
+      --  recovered; malformed JPEG data, its metadata included, is Embedded_Image_Failed. jpeglib's code is kept
+      --  as the underlying one.
       function Rejected return Results.Result is
          use type Jpeglib.Errors.Error_Code;
+         use type Jpeglib.Marker_Code;
          Code : constant Jpeglib.Errors.Error_Code := Decoded.First_Error.Code;
+         --  jpeglib reports a frame of more components than it decodes at the frame's marker, and its buffers
+         --  outgrowing their share nowhere in particular.
+         At_Frame : constant Boolean := Decoded.First_Error.Context.Marker /= 0;
          Pixels_Of : constant Byte_Count := Byte_Count (Item.Width) * Byte_Count (Item.Height);
+         --  The pixels and jpeglib's share are what the image was allowed: the configured limit itself when
+         --  nothing capped the share.
+         Allowed : constant Byte_Count := Checked_Arithmetic.Saturating_Add (Bytes_Per_Pixel * Pixels_Of, Share);
          Context : constant Errors.Diagnostic_Context :=
            (Sessions.Context_Of (Event) with delta
               Underlying_Code => Long_Long_Integer (Jpeglib.Errors.Error_Code'Pos (Code)),
@@ -245,27 +257,30 @@ package body Pictlib.Internal.QuickTime is
       begin
          if not Results.Succeeded (Input.Failure) then
             return Input.Failure;
+         elsif Code = Jpeglib.Errors.Pixel_Count_Exceeded then
+            return Results.Failure
+              (Errors.Make
+                 (Errors.Limit_Exceeded,
+                  (Context with delta
+                     Limit => Embedded_Image_Pixel_Limit,
+                     Expected => Byte_Count (S.Budget.Max_Embedded_Image_Pixels), Actual => Pixels_Of)));
+         elsif Code = Jpeglib.Errors.Output_Limit_Exceeded and then not At_Frame then
+            return Results.Failure
+              (Errors.Make
+                 (Errors.Limit_Exceeded,
+                  (Context with delta
+                     Limit => Allocation_Byte_Limit, Expected => Allowed,
+                     Actual => Checked_Arithmetic.Saturating_Add (Allowed, 1))));
          end if;
          return Results.Failure
            (Errors.Make
               ((case Code is
-                   when Jpeglib.Errors.Pixel_Count_Exceeded | Jpeglib.Errors.Output_Limit_Exceeded
-                      | Jpeglib.Errors.Metadata_Limit_Exceeded => Errors.Limit_Exceeded,
-                   when Jpeglib.Errors.Unsupported_Feature => Errors.Unsupported_Feature,
+                   when Jpeglib.Errors.Unsupported_Feature | Jpeglib.Errors.Output_Limit_Exceeded =>
+                     Errors.Unsupported_Feature,
                    when Jpeglib.Errors.Invalid_State | Jpeglib.Errors.Operation_Cancelled
                       | Jpeglib.Errors.Internal_Invariant_Failed => Errors.Internal_Invariant_Failed,
                    when others => Errors.Embedded_Image_Failed),
-               (case Code is
-                   when Jpeglib.Errors.Pixel_Count_Exceeded =>
-                     (Context with delta
-                        Limit => Embedded_Image_Pixel_Limit,
-                        Expected => Byte_Count (S.Budget.Max_Embedded_Image_Pixels), Actual => Pixels_Of),
-                   --  jpeglib's buffers came from the per-allocation budget the pixels left.
-                   when Jpeglib.Errors.Output_Limit_Exceeded | Jpeglib.Errors.Metadata_Limit_Exceeded =>
-                     (Context with delta
-                        Limit => Allocation_Byte_Limit, Expected => S.Budget.Max_Allocation_Bytes,
-                        Actual => Checked_Arithmetic.Saturating_Add (Bytes_Per_Pixel * Pixels_Of, Share + 1)),
-                   when others => Context)));
+               Context));
       end Rejected;
    begin
       Pixels := null;
@@ -478,9 +493,12 @@ package body Pictlib.Internal.QuickTime is
             declare
                --  jpeglib's own buffers: what is left of the per-allocation budget once the pixels are admitted,
                --  but no more than a decode of this size needs, counted against the session's total.
+               Padded_Bytes : constant Byte_Count :=
+                 Bytes_Per_Pixel * Byte_Count ((Item.Width + MCU_Side - 1) / MCU_Side * MCU_Side)
+                 * Byte_Count ((Item.Height + MCU_Side - 1) / MCU_Side * MCU_Side);
                Share : constant Byte_Count :=
                  Byte_Count'Min (S.Budget.Max_Allocation_Bytes - Pixel_Bytes,
-                                 Jpeglib_Pixel_Factor * Pixel_Bytes + Jpeglib_Fixed_Bytes);
+                                 Jpeglib_Pixel_Factor * Padded_Bytes + Jpeglib_Fixed_Bytes);
             begin
                Outcome := Sessions.Admit_Aggregate (S, Share);
                if Results.Succeeded (Outcome) then

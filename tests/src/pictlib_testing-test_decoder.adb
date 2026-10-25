@@ -3,6 +3,7 @@ with AUnit.Assertions;
 with Pictlib;
 with Pictlib.Decoding;
 with Pictlib.Errors;
+with Pictlib.Internal.Picture_Stream;
 with Pictlib.Limits;
 with Pictlib.Results;
 with Pictlib.Streams;
@@ -37,6 +38,20 @@ package body Pictlib_Testing.Test_Decoder is
    procedure Finalize_Is_Idempotent (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Source_Failure (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Overreporting_Source (T : in out AUnit.Test_Cases.Test_Case'Class);
+   procedure Source_Offsets (T : in out AUnit.Test_Cases.Test_Case'Class);
+
+   --  A source that delivers honestly but reports offsets from near the largest there is.
+   type Far_Offset is limited new Pictlib.Streams.Source with record
+      Inner : Pictlib.Streams.Memory_Source;
+   end record;
+   overriding function Read
+     (Object : in out Far_Offset; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result
+   is (Object.Inner.Read (Buffer));
+   overriding function Offset (Object : Far_Offset) return Pictlib.Source_Offset is
+     (Pictlib."-" (Pictlib.Source_Offset'Last, 3));
+   overriding function Skip
+     (Object : in out Far_Offset; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result
+   is (Object.Inner.Skip (Count));
 
    --  A source that delivers honestly but claims one byte more than it skipped.
    type Overreporting is limited new Pictlib.Streams.Source with record
@@ -75,6 +90,7 @@ package body Pictlib_Testing.Test_Decoder is
       Register_Routine (T, Finalize_Is_Idempotent'Access, "decoder.state.finalize");
       Register_Routine (T, Source_Failure'Access, "decoder.source_failure");
       Register_Routine (T, Overreporting_Source'Access, "decoder.source_overreports");
+      Register_Routine (T, Source_Offsets'Access, "decoder.source_offsets");
    end Register_Tests;
 
    procedure Wrong_State_Calls (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -286,4 +302,39 @@ package body Pictlib_Testing.Test_Decoder is
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Internal_Invariant_Failed,
               "a source claiming more than it skipped was trusted: " & Outcome.First_Error.Code'Image);
    end Overreporting_Source;
+
+   procedure Source_Offsets (T : in out AUnit.Test_Cases.Test_Case'Class) is
+      pragma Unreferenced (T);
+      use type Pictlib.Byte_Count;
+      use type Pictlib.Source_Offset;
+      Far : aliased Far_Offset;
+      Decoder : Decoding.Decoder;
+      Visitor : Recorders.Null_Visitor;
+      Outcome : Pictlib.Results.Result;
+   begin
+      --  Offsets past the largest a source can report saturate instead of overflowing.
+      Pictlib.Streams.Open (Far.Inner, Broken'Access);
+      Decoding.Initialize (Decoder, Far'Access);
+      Outcome := Decoding.Read_Header (Decoder);
+      if Pictlib.Results.Succeeded (Outcome) then
+         Outcome := Decoding.Enumerate (Decoder, Visitor);
+      end if;
+      Assert (not Pictlib.Results.Succeeded (Outcome)
+              and then Outcome.First_Error.Context.Source = Pictlib.Source_Offset'Last,
+              "a failure past the largest offset did not saturate: " & Outcome.First_Error.Code'Image);
+
+      --  The reader defines only the bytes it delivers: what a short read leaves is the caller's, untouched.
+      declare
+         Source : aliased Pictlib.Streams.Memory_Source;
+         Reader : Pictlib.Internal.Picture_Stream.Reader;
+         Buffer : Bytes (1 .. 10) := [others => 16#EE#];
+         Step : Pictlib.Streams.Source_Result;
+      begin
+         Pictlib.Streams.Open (Source, Picture'Access, Max_Transfer => 2);
+         Pictlib.Internal.Picture_Stream.Bind (Reader, Source'Access, Max_Bytes => 1_000);
+         Step := Reader.Read (Buffer);
+         Assert (Step.Count = 2 and then Buffer (3 .. 10) = [3 .. 10 => 16#EE#],
+                 "a short read cleared the bytes it did not deliver");
+      end;
+   end Source_Offsets;
 end Pictlib_Testing.Test_Decoder;

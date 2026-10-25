@@ -199,6 +199,7 @@ package body Pictlib_Testing.Test_Text is
    procedure Text_Work (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Font_Cache (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Atlas_Eviction (T : in out AUnit.Test_Cases.Test_Case'Class);
+   procedure Eviction_Over_Budget (T : in out AUnit.Test_Cases.Test_Case'Class);
 
    overriding function Name (T : Test) return AUnit.Message_String is
       pragma Unreferenced (T);
@@ -220,6 +221,7 @@ package body Pictlib_Testing.Test_Text is
       Register_Routine (T, Text_Work'Access, "text.work");
       Register_Routine (T, Font_Cache'Access, "text.font_cache");
       Register_Routine (T, Atlas_Eviction'Access, "text.atlas_eviction");
+      Register_Routine (T, Eviction_Over_Budget'Access, "text.eviction_over_budget");
    end Register_Tests;
 
    procedure Plain_Text (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -563,4 +565,94 @@ package body Pictlib_Testing.Test_Text is
       Canvases.Expect_Raster (Picture, Width, Height, Expected (Sans, Size, 2, 22, Many),
                               "a string that empties the atlas", With_Fonts);
    end Atlas_Eviction;
+
+   --  The work limit crossed while the glyphs an eviction displaced are painted again ends the text, whatever
+   --  is left: at every budget the picture fails over the limit or draws all of itself.
+   procedure Eviction_Over_Budget (T : in out AUnit.Test_Cases.Test_Case'Class) is
+      pragma Unreferenced (T);
+      use type Pictlib.Pixel_Count;
+      package Text renames Pictlib.Internal.Text;
+      Size : constant := 30;
+      Glyph : constant Pictlib.Pixel_Count := Text.Glyph_Work (Size);
+      --  The clip's lines above the canvas, each adding Added points far to the right, and a last one taking them
+      --  all away: the first row any paint walks passes all of them, at a cost of about Added * Lines ** 2 / 2,
+      --  several glyphs' work, and stops part-way when the budget runs out.
+      Lines : constant := 40;
+      Added : constant := 400;
+      Last : Natural := 0;
+
+      function Clip return Bytes is
+         function Points (First, Count : Natural) return Bytes is
+            Result : Bytes (1 .. 2 * Count);
+         begin
+            for Index in 0 .. Count - 1 loop
+               Result (Result'First + 2 * Index .. Result'First + 2 * Index + 1) := W (First + Index);
+            end loop;
+            return Result;
+         end Points;
+         function Adding (Line : Natural) return Bytes is
+           (W (-Lines + Line) & (if Line = 0 then W (0) & W (Width) else [1 .. 0 => 0])
+            & Points (1_000 + Line * Added, Added) & W (16#7FFF#));
+         function All_Adding (From : Natural) return Bytes is
+           (if From = Lines - 1 then Adding (From) else Adding (From) & All_Adding (From + 1));
+         Body_Lines : constant Bytes :=
+           All_Adding (0) & W (0) & Points (1_000, Lines * Added) & W (16#7FFF#)
+           & W (Height) & W (0) & W (Width) & W (16#7FFF#) & W (16#7FFF#);
+      begin
+         return W (16#01#) & W (10 + Body_Lines'Length) & Rect (-Lines, 0, Height, 1_000 + Lines * Added)
+           & Body_Lines;
+      end Clip;
+   begin
+      declare
+         Font : Textrender.Renderer;
+         Metric : Textrender.Glyph_Metric;
+      begin
+         Assert (Font.Load_Font (Sans, Size, 2 * Size + 2, 2 * Size + 2, 256, 256) = Textrender.Success,
+                 "the font did not load");
+         Font.Set_Atlas_Eviction (True);
+         for Code in Pictlib.Byte range 16#21# .. 16#FE# loop
+            if Font.Get_Glyph (Text.To_Unicode (Code), Metric) = Textrender.Success
+              and then Font.Atlas_Generation > 0
+            then
+               Last := Natural (Code) + 1;
+               exit;
+            end if;
+         end loop;
+         Assert (Last > 0, "no string of these characters empties the atlas");
+      end;
+      declare
+         --  The request that empties the atlas is the last but one.
+         Characters : Bytes (1 .. Last - 16#21# + 1);
+      begin
+         for Index in Characters'Range loop
+            Characters (Index) := Pictlib.Byte (16#20# + Index);
+         end loop;
+         declare
+            Picture : aliased constant Bytes := Pic (Clip & Size_Op (Size) & Long_Text_Bytes (22, 2, Characters));
+            Whole_Storage, Storage : aliased Bytes := [1 .. 3 * Width * Height => 0];
+            Decoder : Pictlib.Decoding.Decoder;
+            Outcome : Pictlib.Results.Result;
+         begin
+            Canvases.Render (Picture, Decoder, Canvases.View (Whole_Storage'Access, Width, Height), Outcome,
+                             With_Fonts);
+            Assert (Pictlib.Results.Succeeded (Outcome), "the whole picture failed: " & Outcome.First_Error.Code'Image);
+            --  The font's load and a request per character come before the first repaint's clip walk; the
+            --  budgets sweep that walk. Before the fix, budgets from step 4 on drew with glyphs missing.
+            for Step in 2 .. 9 loop
+               Canvases.Render
+                 (Picture, Decoder, Canvases.View (Storage'Access, Width, Height), Outcome, With_Fonts,
+                  (Pictlib.Limits.Default_Limits with delta
+                     Max_Drawing_Work => Pictlib.Pixel_Count (Characters'Length) * Glyph
+                                         + Text.Load_Work (Size, Text.File_Bytes (Sans))
+                                         + Pictlib.Pixel_Count (Step) * 16_000));
+               Assert ((Pictlib.Results.Succeeded (Outcome) and then Storage = Whole_Storage)
+                       or else (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
+                                and then Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit),
+                       "at step" & Step'Image & " the text "
+                       & (if Pictlib.Results.Succeeded (Outcome) then "succeeded with glyphs missing"
+                          else "failed with " & Outcome.First_Error.Code'Image));
+            end loop;
+         end;
+      end;
+   end Eviction_Over_Budget;
 end Pictlib_Testing.Test_Text;
