@@ -191,6 +191,11 @@ package body Pictlib.Decoding is
          Object.Visiting := False;
          return Outcome;
       end;
+   exception
+      --  A visitor's exception is the caller's: it propagates, but leaves the decoder usable.
+      when others =>
+         Object.Visiting := False;
+         raise;
    end Enumerate;
 
    --  Malformed picture data, after which what was drawn so far may stand as a partial picture.

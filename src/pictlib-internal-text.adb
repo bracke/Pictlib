@@ -1,4 +1,5 @@
 with Ada.Directories;
+with Ada.Unchecked_Deallocation;
 package body Pictlib.Internal.Text is
    use type Ada.Strings.Unbounded.Unbounded_String;
    use type Textrender.Status_Code;
@@ -77,6 +78,8 @@ package body Pictlib.Internal.Text is
 
    function Glyph_Work (Size : Positive) return Pixel_Count is (16 * Pixel_Count (Cell (Size)) ** 2);
 
+   procedure Free is new Ada.Unchecked_Deallocation (Textrender.Renderer, Renderer_Access);
+
    function Cached (Cache : Font_Cache; Path : String; Size : Positive) return Boolean is
      (for some Item of Cache.Items =>
         Item.Used and then Ada.Strings.Unbounded.To_String (Item.Path) = Path and then Item.Size = Size);
@@ -112,6 +115,9 @@ package body Pictlib.Internal.Text is
       declare
          Item : Slot_Type renames Cache.Items (Free);
       begin
+         if Item.Renderer = null then
+            Item.Renderer := new Textrender.Renderer;
+         end if;
          Status := Item.Renderer.Load_Font
            (Path => Path, Pixel_Size => Size, Cell_Width => Cell (Size), Cell_Height => Cell (Size),
             Atlas_Width => Atlas_Side (Size), Atlas_Height => Atlas_Side (Size));
@@ -145,12 +151,12 @@ package body Pictlib.Internal.Text is
       return Textrender.Success;
    end Acquire;
 
-   function Renderer (Cache : aliased in out Font_Cache; Slot : Positive; Held : Textrender_Guard)
+   function Renderer (Cache : Font_Cache; Slot : Positive; Held : Textrender_Guard)
      return not null access Textrender.Renderer
    is
       pragma Unreferenced (Held);
    begin
-      return Cache.Items (Slot).Renderer'Access;
+      return Cache.Items (Slot).Renderer;
    end Renderer;
 
    procedure Clear (Cache : in out Font_Cache) is
@@ -158,11 +164,21 @@ package body Pictlib.Internal.Text is
       pragma Unreferenced (Guard);
    begin
       for Item of Cache.Items loop
-         if Item.Used then
-            Item.Renderer.Reset;
-         end if;
+         Free (Item.Renderer);
          Item.Used := False;
          Item.Path := Ada.Strings.Unbounded.Null_Unbounded_String;
       end loop;
    end Clear;
+
+   overriding procedure Finalize (Item : in out Slot_Type) is
+   begin
+      if Item.Renderer /= null then
+         declare
+            Guard : Textrender_Guard;
+            pragma Unreferenced (Guard);
+         begin
+            Free (Item.Renderer);
+         end;
+      end if;
+   end Finalize;
 end Pictlib.Internal.Text;

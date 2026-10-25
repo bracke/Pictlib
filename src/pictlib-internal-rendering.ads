@@ -86,7 +86,7 @@ package Pictlib.Internal.Rendering is
       Window : Area;
       Port : Port_State;
       Fonts : Pictlib.Fonts.Font_Table;
-      Font_Cache : aliased Text.Font_Cache;
+      Font_Cache : Text.Font_Cache;
    end record;
 
    type Paint_Kind is (Pattern_Paint, Invert_Paint);

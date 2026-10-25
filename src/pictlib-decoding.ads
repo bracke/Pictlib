@@ -73,7 +73,10 @@ package Pictlib.Decoding is
    function Header (Object : Decoder) return Pictures.Header_Info;
    --  Enumerate.
    --  @param Object Decoder in state Header_Read; Finished or Stopped on success.
-   --  @param Visitor Receives every opcode in order, the version opcode and HeaderOp included.
+   --  @param Visitor Receives every opcode in order, the version opcode and HeaderOp included. While it is called,
+   --  Read_Header, Enumerate and Render on Object fail with Invalid_State; it may Cancel, Reset or Finalize
+   --  Object, which ends the enumeration with what a call in the state it leaves gets. Its exceptions propagate
+   --  and leave Object usable after Reset or Initialize.
    --  @return Operation result.
    function Enumerate (Object : in out Decoder; Visitor : in out Opcode_Visitor'Class) return Results.Result;
    --  Render.

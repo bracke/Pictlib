@@ -138,6 +138,14 @@ package body Pictlib_Testing.Test_Rendering is
      Bad_Mask (W (18) & Rect (0, 0, 4, 4) & W (0) & W (2) & W (16#7FFF#) & W (16#7FFF#));
    Unterminated_Mask : aliased constant Bytes :=
      Bad_Mask (W (20) & Rect (0, 0, 4, 4) & W (0) & W (0) & W (2) & W (16#7FFF#) & W (0));
+   --  Otherwise well formed: rows 2 then 0, a column past the box's right, a row below the box.
+   Descending_Mask : aliased constant Bytes :=
+     Bad_Mask (W (28) & Rect (0, 0, 4, 4) & W (2) & W (0) & W (2) & W (16#7FFF#) & W (0) & W (0) & W (2)
+               & W (16#7FFF#) & W (16#7FFF#));
+   Column_Outside_Mask : aliased constant Bytes :=
+     Bad_Mask (W (20) & Rect (0, 0, 4, 4) & W (0) & W (0) & W (6) & W (16#7FFF#) & W (16#7FFF#));
+   Row_Outside_Mask : aliased constant Bytes :=
+     Bad_Mask (W (20) & Rect (0, 0, 4, 4) & W (6) & W (0) & W (2) & W (16#7FFF#) & W (16#7FFF#));
 
    Short_Packed_Row : aliased constant Bytes :=
      V2_Picture (0, 0, 1, 64, Copy (16#98#, 8, Rect (0, 0, 1, 64), Rect (0, 0, 1, 64), Rect (0, 0, 1, 64))
@@ -258,6 +266,10 @@ package body Pictlib_Testing.Test_Rendering is
       Canvases.Expect_Failure (Unsorted_Mask, 4, 4, Errors.Region_Invalid, "unsorted inversion points", 16#91#);
       Canvases.Expect_Failure (Odd_Mask, 4, 4, Errors.Region_Invalid, "odd inversion points", 16#91#);
       Canvases.Expect_Failure (Unterminated_Mask, 4, 4, Errors.Region_Invalid, "unterminated region", 16#91#);
+      Canvases.Expect_Failure (Descending_Mask, 4, 4, Errors.Region_Invalid, "descending scanlines", 16#91#);
+      Canvases.Expect_Failure
+        (Column_Outside_Mask, 4, 4, Errors.Region_Invalid, "inversion point outside the box", 16#91#);
+      Canvases.Expect_Failure (Row_Outside_Mask, 4, 4, Errors.Region_Invalid, "scanline outside the box", 16#91#);
    end Clip_And_Mask;
 
    procedure Output_Formats (T : in out AUnit.Test_Cases.Test_Case'Class) is

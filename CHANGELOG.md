@@ -192,6 +192,13 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   so a cancelled decoder answers `Operation_Cancelled` until `Reset`; a
   visitor that calls `Read_Header`, `Enumerate` or `Render` from inside is
   refused with `Invalid_State` instead of draining the stream under it.
+  An exception the visitor raises propagates and leaves the decoder usable
+  after `Reset` or `Initialize`; it used to leave every later `Read_Header`,
+  `Enumerate` and `Render` refused for good. The specification and
+  `Enumerate`'s documentation state these rules, and each is tested.
+- textrender's renderers are created and destroyed under the textrender lock
+  as well as used under it: textrender promises nothing about initializing
+  or finalizing one while another task renders.
 - `Render` judges the frame against `Max_Canvas_Pixels` before the view, so
   a frame no view can render fails the decoder however wrong the view.
 - A malformed fontName names the length its name needs; an empty or
@@ -226,6 +233,13 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   every public subprogram, so a change to a parameter's or result's type, a
   parameter's mode or the number of parameters breaks the build (Ada does not
   compare a renaming's subtypes, names or defaults).
+
+- The invariant registry no longer calls overflow freedom proved where only
+  the helpers are, names `Sessions` for retention, the stream and writer
+  units for exact transfers, the encoder for states and allocations, and
+  every unit that charges drawing work; it cites the tests that cover them,
+  among them new ones for descending region scanlines and points outside a
+  region's box, and lists text sizes above 512 as unsupported.
 
 ### Internal structure
 

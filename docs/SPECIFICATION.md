@@ -398,7 +398,7 @@ an extended header's native resolution is a later task.
   delivered through a caller callback during enumeration.
 - Decoders and encoders keep no shared state and may be used from different tasks, one object per
   task. Calls into textrender, whose rasterizer shares scratch buffers between renderers, are
-  serialized by one process-wide lock.
+  serialized by one process-wide lock, and so are creating and destroying its renderers.
 
 ## 6. Decoder contract
 
@@ -412,6 +412,12 @@ opcode), `Render (Output_View)` (from M2), `Metadata_Count`/`Metadata_Item`/`Cop
 `Warning_Count`/`Warning_At`, `Last_Error`, `Cancel`, `Finalize`. Calls in the wrong state fail
 with `Invalid_State` (`Operation_Cancelled` after `Cancel`) and change neither the state nor the
 last error. `Render` after `Enumerate` requires `Reset` (the stream is forward-only).
+
+While `Enumerate` calls the visitor, `Read_Header`, `Enumerate` and `Render` on the same decoder
+fail with `Invalid_State`. A visitor may `Cancel`, `Reset` or `Finalize` the decoder: the state it
+leaves stands, and `Enumerate` returns what a call in that state gets (`Operation_Cancelled` after
+`Cancel`, `Invalid_State` otherwise) without visiting another opcode. An exception raised by the
+visitor propagates out of `Enumerate`, and the decoder stays usable after `Reset` or `Initialize`.
 
 `Render` rejects an invalid view or one whose size is not the frame's with `Invalid_Argument`,
 and a view above `Max_Output_Bytes` with `Limit_Exceeded`, leaving the decoder in `Header_Read`

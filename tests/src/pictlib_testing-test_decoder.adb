@@ -36,6 +36,7 @@ package body Pictlib_Testing.Test_Decoder is
    procedure Visitor_Stops (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Failure_Is_Terminal (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Cancellation (T : in out AUnit.Test_Cases.Test_Case'Class);
+   procedure Meddling_Visitors (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Reset_Reuses_The_Decoder (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Finalize_Is_Idempotent (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Source_Failure (T : in out AUnit.Test_Cases.Test_Case'Class);
@@ -66,11 +67,19 @@ package body Pictlib_Testing.Test_Decoder is
    overriding function Skip
      (Object : in out Overreporting; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result;
 
-   --  A visitor that, at its first opcode, cancels its decoder, or tries to enumerate it again.
+   --  What a meddling visitor does to its decoder at its first opcode.
+   type Meddle is (Cancels, Enumerates, Reads_Header, Renders, Resets, Finalizes, Raises);
+
+   Visitor_Failure : exception;
+
+   --  A visitor that, at its first opcode, calls into the decoder it is visiting.
    type Meddling is new Decoding.Opcode_Visitor with record
       Target : access Decoding.Decoder;
-      Cancels : Boolean := True;
+      Move : Meddle := Cancels;
+      --  The source Resets rebinds.
+      Input : access Pictlib.Streams.Source'Class;
       Visits : Natural := 0;
+      --  The result of the call Move makes, when it returns one.
       Nested : Pictlib.Results.Result := Pictlib.Results.Success;
    end record;
    overriding function Visit (Object : in out Meddling; Event : Pictlib.Pictures.Opcode_Event)
@@ -81,12 +90,20 @@ package body Pictlib_Testing.Test_Decoder is
    is
       pragma Unreferenced (Event);
       Inner : Recorders.Null_Visitor;
+      Storage : aliased Bytes := [1 .. 3 * 8 * 4 => 0];
    begin
       Object.Visits := Object.Visits + 1;
-      if Object.Visits = 1 and then Object.Cancels then
-         Decoding.Cancel (Object.Target.all);
-      elsif Object.Visits = 1 then
-         Object.Nested := Decoding.Enumerate (Object.Target.all, Inner);
+      if Object.Visits = 1 then
+         case Object.Move is
+            when Cancels => Decoding.Cancel (Object.Target.all);
+            when Enumerates => Object.Nested := Decoding.Enumerate (Object.Target.all, Inner);
+            when Reads_Header => Object.Nested := Decoding.Read_Header (Object.Target.all);
+            when Renders =>
+               Object.Nested := Decoding.Render (Object.Target.all, Canvases.View (Storage'Access, 8, 4));
+            when Resets => Decoding.Reset (Object.Target.all, Object.Input);
+            when Finalizes => Decoding.Finalize (Object.Target.all);
+            when Raises => raise Visitor_Failure;
+         end case;
       end if;
       return Decoding.Continue;
    end Visit;
@@ -113,6 +130,7 @@ package body Pictlib_Testing.Test_Decoder is
       Register_Routine (T, Visitor_Stops'Access, "decoder.state.visitor_stop");
       Register_Routine (T, Failure_Is_Terminal'Access, "decoder.state.failure_terminal");
       Register_Routine (T, Cancellation'Access, "decoder.state.cancel");
+      Register_Routine (T, Meddling_Visitors'Access, "decoder.state.meddling_visitors");
       Register_Routine (T, Reset_Reuses_The_Decoder'Access, "decoder.state.reset_reuse");
       Register_Routine (T, Finalize_Is_Idempotent'Access, "decoder.state.finalize");
       Register_Routine (T, Source_Failure'Access, "decoder.source_failure");
@@ -252,7 +270,7 @@ package body Pictlib_Testing.Test_Decoder is
       --  Enumerating again from inside a visit is refused; the outer enumeration goes on to the end.
       declare
          Inside : aliased Decoding.Decoder;
-         Reenterer : Meddling := (Target => Inside'Unchecked_Access, Cancels => False, others => <>);
+         Reenterer : Meddling := (Target => Inside'Unchecked_Access, Move => Enumerates, others => <>);
       begin
          Pictlib.Streams.Open (Source, Picture'Access);
          Decoding.Initialize (Inside, Source'Access);
@@ -265,6 +283,83 @@ package body Pictlib_Testing.Test_Decoder is
                  "a refused nested enumeration disturbed the outer one");
       end;
    end Cancellation;
+
+   --  A visitor's nested Read_Header and Render are refused; one that resets or finalizes its decoder ends the
+   --  enumeration in the state it left; one that raises leaves the decoder usable.
+   procedure Meddling_Visitors (T : in out AUnit.Test_Cases.Test_Case'Class) is
+      pragma Unreferenced (T);
+      Source : aliased Pictlib.Streams.Memory_Source;
+      Again : aliased Pictlib.Streams.Memory_Source;
+      Outcome : Pictlib.Results.Result;
+   begin
+      for Move in Reads_Header .. Renders loop
+         declare
+            Inside : aliased Decoding.Decoder;
+            Visitor : Meddling := (Target => Inside'Unchecked_Access, Move => Move, others => <>);
+         begin
+            Pictlib.Streams.Open (Source, Picture'Access);
+            Decoding.Initialize (Inside, Source'Access);
+            Outcome := Decoding.Read_Header (Inside);
+            Assert (Pictlib.Results.Succeeded (Outcome), "the header was not read");
+            Outcome := Decoding.Enumerate (Inside, Visitor);
+            Assert (Visitor.Nested.First_Error.Code = Pictlib.Errors.Invalid_State,
+                    "a visitor's nested " & Move'Image & " was not refused");
+            Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.State (Inside) = Decoding.Finished,
+                    "a refused nested " & Move'Image & " disturbed the enumeration");
+         end;
+      end loop;
+
+      for Move in Resets .. Finalizes loop
+         declare
+            Inside : aliased Decoding.Decoder;
+            Visitor : Meddling :=
+              (Target => Inside'Unchecked_Access, Move => Move, Input => Again'Unchecked_Access, others => <>);
+         begin
+            Pictlib.Streams.Open (Source, Picture'Access);
+            Pictlib.Streams.Open (Again, Picture'Access);
+            Decoding.Initialize (Inside, Source'Access);
+            Outcome := Decoding.Read_Header (Inside);
+            Assert (Pictlib.Results.Succeeded (Outcome), "the header was not read");
+            Outcome := Decoding.Enumerate (Inside, Visitor);
+            Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State and then Visitor.Visits = 1,
+                    "a decoder its visitor ran " & Move'Image & " on read on");
+            Assert (Decoding.State (Inside) = (if Move = Resets then Decoding.Ready else Decoding.Created),
+                    "the state " & Move'Image & " left did not stand");
+            if Move = Resets then
+               Outcome := Decoding.Read_Header (Inside);
+               Assert (Pictlib.Results.Succeeded (Outcome), "a decoder reset by its visitor read no header");
+               Outcome := Decoding.Enumerate (Inside, Visitor);
+               Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.State (Inside) = Decoding.Finished,
+                       "a decoder reset by its visitor did not enumerate the new source");
+            end if;
+         end;
+      end loop;
+
+      declare
+         Inside : aliased Decoding.Decoder;
+         Visitor : Meddling := (Target => Inside'Unchecked_Access, Move => Raises, others => <>);
+         Events : Recorders.Recorder;
+         Raised : Boolean := False;
+      begin
+         Pictlib.Streams.Open (Source, Picture'Access);
+         Decoding.Initialize (Inside, Source'Access);
+         Outcome := Decoding.Read_Header (Inside);
+         Assert (Pictlib.Results.Succeeded (Outcome), "the header was not read");
+         begin
+            Outcome := Decoding.Enumerate (Inside, Visitor);
+         exception
+            when Visitor_Failure => Raised := True;
+         end;
+         Assert (Raised, "a visitor's exception did not propagate");
+         Pictlib.Streams.Open (Source, Picture'Access);
+         Decoding.Reset (Inside, Source'Access);
+         Outcome := Decoding.Read_Header (Inside);
+         Assert (Pictlib.Results.Succeeded (Outcome), "a decoder whose visitor raised read no header after Reset");
+         Outcome := Decoding.Enumerate (Inside, Events);
+         Assert (Pictlib.Results.Succeeded (Outcome) and then Events.Count > 0,
+                 "a decoder whose visitor raised did not enumerate after Reset");
+      end;
+   end Meddling_Visitors;
 
    procedure Reset_Reuses_The_Decoder (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);

@@ -46,6 +46,9 @@ package Pictlib.Internal.Text is
    --  even on different renderers. A Textrender_Guard holds the process-wide lock for its lifetime.
    type Textrender_Guard is new Ada.Finalization.Limited_Controlled with private;
 
+   --  Renderers are created and destroyed, as well as used, under the lock: textrender does not promise that
+   --  initializing or finalizing a renderer leaves the shared buffers alone. Finalizing a cache that holds a
+   --  renderer takes the lock, so it must not be finalized while its task holds a guard.
    type Font_Cache is limited private;
 
    --  Acquire.
@@ -73,10 +76,10 @@ package Pictlib.Internal.Text is
    --  @param Slot A slot Acquire returned.
    --  @param Held The guard the caller holds for as long as it uses the renderer.
    --  @return Its renderer.
-   function Renderer (Cache : aliased in out Font_Cache; Slot : Positive; Held : Textrender_Guard)
+   function Renderer (Cache : Font_Cache; Slot : Positive; Held : Textrender_Guard)
      return not null access Textrender.Renderer;
    --  Clear.
-   --  @param Cache Cache whose fonts are released.
+   --  @param Cache Cache whose fonts and renderers are released, under the lock it takes.
    procedure Clear (Cache : in out Font_Cache);
 
    --  Cell.
@@ -120,13 +123,18 @@ private
    --  At most Slots fonts stay loaded; one renderer more lets a font load before any is evicted.
    Slots : constant := 8;
 
-   type Slot_Type is limited record
-      Renderer : aliased Textrender.Renderer;
+   type Renderer_Access is access Textrender.Renderer;
+
+   type Slot_Type is new Ada.Finalization.Limited_Controlled with record
+      --  Allocated by the first Acquire that loads into the slot, and freed by Clear or finalization.
+      Renderer : Renderer_Access;
       Path : Ada.Strings.Unbounded.Unbounded_String;
       Size : Natural := 0;
       Used : Boolean := False;
       Stamp : Natural := 0;
    end record;
+
+   overriding procedure Finalize (Item : in out Slot_Type);
 
    type Slot_Array is array (1 .. Slots + 1) of Slot_Type;
 
