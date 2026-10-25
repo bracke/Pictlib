@@ -3,7 +3,8 @@ with Pictlib.Streams;
 
 --  Fixture files, read from the tests crate's directory.
 package Pictlib_Testing.Files is
-   type Bytes_Access is access Pictlib.Streams.Byte_Array;
+   --  The library's own buffer access, so a loaded file can be freed and read through a memory source.
+   subtype Bytes_Access is Pictlib.Streams.Byte_Array_Access;
 
    --  Load: the whole of fixtures/<Name>.
    function Load (Name : String) return Bytes_Access;

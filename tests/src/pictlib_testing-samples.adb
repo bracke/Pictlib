@@ -16,6 +16,9 @@ package body Pictlib_Testing.Samples is
       end case;
    end Color;
 
+   function Alpha (Item : Kind; X, Y : Natural) return Pictlib.Byte is
+     (if Item = Translucent then Pictlib.Byte ((X * 13 + Y) mod 256) else 16#FF#);
+
    function Make
      (Item : Kind;
       Width, Height : Positive;
@@ -28,7 +31,7 @@ package body Pictlib_Testing.Samples is
          for X in 0 .. Width - 1 loop
             declare
                C : constant Pictlib.Images.RGB_Color := Color (Item, X, Y);
-               A : constant Pictlib.Byte := (if Item = Translucent then Pictlib.Byte ((X * 13) mod 256) else 16#FF#);
+               A : constant Pictlib.Byte := Alpha (Item, X, Y);
                At_Pixel : constant Positive := Size * (Y * Width + X) + 1;
             begin
                case Format is

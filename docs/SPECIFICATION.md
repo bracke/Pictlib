@@ -318,7 +318,7 @@ Pictlib.Internal.Container         -- file header, picSize, picFrame, version, H
 Pictlib.Internal.Decoder_State     -- what a public decoder holds besides its lifecycle
 Pictlib.Internal.Regions           -- regions as scanlines, row spans, span arithmetic
 Pictlib.Internal.Region_Reader     -- regions read or skipped under the budgets
-Pictlib.Internal.PackBits          -- unpack/pack byte and word runs (Unpack proved)
+Pictlib.Internal.PackBits          -- unpack byte and word runs (proved), pack byte runs
 Pictlib.Internal.Pixmaps           -- BitMap/PixMap and PixPat headers, color tables, rows
 Pictlib.Internal.Patterns          -- bit, color and dither patterns
 Pictlib.Internal.Transfer_Modes    -- transfer mode arithmetic

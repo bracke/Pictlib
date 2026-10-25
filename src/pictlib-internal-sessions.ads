@@ -174,6 +174,9 @@ package Pictlib.Internal.Sessions is
    Item_Overhead_Bytes : constant := 128;
    --  A polygon point.
    Point_Cost_Bytes : constant := 8;
+   --  A polygon edge while a filled polygon is scanned: its record in the edge and active lists, and its
+   --  crossing.
+   Polygon_Edge_Bytes : constant := 2 * 48 + 8;
    --  A unit of a region's size, for a copy of it.
    Region_Unit_Bytes : constant := 8;
    --  Each byte of a region read: its scanlines and inversion points, with capacity growth.

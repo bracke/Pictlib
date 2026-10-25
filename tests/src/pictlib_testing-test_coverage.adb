@@ -1,10 +1,9 @@
 with AUnit.Assertions;
-with Interfaces;
 with Pictlib.Internal.Regions;
+with Pictlib_Testing.Random;
 
 package body Pictlib_Testing.Test_Coverage is
    use AUnit.Assertions;
-   use type Interfaces.Unsigned_64;
 
    package Regions renames Pictlib.Internal.Regions;
    subtype Span_List is Regions.Span_Vectors.Vector;
@@ -36,15 +35,9 @@ package body Pictlib_Testing.Test_Coverage is
       return True;
    end Is_Canonical;
 
-   State : Interfaces.Unsigned_64 := 16#9E37_79B9_7F4A_7C15#;
+   Generator : Pictlib_Testing.Random.Generator := Pictlib_Testing.Random.Seeded;
 
-   function Random (Bound : Positive) return Natural is
-   begin
-      State := State xor Interfaces.Shift_Left (State, 13);
-      State := State xor Interfaces.Shift_Right (State, 7);
-      State := State xor Interfaces.Shift_Left (State, 17);
-      return Natural (State mod Interfaces.Unsigned_64 (Bound));
-   end Random;
+   function Random (Bound : Positive) return Natural is (Pictlib_Testing.Random.Next (Generator, Bound));
 
    --  Random sorted, disjoint spans within columns 0 .. 63.
    function Random_Spans return Span_List is

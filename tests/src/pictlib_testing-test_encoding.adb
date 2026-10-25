@@ -238,6 +238,61 @@ package body Pictlib_Testing.Test_Encoding is
          --  the PixMap's first 20 bytes.
          Assert (With_Alpha.Data (512 + 92) = 4, "alpha was not written as a fourth plane");
          Assert (Without.Data (512 + 92) = 3, "alpha was written unasked");
+         --  pictlib's decoder ignores alpha, so the planes are read here: the first row, at picture offset 124
+         --  after srcRect, dstRect and the mode, is a count byte and PackBits of the alpha, red, green and blue
+         --  planes, unpacked by the Inside Macintosh rule.
+         declare
+            Count : constant Natural := Natural (With_Alpha.Data (512 + 125));
+            type Planar_Row is array (0 .. 4 * 19 - 1) of Pictlib.Byte;
+            Row : Planar_Row := [others => 0];
+            Next : Natural := 0;
+            At_Byte : Positive := 512 + 126;
+         begin
+            while At_Byte < 512 + 126 + Count and then Next < Row'Length loop
+               declare
+                  Flag : constant Natural := Natural (With_Alpha.Data (At_Byte));
+               begin
+                  if Flag < 128 then
+                     for Index in 0 .. Flag loop
+                        exit when Next >= Row'Length;
+                        Row (Next) := With_Alpha.Data (At_Byte + 1 + Index);
+                        Next := Next + 1;
+                     end loop;
+                     At_Byte := At_Byte + Flag + 2;
+                  else
+                     for Index in 1 .. 257 - Flag loop
+                        exit when Next >= Row'Length;
+                        Row (Next) := With_Alpha.Data (At_Byte + 1);
+                        Next := Next + 1;
+                     end loop;
+                     At_Byte := At_Byte + 2;
+                  end if;
+               end;
+            end loop;
+            Assert (Next = Row'Length, "the first row did not unpack to four planes");
+            for X in 0 .. 18 loop
+               Assert (Row (X) = Samples.Alpha (Samples.Translucent, X, 0)
+                       and then Row (19 + X) = Samples.Color (Samples.Translucent, X, 0).Red
+                       and then Row (38 + X) = Samples.Color (Samples.Translucent, X, 0).Green
+                       and then Row (57 + X) = Samples.Color (Samples.Translucent, X, 0).Blue,
+                       "planar pixel" & X'Image & " is not its alpha and color");
+            end loop;
+         end;
+      end;
+      --  Unpacked, below 8 rowBytes: each pixel is its alpha, then red, green and blue; three rows of one pixel
+      --  end the picture before the end opcode.
+      declare
+         Narrow : constant Encoded :=
+           Encode (Samples.Translucent, 1, 3, (Layout => Encoding.Direct_32, Keep_Alpha => True, others => <>),
+                   Pictlib.ARGB_32);
+         Rows : constant Positive := Narrow.Length - 2 - 12 + 1;
+      begin
+         for Y in 0 .. 2 loop
+            Assert (Narrow.Data (Rows + 4 * Y) = Samples.Alpha (Samples.Translucent, 0, Y)
+                    and then Narrow.Data (Rows + 4 * Y + 1) = Samples.Color (Samples.Translucent, 0, Y).Red
+                    and then Narrow.Data (Rows + 4 * Y + 3) = Samples.Color (Samples.Translucent, 0, Y).Blue,
+                    "unpacked row" & Y'Image & " is not its alpha and color");
+         end loop;
       end;
    end Formats_And_Alpha;
 

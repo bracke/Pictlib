@@ -46,7 +46,7 @@ package body Pictlib_Testing.Test_Stress is
                       Move_V => 16#1_0000#)));
 
    --  Render Input with a fresh decoder and source of its own, so tasks can render at once, returning the RGB
-   --  pixels.
+   --  pixels. Canvases.Render binds the one shared source of Recorders.Start, so concurrent tasks cannot use it.
    function Render (Input : Bytes; Width, Height : Positive) return Bytes is
       Data : aliased constant Bytes := Input;
       Source : aliased Pictlib.Streams.Memory_Source;

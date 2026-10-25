@@ -114,8 +114,9 @@ package body Pictlib.Internal.Drawing is
 
    function Kind_Of (Op : Opcode) return Shape_Kind is (Shape_Kind'Val (Natural (Op / 16) - 3))
      with Pre => Op in Opcodes.First_Shape .. Opcodes.Last_Shape;
+   function Has_Verb (Op : Opcode) return Boolean is (Natural (Op mod 8) <= Shape_Verb'Pos (Shape_Verb'Last));
    function Verb_Of (Op : Opcode) return Shape_Verb is (Shape_Verb'Val (Natural (Op mod 8)))
-     with Pre => Op mod 8 <= 4;
+     with Pre => Has_Verb (Op);
    function Is_Same (Op : Opcode) return Boolean is (Op mod 16 >= 8);
 
    --  How frame and paint (pen), erase (background pattern), invert and fill (fill pattern) change pixels.
@@ -169,6 +170,113 @@ package body Pictlib.Internal.Drawing is
       end if;
    end Rect_Like;
 
+   --  Each shape starts once its data is read and charged, so its allowance is what the budget has left.
+
+   function Rect_Like_Coverage
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Kind : Rect_Like_Kind;
+      Verb : Shape_Verb;
+      Same : Boolean;
+      Shape : in out Coverage.Shape) return Results.Result
+   is
+      Start_Angle, Arc_Angle : Integer := 0;
+      Outcome : Results.Result := Results.Success;
+   begin
+      if not Same then
+         Outcome := Sessions.Read_Bounds (S, P.Port.Last_Rect);
+      end if;
+      if Results.Succeeded (Outcome) and then Kind = Arc_Shape then
+         Outcome := Read_Pair (S, Start_Angle, Arc_Angle);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
+         Rect_Like (P, Kind, Verb, Rendering.To_Picture (P, P.Port.Last_Rect), Start_Angle, Arc_Angle, Shape);
+      end if;
+      return Outcome;
+   end Rect_Like_Coverage;
+
+   function Polygon_Coverage
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Verb : Shape_Verb;
+      Same : Boolean;
+      Shape : in out Coverage.Shape) return Results.Result
+   is
+      Outcome : Results.Result := Results.Success;
+      Points : Coverage.Point_Vectors.Vector;
+   begin
+      if not Same then
+         Outcome := Read_Polygon (S, P.Port.Last_Polygon);
+         if not Results.Succeeded (Outcome) then
+            return Outcome;
+         end if;
+      end if;
+      --  The polygon is copied for drawing, and a filled one keeps every edge while it is scanned: both count
+      --  against the aggregate allocation quota. Walking the copy and the edges is shape work, charged as the
+      --  shape is built.
+      Outcome :=
+        Sessions.Admit_Aggregate
+          (S,
+           (Sessions.Point_Cost_Bytes + (if Verb = Framed then 0 else Sessions.Polygon_Edge_Bytes))
+           * Byte_Count (P.Port.Last_Polygon.Length));
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
+      Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
+      for Item of P.Port.Last_Polygon loop
+         Points.Append (Point'(H => Item.H - P.Port.Origin_H, V => Item.V - P.Port.Origin_V));
+      end loop;
+      if Verb /= Framed then
+         Coverage.Polygon (Shape, Points);
+      elsif Natural (Points.Length) >= 2 then
+         --  FramePoly draws the polygon's lines; it does not close the polygon.
+         for Index in 1 .. Natural (Points.Length) - 1 loop
+            exit when Coverage.Exhausted (Shape);
+            Coverage.Line (Shape, Points (Index), Points (Index + 1), P.Port.Pen_Width, P.Port.Pen_Height);
+         end loop;
+      end if;
+      return Results.Success;
+   end Polygon_Coverage;
+
+   function Region_Coverage
+     (P : in out Rendering.Painter;
+      S : in out Sessions.Session;
+      Verb : Shape_Verb;
+      Same : Boolean;
+      Shape : in out Coverage.Shape) return Results.Result
+   is
+      Outcome : Results.Result := Results.Success;
+   begin
+      if not Same then
+         Outcome := Region_Reader.Read (S, P.Port.Last_Region);
+         if not Results.Succeeded (Outcome) then
+            return Outcome;
+         end if;
+      end if;
+      --  The region is copied and moved for drawing: work like drawing it, and storage by its size.
+      Outcome := Sessions.Charge_Work (S, Regions.Size (P.Port.Last_Region));
+      if Results.Succeeded (Outcome) then
+         Outcome :=
+           Sessions.Admit_Aggregate (S, Sessions.Region_Unit_Bytes * Byte_Count (Regions.Size (P.Port.Last_Region)));
+      end if;
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
+      declare
+         Region : Regions.Region := P.Port.Last_Region;
+      begin
+         Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
+         Regions.Translate (Region, -P.Port.Origin_H, -P.Port.Origin_V);
+         if Verb = Framed then
+            Coverage.Region_Frame (Shape, Region, P.Port.Pen_Width, P.Port.Pen_Height);
+         else
+            Coverage.From_Region (Shape, Region);
+         end if;
+      end;
+      return Results.Success;
+   end Region_Coverage;
+
    function Draw_Shape
      (P : in out Rendering.Painter;
       S : in out Sessions.Session;
@@ -178,87 +286,13 @@ package body Pictlib.Internal.Drawing is
       Verb : constant Shape_Verb := Verb_Of (Event.Op);
       Same : constant Boolean := Is_Same (Event.Op);
       Shape : Coverage.Shape;
-      Outcome : Results.Result := Results.Success;
+      Outcome : constant Results.Result :=
+        (case Kind is
+            when Rect_Like_Kind => Rect_Like_Coverage (P, S, Kind, Verb, Same, Shape),
+            when Polygon_Shape => Polygon_Coverage (P, S, Verb, Same, Shape),
+            when Region_Shape => Region_Coverage (P, S, Verb, Same, Shape));
    begin
-      --  Each shape starts once its data is read and charged, so its allowance is what the budget has left.
-      case Kind is
-         when Rect_Like_Kind =>
-            declare
-               Start_Angle, Arc_Angle : Integer := 0;
-            begin
-               if not Same then
-                  Outcome := Sessions.Read_Bounds (S, P.Port.Last_Rect);
-               end if;
-               if Results.Succeeded (Outcome) and then Kind = Arc_Shape then
-                  Outcome := Read_Pair (S, Start_Angle, Arc_Angle);
-               end if;
-               if not Results.Succeeded (Outcome) then
-                  return Outcome;
-               end if;
-               Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
-               Rect_Like (P, Kind, Verb, Rendering.To_Picture (P, P.Port.Last_Rect), Start_Angle, Arc_Angle, Shape);
-            end;
-         when Polygon_Shape =>
-            if not Same then
-               Outcome := Read_Polygon (S, P.Port.Last_Polygon);
-               if not Results.Succeeded (Outcome) then
-                  return Outcome;
-               end if;
-            end if;
-            --  The polygon is copied for drawing; the copy counts against the aggregate allocation quota.
-            Outcome :=
-              Sessions.Admit_Aggregate (S, Sessions.Point_Cost_Bytes * Byte_Count (P.Port.Last_Polygon.Length));
-            if not Results.Succeeded (Outcome) then
-               return Outcome;
-            end if;
-            declare
-               Points : Coverage.Point_Vectors.Vector;
-            begin
-               Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
-               for Item of P.Port.Last_Polygon loop
-                  Points.Append (Point'(H => Item.H - P.Port.Origin_H, V => Item.V - P.Port.Origin_V));
-               end loop;
-               if Verb /= Framed then
-                  Coverage.Polygon (Shape, Points);
-               elsif Natural (Points.Length) >= 2 then
-                  --  FramePoly draws the polygon's lines; it does not close the polygon.
-                  for Index in 1 .. Natural (Points.Length) - 1 loop
-                     exit when Coverage.Exhausted (Shape);
-                     Coverage.Line (Shape, Points (Index), Points (Index + 1), P.Port.Pen_Width, P.Port.Pen_Height);
-                  end loop;
-               end if;
-            end;
-         when Region_Shape =>
-            if not Same then
-               Outcome := Region_Reader.Read (S, P.Port.Last_Region);
-               if not Results.Succeeded (Outcome) then
-                  return Outcome;
-               end if;
-            end if;
-            --  Copying and moving the region is work like drawing it.
-            Outcome := Sessions.Charge_Work (S, Regions.Size (P.Port.Last_Region));
-            if not Results.Succeeded (Outcome) then
-               return Outcome;
-            end if;
-            --  So is the region: its scanlines and inversion points, by its size.
-            Outcome :=
-              Sessions.Admit_Aggregate (S, Sessions.Region_Unit_Bytes * Byte_Count (Regions.Size (P.Port.Last_Region)));
-            if not Results.Succeeded (Outcome) then
-               return Outcome;
-            end if;
-            declare
-               Region : Regions.Region := P.Port.Last_Region;
-            begin
-               Coverage.Start (Shape, P.Window, Sessions.Shape_Work_Left (S));
-               Regions.Translate (Region, -P.Port.Origin_H, -P.Port.Origin_V);
-               if Verb = Framed then
-                  Coverage.Region_Frame (Shape, Region, P.Port.Pen_Width, P.Port.Pen_Height);
-               else
-                  Coverage.From_Region (Shape, Region);
-               end if;
-            end;
-      end case;
-      return Rendering.Fill (P, S, Shape, Paint_For (P, Verb));
+      return (if Results.Succeeded (Outcome) then Rendering.Fill (P, S, Shape, Paint_For (P, Verb)) else Outcome);
    end Draw_Shape;
 
    function Draw_Line
@@ -593,7 +627,8 @@ package body Pictlib.Internal.Drawing is
          when Opcodes.Long_Text .. Opcodes.DHDV_Text =>
             Outcome := Consume_Text (P, S, Event);
          when Opcodes.First_Shape .. Opcodes.Last_Shape =>
-            if Event.Reserved then
+            --  A reserved verb is never drawn, whatever the opcode table says of it.
+            if Event.Reserved or else not Has_Verb (Event.Op) then
                Handled := False;
             else
                Outcome := Draw_Shape (P, S, Event);

@@ -100,8 +100,9 @@ package body Pictlib.Encoding is
       Frame : Geometry.Rect;
       Layout : Layout_Kind := Direct_32;
       Components : Natural := 3;
-      --  rowBytes, and the bytes of a row before packing.
+      --  rowBytes, whether rows are packed, and the bytes of a row before packing.
       Stored : Natural := 0;
+      Packed : Boolean := False;
       Unpacked_Length : Natural := 0;
    end record;
 
@@ -110,19 +111,19 @@ package body Pictlib.Encoding is
       Height : constant Natural := Natural (Image.Descriptor.Height);
       Components : constant Natural := (if Alpha_Kept (Image, Settings) then 4 else 3);
       Stored : constant Natural := Row_Bytes (Layout, Width);
+      Packed : constant Boolean := Stored >= Internal.Smallest_Packed_Row_Bytes;
    begin
       return
         (Width => Width, Height => Height, Frame => (0, 0, Coordinate (Height), Coordinate (Width)),
-         Layout => Layout, Components => Components, Stored => Stored,
+         Layout => Layout, Components => Components, Stored => Stored, Packed => Packed,
          --  Packed direct rows are component planes; anything stored unpacked is the stored row.
          Unpacked_Length =>
-           (if Layout = Direct_32 and then Stored >= Internal.Smallest_Packed_Row_Bytes then Components * Width
-            else Stored));
+           (if Layout = Direct_32 and then Packed then Internal.Planar_Row_Length (Components, Width) else Stored));
    end Plan_For;
 
    --  The row buffers writing a picture allocates: a row before packing, and its worst case packed.
    function Row_Buffer_Bytes (Item : Plan) return Byte_Count is
-     (Byte_Count (Item.Unpacked_Length) + Byte_Count (Internal.PackBits.Worst_Case (Item.Unpacked_Length, 1)));
+     (Byte_Count (Item.Unpacked_Length) + Byte_Count (Internal.PackBits.Worst_Case (Item.Unpacked_Length)));
 
    --  Every write after a failure is still made, against a writer that refuses it; the first failure is kept.
    procedure Step (Outcome : in out Results.Result; Item : Results.Result) is
@@ -233,6 +234,9 @@ package body Pictlib.Encoding is
       Row : out Streams.Byte_Array)
    is
       Width : constant Natural := Item.Width;
+      Red : constant Natural := Internal.Plane_Offset (Internal.Red_Plane, Item.Components, Width);
+      Green : constant Natural := Internal.Plane_Offset (Internal.Green_Plane, Item.Components, Width);
+      Blue : constant Natural := Internal.Plane_Offset (Internal.Blue_Plane, Item.Components, Width);
    begin
       Row := [others => 0];
       for X in 0 .. Width - 1 loop
@@ -241,22 +245,18 @@ package body Pictlib.Encoding is
          begin
             case Item.Layout is
                when Direct_32 =>
-                  if Item.Stored < Internal.Smallest_Packed_Row_Bytes then
+                  if not Item.Packed then
                      --  Unpacked chunky pixels: pad (or alpha), red, green, blue.
                      Row (Row'First + 4 * X .. Row'First + 4 * X + 3) :=
                        [(if Item.Components = 4 then Source.Alpha else 0), Source.Color.Red, Source.Color.Green,
                         Source.Color.Blue];
                   else
-                     declare
-                        Red_Plane : constant Natural := (if Item.Components = 4 then Width else 0);
-                     begin
-                        if Item.Components = 4 then
-                           Row (Row'First + X) := Source.Alpha;
-                        end if;
-                        Row (Row'First + Red_Plane + X) := Source.Color.Red;
-                        Row (Row'First + Red_Plane + Width + X) := Source.Color.Green;
-                        Row (Row'First + Red_Plane + 2 * Width + X) := Source.Color.Blue;
-                     end;
+                     if Item.Components = 4 then
+                        Row (Row'First + X) := Source.Alpha;
+                     end if;
+                     Row (Row'First + Red + X) := Source.Color.Red;
+                     Row (Row'First + Green + X) := Source.Color.Green;
+                     Row (Row'First + Blue + X) := Source.Color.Blue;
                   end if;
                when Indexed_8 =>
                   Row (Row'First + X) := Byte (Colors.Indexes.Element (Key (Source.Color)));
@@ -280,16 +280,16 @@ package body Pictlib.Encoding is
    is
       Row : Streams.Byte_Array_Access := new Streams.Byte_Array (1 .. Item.Unpacked_Length);
       Packed : Streams.Byte_Array_Access :=
-        new Streams.Byte_Array (1 .. Internal.PackBits.Worst_Case (Item.Unpacked_Length, 1));
+        new Streams.Byte_Array (1 .. Internal.PackBits.Worst_Case (Item.Unpacked_Length));
       Packed_Length : Natural;
    begin
       for Y in 0 .. Item.Height - 1 loop
          exit when not Results.Succeeded (Outcome);
          Fill_Row (Image, Settings, Item, Colors, Y, Row.all);
-         if Item.Stored < Internal.Smallest_Packed_Row_Bytes then
+         if not Item.Packed then
             Step (Outcome, Writers.Put (Out_Bytes, Row.all));
          else
-            Internal.PackBits.Pack (Row.all, 1, Packed.all, Packed_Length);
+            Internal.PackBits.Pack (Row.all, Packed.all, Packed_Length);
             if Item.Stored > Internal.Byte_Count_Row_Bytes then
                Step (Outcome, Writers.Put_Word (Out_Bytes, Packed_Length));
             else
@@ -307,11 +307,10 @@ package body Pictlib.Encoding is
      (Out_Bytes : in out Writers.Writer;
       Image : Images.Image_View;
       Settings : Options;
-      Layout : Layout_Kind;
+      Item : Plan;
       Colors : Palette;
       Picture_Size : Byte_Count) return Results.Result
    is
-      Item : constant Plan := Plan_For (Image, Settings, Layout);
       Outcome : Results.Result := Results.Success;
    begin
       Put_Header (Out_Bytes, Settings, Item, Picture_Size, Outcome);
@@ -374,17 +373,10 @@ package body Pictlib.Encoding is
    end Choose_Layout;
 
    --  Check plan: what the layout needs, against what a PICT and the budget allow.
-   function Check_Plan
-     (Image : Images.Image_View;
-      Settings : Options;
-      Layout : Layout_Kind;
-      Colors : Palette;
-      Budget : Limits.Limit_Set) return Results.Result
-   is
-      Item : constant Plan := Plan_For (Image, Settings, Layout);
+   function Check_Plan (Item : Plan; Colors : Palette; Budget : Limits.Limit_Set) return Results.Result is
       Buffers : constant Byte_Count := Row_Buffer_Bytes (Item);
    begin
-      if Layout = Indexed_8 and then Natural (Colors.Colors.Length) > Largest_Colors then
+      if Item.Layout = Indexed_8 and then Natural (Colors.Colors.Length) > Largest_Colors then
          return Results.Failure
            (Errors.Make
               (Errors.Too_Many_Colors,
@@ -403,7 +395,7 @@ package body Pictlib.Encoding is
      (Object : in out Encoder;
       Image : Images.Image_View;
       Settings : Options;
-      Layout : Layout_Kind;
+      Item : Plan;
       Colors : Palette) return Results.Result
    is
       Budget : Limits.Limit_Set renames Object.Encode_Limits;
@@ -413,7 +405,7 @@ package body Pictlib.Encoding is
       Outcome : Results.Result;
    begin
       Writers.Start (Measure, null, Budget.Max_Output_Bytes - Byte_Count'Min (Header_Bytes, Budget.Max_Output_Bytes));
-      Outcome := Write_Picture (Measure, Image, Settings, Layout, Colors, 0);
+      Outcome := Write_Picture (Measure, Image, Settings, Item, Colors, 0);
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
@@ -422,7 +414,7 @@ package body Pictlib.Encoding is
          Outcome := Writers.Put (Output, [1 .. Internal.File_Header_Bytes => 0]);
       end if;
       if Results.Succeeded (Outcome) then
-         Outcome := Write_Picture (Output, Image, Settings, Layout, Colors, Writers.Picture_Count (Measure));
+         Outcome := Write_Picture (Output, Image, Settings, Item, Colors, Writers.Picture_Count (Measure));
       end if;
       Object.Written := Writers.Count (Output);
       return Outcome;
@@ -448,10 +440,14 @@ package body Pictlib.Encoding is
       if Results.Succeeded (Outcome) then
          Survey (Image, Colors);
          Choose_Layout (Image, Colors, Settings, Layout);
-         Outcome := Check_Plan (Image, Settings, Layout, Colors, Object.Encode_Limits);
-      end if;
-      if Results.Succeeded (Outcome) then
-         Outcome := Write (Object, Image, Settings, Layout, Colors);
+         declare
+            Item : constant Plan := Plan_For (Image, Settings, Layout);
+         begin
+            Outcome := Check_Plan (Item, Colors, Object.Encode_Limits);
+            if Results.Succeeded (Outcome) then
+               Outcome := Write (Object, Image, Settings, Item, Colors);
+            end if;
+         end;
       end if;
       if Results.Succeeded (Outcome) then
          Object.Layout := Layout;

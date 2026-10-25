@@ -17,6 +17,8 @@ package Pictlib_Testing.Samples is
       Format : Pictlib.Pixel_Format := Pictlib.RGB_24) return Bytes_Access;
    --  Color of the sample at X, Y.
    function Color (Item : Kind; X, Y : Natural) return Pictlib.Images.RGB_Color;
+   --  Alpha of the sample at X, Y in the formats that have it: opaque but for Translucent.
+   function Alpha (Item : Kind; X, Y : Natural) return Pictlib.Byte;
    --  Expected color: what a reader of the sample encoded in Layout must see at X, Y -- the sample's color, or
    --  for Mono_1 black below Threshold luminance and white otherwise. The independent oracle of the round trip
    --  tests and the conformance tool.

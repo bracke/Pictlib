@@ -68,32 +68,6 @@ package body Pictlib.Internal.Pixmaps is
    end Read_Packed_Count;
 
    --  Skip rows: unpacked rows of Raw_Row_Length bytes, or rows each prefixed by its packed count.
-   function Skip_Rows
-     (S : in out Sessions.Session;
-      Row_Bytes : Natural;
-      Height : Natural;
-      Packed : Boolean;
-      Raw_Row_Length : Byte_Count) return Results.Result
-   is
-      Outcome : Results.Result;
-      Count : Natural;
-   begin
-      if not Packed then
-         --  A saturated product is refused by the per-opcode budget.
-         return Sessions.Skip_Data (S, Checked_Arithmetic.Saturating_Multiply (Raw_Row_Length, Byte_Count (Height)));
-      end if;
-      for Row in 0 .. Height - 1 loop
-         Outcome := Read_Packed_Count (S, Row_Bytes, Count);
-         if Results.Succeeded (Outcome) then
-            Outcome := Sessions.Skip_Data (S, Byte_Count (Count));
-         end if;
-         if not Results.Succeeded (Outcome) then
-            return Failures.At_Row (Outcome, Row);
-         end if;
-      end loop;
-      return Results.Success;
-   end Skip_Rows;
-
    --  A pixmap's extent: Pixmap_Invalid for inverted bounds.
    function Extent (S : Sessions.Session; Bounds : Geometry.Rect; Width, Height : out Natural) return Results.Result is
    begin
@@ -283,7 +257,7 @@ package body Pictlib.Internal.Pixmaps is
          --  so where the opcode ends depends on it too.
          Header.Layout := Packed_Bytes;
          Header.Encoding := Planar;
-         Header.Unpacked_Length := Header.Fields.Component_Count * Header.Width;
+         Header.Unpacked_Length := Planar_Row_Length (Header.Fields.Component_Count, Header.Width);
       else
          Header.Layout := Packed_Bytes;
          Header.Unpacked_Length := Header.Row_Bytes;
@@ -298,6 +272,29 @@ package body Pictlib.Internal.Pixmaps is
       end if;
       return Results.Success;
    end Decide_Layout;
+
+   --  A PixMap's fields after its bounds: the PixMap tail, its depth checked, and an indexed pixmap's color table,
+   --  read or skipped. A depth the opcode does not allow is Code.
+   function Read_Pixmap_Fields
+     (S : in out Sessions.Session;
+      Header : in out Bits_Header;
+      Direct : Boolean;
+      Code : Errors.Error_Code;
+      For_Decoding : Boolean) return Results.Result
+   is
+      Outcome : constant Results.Result := Read_Pixmap_Tail (S, Header.Fields);
+   begin
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      elsif Direct and then Header.Fields.Pixel_Size not in 16 | 32 then
+         return Sessions.Fail (S, Code, 32, Byte_Count (Header.Fields.Pixel_Size));
+      elsif not Direct and then Header.Fields.Pixel_Size > 8 then
+         return Sessions.Fail (S, Code, 8, Byte_Count (Header.Fields.Pixel_Size));
+      elsif Direct then
+         return Outcome;
+      end if;
+      return (if For_Decoding then Read_Color_Table (S, Header.Table) else Skip_Color_Table (S));
+   end Read_Pixmap_Fields;
 
    function Read_Bits_Header
      (S : in out Sessions.Session;
@@ -331,17 +328,7 @@ package body Pictlib.Internal.Pixmaps is
       Header.Row_Bytes :=
         Natural (Raw_Row_Bytes and (if Header.Is_Pixmap then Pixmap_Row_Bytes_Mask else Bitmap_Row_Bytes_Mask));
       if Header.Is_Pixmap then
-         Outcome := Read_Pixmap_Tail (S, Header.Fields);
-         if Results.Succeeded (Outcome) then
-            if Direct and then Header.Fields.Pixel_Size not in 16 | 32 then
-               Outcome := Sessions.Fail (S, Errors.Pixmap_Invalid, 32, Byte_Count (Header.Fields.Pixel_Size));
-            elsif not Direct and then Header.Fields.Pixel_Size > 8 then
-               Outcome := Sessions.Fail (S, Errors.Pixmap_Invalid, 8, Byte_Count (Header.Fields.Pixel_Size));
-            elsif not Direct then
-               Outcome :=
-                 (if For_Decoding then Read_Color_Table (S, Header.Table) else Skip_Color_Table (S));
-            end if;
-         end if;
+         Outcome := Read_Pixmap_Fields (S, Header, Direct, Errors.Pixmap_Invalid, For_Decoding);
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Sessions.Read_Bounds (S, Header.Source);
@@ -365,9 +352,25 @@ package body Pictlib.Internal.Pixmaps is
    end Read_Bits_Header;
 
    function Skip_Pixels (S : in out Sessions.Session; Header : Bits_Header) return Results.Result is
-     (if Header.Layout = Unpacked
-      then Skip_Rows (S, Header.Row_Bytes, Header.Height, False, Byte_Count (Header.Raw_Length))
-      else Skip_Rows (S, Header.Row_Bytes, Header.Height, True, 0));
+      Outcome : Results.Result;
+      Count : Natural;
+   begin
+      if Header.Layout = Unpacked then
+         --  A saturated product is refused by the per-opcode budget.
+         return Sessions.Skip_Data
+           (S, Checked_Arithmetic.Saturating_Multiply (Byte_Count (Header.Raw_Length), Byte_Count (Header.Height)));
+      end if;
+      for Row in 0 .. Header.Height - 1 loop
+         Outcome := Read_Packed_Count (S, Header.Row_Bytes, Count);
+         if Results.Succeeded (Outcome) then
+            Outcome := Sessions.Skip_Data (S, Byte_Count (Count));
+         end if;
+         if not Results.Succeeded (Outcome) then
+            return Failures.At_Row (Outcome, Row);
+         end if;
+      end loop;
+      return Results.Success;
+   end Skip_Pixels;
 
    function Stored_Length (Header : Bits_Header) return Natural is
      (if Header.Layout = Unpacked then Header.Raw_Length
@@ -393,13 +396,7 @@ package body Pictlib.Internal.Pixmaps is
          Outcome := Sessions.Read_Bounds (S, Header.Bounds);
       end if;
       if Results.Succeeded (Outcome) then
-         Outcome := Read_Pixmap_Tail (S, Header.Fields);
-      end if;
-      if Results.Succeeded (Outcome) and then Header.Fields.Pixel_Size > 8 then
-         Outcome := Sessions.Fail (S, Errors.Pattern_Invalid, 8, Byte_Count (Header.Fields.Pixel_Size));
-      end if;
-      if Results.Succeeded (Outcome) then
-         Outcome := (if For_Decoding then Read_Color_Table (S, Header.Table) else Skip_Color_Table (S));
+         Outcome := Read_Pixmap_Fields (S, Header, False, Errors.Pattern_Invalid, For_Decoding);
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Extent (S, Header.Bounds, Header.Width, Header.Height);
@@ -508,12 +505,13 @@ package body Pictlib.Internal.Pixmaps is
             end loop;
          when Planar =>
             declare
-               Red_Plane : constant Natural := (if Header.Fields.Component_Count = 4 then Width else 0);
+               Components : constant Natural := Header.Fields.Component_Count;
+               Red : constant Natural := First + Plane_Offset (Red_Plane, Components, Width);
+               Green : constant Natural := First + Plane_Offset (Green_Plane, Components, Width);
+               Blue : constant Natural := First + Plane_Offset (Blue_Plane, Components, Width);
             begin
                for X in 0 .. Width - 1 loop
-                  Decoder.Colors (X) :=
-                    (Data (First + Red_Plane + X), Data (First + Red_Plane + Width + X),
-                     Data (First + Red_Plane + 2 * Width + X));
+                  Decoder.Colors (X) := (Data (Red + X), Data (Green + X), Data (Blue + X));
                end loop;
             end;
       end case;

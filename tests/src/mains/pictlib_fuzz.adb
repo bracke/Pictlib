@@ -9,6 +9,7 @@
 --  Runs from anywhere below the pictlib tree.
 with Pictlib_Testing.Files;
 with Pictlib_Testing.Fonts;
+with Pictlib_Testing.Random;
 with Pictlib_Testing.Recorders;
 with Pictlib_Testing.Tools;
 with Ada.Calendar;
@@ -33,7 +34,6 @@ with Pictlib_Testing.Samples;
 procedure Pictlib_Fuzz is
    procedure Fail (Message : String) renames Pictlib_Testing.Tools.Fail;
    use type Ada.Calendar.Time;
-   use type Interfaces.Unsigned_64;
    use type Pictlib.Byte;
    use type Pictlib.Byte_Count;
    use type Pictlib.Pixel_Count;
@@ -54,19 +54,12 @@ procedure Pictlib_Fuzz is
    Iterations : constant Natural :=
      (if Ada.Command_Line.Argument_Count >= 1 and then not Replay then Natural'Value (Ada.Command_Line.Argument (1))
       else 2_000);
-   State : Interfaces.Unsigned_64 :=
+   Generator : Pictlib_Testing.Random.Generator :=
      (if Ada.Command_Line.Argument_Count >= 2 and then not Replay
-      then Interfaces.Unsigned_64'Value (Ada.Command_Line.Argument (2))
-      else 16#9E37_79B9_7F4A_7C15#);
+      then Pictlib_Testing.Random.Seeded (Interfaces.Unsigned_64'Value (Ada.Command_Line.Argument (2)))
+      else Pictlib_Testing.Random.Seeded);
 
-   --  xorshift64*.
-   function Random (Bound : Positive) return Natural is
-   begin
-      State := State xor Interfaces.Shift_Right (State, 12);
-      State := State xor Interfaces.Shift_Left (State, 25);
-      State := State xor Interfaces.Shift_Right (State, 27);
-      return Natural ((State * 16#2545_F491_4F6C_DD1D#) mod Interfaces.Unsigned_64 (Bound));
-   end Random;
+   function Random (Bound : Positive) return Natural is (Pictlib_Testing.Random.Next (Generator, Bound));
 
    Budget : constant Pictlib.Limits.Limit_Set :=
      (Pictlib.Limits.Default_Limits with delta

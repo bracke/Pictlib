@@ -12,6 +12,24 @@ package Pictlib.Internal is
    --  Rows shorter than this are stored unpacked.
    Smallest_Packed_Row_Bytes : constant := 8;
 
+   --  A planar row, as 32-bit pack type 4 stores it: an alpha plane first when there are four components, then
+   --  the red, green and blue planes, Width bytes each.
+   type Color_Plane is (Red_Plane, Green_Plane, Blue_Plane);
+   --  Plane offset.
+   --  @param Plane A color plane.
+   --  @param Components 3 or 4.
+   --  @param Width Pixels per row.
+   --  @return The plane's offset in the row; the alpha plane, when there is one, is at 0.
+   function Plane_Offset (Plane : Color_Plane; Components, Width : Natural) return Natural is
+     (((if Components = 4 then 1 else 0) + Color_Plane'Pos (Plane)) * Width)
+     with Pre => Components in 3 | 4 and then Width <= 2 ** 16;
+   --  Planar row length.
+   --  @param Components 3 or 4.
+   --  @param Width Pixels per row.
+   --  @return The bytes of a planar row.
+   function Planar_Row_Length (Components, Width : Natural) return Natural is (Components * Width)
+     with Pre => Components in 3 | 4 and then Width <= 2 ** 16;
+
    --  Opcode bytes: an opcode is a byte in version 1 and a word after it, and so is the version opcode's data.
    --  @param Version A picture version.
    --  @return 1 for version 1, 2 otherwise.

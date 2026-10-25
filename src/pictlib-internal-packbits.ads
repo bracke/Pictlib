@@ -31,23 +31,20 @@ is
                  and then Output'Last < Natural'Last,
           Post => Written <= Output'Length;
 
-   --  Pack.
-   --  @param Row One row of whole units.
-   --  @param Unit Bytes per unit.
-   --  @param Output Receives the packed row; it must hold Worst_Case (Row'Length, Unit) bytes.
-   --  @param Written Bytes of Output used.
-   procedure Pack
-     (Row : Streams.Byte_Array;
-      Unit : Unit_Size;
-      Output : out Streams.Byte_Array;
-      Written : out Natural)
-     with SPARK_Mode => Off, Pre => Row'Length mod Natural (Unit) = 0;
-
    --  Worst case.
    --  @param Length Bytes of an unpacked row.
-   --  @param Unit Bytes per unit.
-   --  @return The most bytes Pack can produce for it.
-   function Worst_Case (Length : Natural; Unit : Unit_Size) return Natural is
-     (Length + (Length / Natural (Unit) + 127) / 128)
+   --  @return The most bytes Pack can produce for it: a flag byte for every 128 literal bytes.
+   function Worst_Case (Length : Natural) return Natural is (Length + (Length + 127) / 128)
      with Pre => Length <= Natural'Last / 2;
+
+   --  Pack: a row of bytes, as the encoder writes rows. Word units are only ever unpacked.
+   --  @param Row One row.
+   --  @param Output Receives the packed row.
+   --  @param Written Bytes of Output used, at most Worst_Case (Row'Length).
+   procedure Pack
+     (Row : Streams.Byte_Array;
+      Output : out Streams.Byte_Array;
+      Written : out Natural)
+     with SPARK_Mode => Off,
+          Pre => Row'Length <= Natural'Last / 2 and then Output'Length >= Worst_Case (Row'Length);
 end Pictlib.Internal.PackBits;

@@ -4,6 +4,7 @@ with Pictlib;
 with Pictlib.Internal.PackBits;
 with Pictlib.Streams;
 with Pictlib_Testing.Builders;
+with Pictlib_Testing.Random;
 
 package body Pictlib_Testing.Test_PackBits is
    use AUnit.Assertions;
@@ -56,13 +57,13 @@ package body Pictlib_Testing.Test_PackBits is
    procedure Apple_Example (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
       Output : Bytes (1 .. Apple_Unpacked'Length);
-      Packed : Bytes (1 .. PackBits.Worst_Case (Apple_Unpacked'Length, 1));
+      Packed : Bytes (1 .. PackBits.Worst_Case (Apple_Unpacked'Length));
       Written : Natural;
    begin
       Assert (Unpack (Apple_Packed, 1, Output, Written) = PackBits.Exact
               and then Written = Output'Length and then Output = Apple_Unpacked,
               "Apple's example did not unpack");
-      PackBits.Pack (Apple_Unpacked, 1, Packed, Written);
+      PackBits.Pack (Apple_Unpacked, Packed, Written);
       Assert (Packed (1 .. Written) = Apple_Packed, "Apple's example did not pack as Apple packs it");
    end Apple_Example;
 
@@ -107,49 +108,41 @@ package body Pictlib_Testing.Test_PackBits is
 
    procedure Round_Trips (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
-      Seed : Natural := 12_345;
+      Generator : Pictlib_Testing.Random.Generator := Pictlib_Testing.Random.Seeded;
 
-      function Next_Byte return Pictlib.Byte is
-      begin
-         Seed := (Seed * 1_103 + 12_345) mod 65_536;
-         --  Few distinct values so runs of every length occur.
-         return Pictlib.Byte ((Seed / 256) mod 3);
-      end Next_Byte;
+      --  Few distinct values so runs of every length occur.
+      function Next_Byte return Pictlib.Byte is (Pictlib.Byte (Pictlib_Testing.Random.Next (Generator, 3)));
    begin
       --  One literal unit, then two equal units, repeated: the case that breaks a packer that runs at two.
       for Length in 1 .. 300 loop
          declare
             Row : Bytes (1 .. Length);
-            Packed : Bytes (1 .. PackBits.Worst_Case (Length, 1));
+            Packed : Bytes (1 .. PackBits.Worst_Case (Length));
             Back : Bytes (1 .. Length);
             Written, Unpacked : Natural;
          begin
             for Index in Row'Range loop
                Row (Index) := (if Index mod 3 = 1 then Pictlib.Byte (Index mod 251) else 16#EE#);
             end loop;
-            PackBits.Pack (Row, 1, Packed, Written);
+            PackBits.Pack (Row, Packed, Written);
             Assert (Unpack (Packed (1 .. Written), 1, Back, Unpacked) = PackBits.Exact and then Back = Row,
                     "alternating round trip failed at" & Length'Image);
          end;
       end loop;
       for Length in 1 .. 300 loop
-         for Size in PackBits.Unit_Size loop
-            declare
-               Units : constant Natural := Length * Natural (Size);
-               Row : Bytes (1 .. Units);
-               Packed : Bytes (1 .. PackBits.Worst_Case (Units, Size));
-               Back : Bytes (1 .. Units);
-               Written, Unpacked : Natural;
-            begin
-               for Item of Row loop
-                  Item := Next_Byte;
-               end loop;
-               PackBits.Pack (Row, Size, Packed, Written);
-               Assert (Unpack (Packed (1 .. Written), Size, Back, Unpacked) = PackBits.Exact
-                       and then Back = Row,
-                       "round trip failed at" & Length'Image & " units of" & Size'Image);
-            end;
-         end loop;
+         declare
+            Row : Bytes (1 .. Length);
+            Packed : Bytes (1 .. PackBits.Worst_Case (Length));
+            Back : Bytes (1 .. Length);
+            Written, Unpacked : Natural;
+         begin
+            for Item of Row loop
+               Item := Next_Byte;
+            end loop;
+            PackBits.Pack (Row, Packed, Written);
+            Assert (Unpack (Packed (1 .. Written), 1, Back, Unpacked) = PackBits.Exact and then Back = Row,
+                    "round trip failed at" & Length'Image & " random bytes");
+         end;
       end loop;
    end Round_Trips;
 end Pictlib_Testing.Test_PackBits;

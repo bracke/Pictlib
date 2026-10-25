@@ -118,6 +118,16 @@ place:
 - Retained metadata and warnings are private to `Internal.Sessions`: one
   `Retain` for data read from the stream, the file header included, and one
   `Retain_Bytes` for data already read.
+- The encoder builds its plan once, with whether its rows are packed; the
+  planar row layout (alpha, red, green, blue planes) is one definition the
+  encoder and the decoder share, and both pixmap header readers share the
+  PixMap fields and color table.
+- A shape opcode builds its coverage in one function per kind. A filled
+  polygon's edges count against `Max_Total_Allocation_Bytes` besides its
+  points, and a shape opcode with a reserved verb is never drawn whatever
+  the opcode table says.
+- `PackBits.Pack` packs bytes, the only rows the encoder writes, and states
+  its output size in its precondition.
 - `Encode` reads as its steps: check the frame, choose the layout, check
   the plan, write. A QuickTime image's pixel buffer is admitted like every
   other allocation, and `Decide_Layout` keeps one check per pack type and
@@ -143,3 +153,6 @@ All tooling is Ada, in the `tests` crate:
 - Every tool reports failures the same way, as `tool: message` on standard
   error with a failing exit status.
 - CI steps are single commands.
+- The tests crate has one seeded pseudo-random generator
+  (`Pictlib_Testing.Random`) and one file loader; the encoder tests check
+  the alpha plane's values byte for byte, independently of the decoder.

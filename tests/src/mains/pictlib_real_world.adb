@@ -2,13 +2,13 @@
 --  and recoverably, with the test fonts. An exception escaping pictlib is a defect. Each outcome is printed as
 --  "<file> <strict enumerate> <compatible render> <recovering render>" and compared with
 --  fixtures/real_world/expected.txt; --update rewrites that file. Runs from anywhere below the pictlib tree.
+with Pictlib_Testing.Files;
 with Pictlib_Testing.Fonts;
 with Pictlib_Testing.Tools;
 with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Unchecked_Deallocation;
-with Ada.Streams.Stream_IO;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Pictlib;
@@ -51,18 +51,6 @@ procedure Pictlib_Real_World is
       Object.Counts (Event.Op) := Object.Counts (Event.Op) + 1;
       return Pictlib.Decoding.Continue;
    end Visit;
-
-   function Load (Path : String) return Bytes_Access is
-      use Ada.Streams.Stream_IO;
-      Result : constant Bytes_Access :=
-        new Pictlib.Streams.Byte_Array (1 .. Natural (Ada.Directories.Size (Path)));
-      File : File_Type;
-   begin
-      Open (File, In_File, Path);
-      Pictlib.Streams.Byte_Array'Read (Stream (File), Result.all);
-      Close (File);
-      return Result;
-   end Load;
 
    function Code_Of (Outcome : Pictlib.Results.Result) return String is
      (if Pictlib.Results.Succeeded (Outcome) then "ok"
@@ -146,7 +134,7 @@ procedure Pictlib_Real_World is
                Visit (Directory & "/" & Name);
             elsif Extension (Name) in "pct" | "pict" | "PCT" | "PICT" then
                declare
-                  Data : Bytes_Access := Load (Path);
+                  Data : Bytes_Access := Pictlib_Testing.Files.Load_Path (Path);
                   Line : Unbounded_String;
                begin
                   Line := To_Unbounded_String (Enumerate (Data));
