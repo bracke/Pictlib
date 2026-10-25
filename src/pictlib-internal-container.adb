@@ -20,11 +20,11 @@ package body Pictlib.Internal.Container is
    type Detected_Version is (None, Detected_1, Detected_2);
 
    --  The version opcode a picture starting Base bytes ahead would carry.
-   function Version_At (S : Sessions.Session; Base : Natural) return Detected_Version is
-      Available : constant Natural := Picture_Stream.Lookahead_Length (S.Stream);
+   function Version_At (S : in out Sessions.Session; Base : Natural) return Detected_Version is
+      Available : constant Natural := Picture_Stream.Lookahead_Length (S.Stream.all);
       First : constant Positive := Base + Version_Offset + 1;
 
-      function At_Index (Index : Positive) return Byte is (Picture_Stream.Lookahead_At (S.Stream, Index));
+      function At_Index (Index : Positive) return Byte is (Picture_Stream.Lookahead_At (S.Stream.all, Index));
    begin
       if Available >= First + 3
         and then At_Index (First) = 16#00# and then At_Index (First + 1) = 16#11#
@@ -41,16 +41,16 @@ package body Pictlib.Internal.Container is
    function Read_File_Header (S : in out Sessions.Session) return Results.Result is
      (if S.Retention.File_Headers
       then Sessions.Retain
-             (S, (Kind => Metadata.File_Header, Offset => S.Stream.Offset, others => <>), File_Header_Bytes,
+             (S, (Kind => Metadata.File_Header, Offset => S.Offset, others => <>), File_Header_Bytes,
               In_Opcode => False)
-      else Streams.Skip_Exact (S.Stream, File_Header_Bytes));
+      else Streams.Skip_Exact (S.Stream.all, File_Header_Bytes));
 
    function Check_Frame (S : Sessions.Session; Frame : Geometry.Rect) return Results.Result is
      (if Geometry.Is_Empty (Frame)
       then Sessions.Fail
              (S, Errors.Header_Invalid,
               Actual => Byte_Count (Integer'Max (0, Integer'Min (Geometry.Width (Frame), Geometry.Height (Frame)))))
-      else Failures.Check_Frame_Size (Geometry.Width (Frame), Geometry.Height (Frame), S.Budget, S.Stream.Offset));
+      else Failures.Check_Frame_Size (Geometry.Width (Frame), Geometry.Height (Frame), S.Budget, S.Offset));
 
    --  The 24 bytes of HeaderOp data. Version -1 (a long) carries fixed-point bounds; version -2 (a word)
    --  carries the resolution and an integer source rectangle.
@@ -64,10 +64,10 @@ package body Pictlib.Internal.Container is
       Header_Op_Context : constant Errors.Diagnostic_Context := Sessions.Context_Of (Event);
       Context : constant Bytes.Opcode_Context := Bytes.Within (Opcodes.Header_Op);
       First, Second : Interfaces.Unsigned_16;
-      Outcome : Results.Result := Bytes.Read_U16_BE (S.Stream, First, Context);
+      Outcome : Results.Result := Bytes.Read_U16_BE (S.Stream.all, First, Context);
    begin
       if Results.Succeeded (Outcome) then
-         Outcome := Bytes.Read_U16_BE (S.Stream, Second, Context);
+         Outcome := Bytes.Read_U16_BE (S.Stream.all, Second, Context);
       end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
@@ -76,31 +76,31 @@ package body Pictlib.Internal.Container is
       if First = 16#FFFF# and then Second = 16#FFFF# then
          Info.Version := Version_2;
          --  The fixed-point bounds are stored x before y: left, top, right, bottom (as Netpbm writes them).
-         Outcome := Bytes.Read_Fixed (S.Stream, Info.Fixed_Bounds.Left, Context);
+         Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Fixed_Bounds.Left, Context);
          if Results.Succeeded (Outcome) then
-            Outcome := Bytes.Read_Fixed (S.Stream, Info.Fixed_Bounds.Top, Context);
+            Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Fixed_Bounds.Top, Context);
          end if;
          if Results.Succeeded (Outcome) then
-            Outcome := Bytes.Read_Fixed (S.Stream, Info.Fixed_Bounds.Right, Context);
+            Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Fixed_Bounds.Right, Context);
          end if;
          if Results.Succeeded (Outcome) then
-            Outcome := Bytes.Read_Fixed (S.Stream, Info.Fixed_Bounds.Bottom, Context);
+            Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Fixed_Bounds.Bottom, Context);
          end if;
          if Results.Succeeded (Outcome) then
-            Outcome := Streams.Skip_Exact (S.Stream, 4);
+            Outcome := Streams.Skip_Exact (S.Stream.all, 4);
          end if;
          return Outcome;
       elsif First = Extended_Header_Version then
          Info.Version := Extended_Version_2;
-         Outcome := Bytes.Read_Fixed (S.Stream, Info.Horizontal_Resolution, Context);
+         Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Horizontal_Resolution, Context);
          if Results.Succeeded (Outcome) then
-            Outcome := Bytes.Read_Fixed (S.Stream, Info.Vertical_Resolution, Context);
+            Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Vertical_Resolution, Context);
          end if;
          if Results.Succeeded (Outcome) then
-            Outcome := Bytes.Read_Rect (S.Stream, Info.Source_Rect, Context);
+            Outcome := Bytes.Read_Rect (S.Stream.all, Info.Source_Rect, Context);
          end if;
          if Results.Succeeded (Outcome) then
-            Outcome := Streams.Skip_Exact (S.Stream, 4);
+            Outcome := Streams.Skip_Exact (S.Stream.all, 4);
          end if;
          if Results.Succeeded (Outcome)
            and then (Info.Horizontal_Resolution <= 0 or else Info.Vertical_Resolution <= 0)
@@ -118,7 +118,7 @@ package body Pictlib.Internal.Container is
       Info.Version := Version_2;
       Outcome := Sessions.Reject_Or_Warn
         (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility, Header_Op_Context);
-      return (if Results.Succeeded (Outcome) then Streams.Skip_Exact (S.Stream, Header_Op_Bytes - 4) else Outcome);
+      return (if Results.Succeeded (Outcome) then Streams.Skip_Exact (S.Stream.all, Header_Op_Bytes - 4) else Outcome);
    end Read_Header_Op_Data;
 
    --  Which version the look-ahead shows, after a file header or not as the policy decides.
@@ -128,7 +128,8 @@ package body Pictlib.Internal.Container is
       File_Header_Present : out Boolean;
       Detected : out Detected_Version) return Results.Result
    is
-      Outcome : constant Results.Result := Picture_Stream.Fill_Lookahead (S.Stream, Picture_Stream.Lookahead_Capacity);
+      Outcome : constant Results.Result :=
+        Picture_Stream.Fill_Lookahead (S.Stream.all, Picture_Stream.Lookahead_Capacity);
    begin
       File_Header_Present := False;
       Detected := None;
@@ -145,9 +146,9 @@ package body Pictlib.Internal.Container is
       end case;
       Detected := Version_At (S, (if File_Header_Present then File_Header_Bytes else 0));
       if Detected = None
-        and then Byte_Count (Picture_Stream.Lookahead_Length (S.Stream)) >= S.Budget.Max_Picture_Bytes
-        and then Picture_Stream.Lookahead_Length (S.Stream) < Picture_Stream.Lookahead_Capacity
-        and then not Picture_Stream.Input_Ended (S.Stream)
+        and then Byte_Count (Picture_Stream.Lookahead_Length (S.Stream.all)) >= S.Budget.Max_Picture_Bytes
+        and then Picture_Stream.Lookahead_Length (S.Stream.all) < Picture_Stream.Lookahead_Capacity
+        and then not Picture_Stream.Input_Ended (S.Stream.all)
       then
          --  The picture byte budget cut the look-ahead short of the version: the limit, not a bad version.
          return Sessions.Over_Limit
@@ -160,10 +161,10 @@ package body Pictlib.Internal.Container is
 
    --  picSize and picFrame.
    function Read_Frame (S : in out Sessions.Session; Info : in out Pictures.Header_Info) return Results.Result is
-      Outcome : Results.Result := Bytes.Read_U16_BE (S.Stream, Info.Picture_Size);
+      Outcome : Results.Result := Bytes.Read_U16_BE (S.Stream.all, Info.Picture_Size);
    begin
       if Results.Succeeded (Outcome) then
-         Outcome := Bytes.Read_Rect (S.Stream, Info.Frame);
+         Outcome := Bytes.Read_Rect (S.Stream.all, Info.Frame);
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Check_Frame (S, Info.Frame);
@@ -181,17 +182,17 @@ package body Pictlib.Internal.Container is
    is
       Outcome : Results.Result;
    begin
-      Event := (Offset => S.Stream.Offset, Op => Opcodes.Version_Op, others => <>);
+      Event := (Offset => S.Offset, Op => Opcodes.Version_Op, others => <>);
       Outcome := Sessions.Claim_Ordinal (S, Event.Ordinal);
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
       Info.Version := (if Detected = Detected_1 then Version_1 else Version_2);
-      S.Version := Info.Version;
+      Sessions.Set_Version (S, Info.Version);
       --  The opcode and its data, each Opcode_Bytes long; the data counts against the per-opcode budget, as
       --  every opcode's does.
       Event.Data_Length := Byte_Count (Opcode_Bytes (Info.Version));
-      Outcome := Streams.Skip_Exact (S.Stream, Event.Data_Length);
+      Outcome := Streams.Skip_Exact (S.Stream.all, Event.Data_Length);
       if Results.Succeeded (Outcome) then
          Sessions.Begin_Opcode_Data (S);
          Outcome := Sessions.Skip_Data (S, Event.Data_Length);
@@ -207,9 +208,9 @@ package body Pictlib.Internal.Container is
       Event : out Pictures.Opcode_Event;
       Found : out Boolean) return Results.Result
    is
-      Header_Offset : constant Source_Offset := S.Stream.Offset;
+      Header_Offset : constant Source_Offset := S.Offset;
       Word : Interfaces.Unsigned_16;
-      Outcome : Results.Result := Bytes.Read_U16_BE (S.Stream, Word);
+      Outcome : Results.Result := Bytes.Read_U16_BE (S.Stream.all, Word);
 
       --  The opcode where HeaderOp belongs, with the ordinal HeaderOp would have had.
       function In_Place_Of_Header_Op (Op : Opcode) return Errors.Diagnostic_Context is
@@ -220,7 +221,7 @@ package body Pictlib.Internal.Container is
       Found := False;
       if not Results.Succeeded (Outcome)
         and then Outcome.First_Error.Code = Errors.Source_Unexpected_End
-        and then S.Stream.Offset = Header_Offset
+        and then S.Offset = Header_Offset
       then
          --  The input ends right after the version opcode, at an opcode boundary: the picture has no
          --  HeaderOp, and leniently it then ends without its end opcode, as the opcode reader reports.
@@ -253,7 +254,7 @@ package body Pictlib.Internal.Container is
       end if;
       if Results.Succeeded (Outcome) then
          Info.Has_Header_Opcode := True;
-         S.Version := Info.Version;
+         Sessions.Set_Version (S, Info.Version);
          if Info.Version /= Extended_Version_2 then
             Info.Source_Rect := Info.Frame;
          end if;
@@ -289,7 +290,7 @@ package body Pictlib.Internal.Container is
          end if;
       end if;
 
-      Picture_Stream.Start_Picture (S.Stream);
+      Picture_Stream.Start_Picture (S.Stream.all);
       Outcome := Read_Frame (S, Info);
       if not Results.Succeeded (Outcome) then
          return Outcome;

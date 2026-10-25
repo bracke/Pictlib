@@ -195,6 +195,7 @@ package body Pictlib_Testing.Test_Text is
    procedure Modes_And_Colors (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Spacing_And_Clipping (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Text_Work (T : in out AUnit.Test_Cases.Test_Case'Class);
+   procedure Font_Cache (T : in out AUnit.Test_Cases.Test_Case'Class);
 
    overriding function Name (T : Test) return AUnit.Message_String is
       pragma Unreferenced (T);
@@ -214,6 +215,7 @@ package body Pictlib_Testing.Test_Text is
       Register_Routine (T, Modes_And_Colors'Access, "text.modes_and_colors");
       Register_Routine (T, Spacing_And_Clipping'Access, "text.spacing_and_clipping");
       Register_Routine (T, Text_Work'Access, "text.work");
+      Register_Routine (T, Font_Cache'Access, "text.font_cache");
    end Register_Tests;
 
    procedure Plain_Text (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -506,4 +508,31 @@ package body Pictlib_Testing.Test_Text is
                  "fonts evicted and loaded again cost nothing");
       end;
    end Text_Work;
+
+   --  Eight fonts stay loaded; a ninth that fails to load evicts none, and one that loads evicts the oldest.
+   procedure Font_Cache (T : in out AUnit.Test_Cases.Test_Case'Class) is
+      pragma Unreferenced (T);
+      package Text renames Pictlib.Internal.Text;
+      Cache : Text.Font_Cache;
+      Slot : Positive;
+   begin
+      declare
+         Guard : Text.Textrender_Guard;
+         pragma Unreferenced (Guard);
+      begin
+         for Size in 10 .. 17 loop
+            Assert (Text.Acquire (Cache, Sans, Size, Slot) = Textrender.Success, "size" & Size'Image & " did not load");
+         end loop;
+         --  A file that is there but is no font.
+         Assert (Text.Acquire (Cache, "fixtures/README.md", 12, Slot) /= Textrender.Success, "a text file loaded");
+         Assert ((for all Size in 10 .. 17 => Text.Cached (Cache, Sans, Size)),
+                 "a font that failed to load evicted a loaded one");
+         Assert (Text.Acquire (Cache, Mono, 12, Slot) = Textrender.Success, "a ninth font did not load");
+         Assert (Text.Cached (Cache, Mono, 12) and then not Text.Cached (Cache, Sans, 10)
+                 and then (for all Size in 11 .. 17 => Text.Cached (Cache, Sans, Size)),
+                 "a ninth font did not replace only the least recently used one");
+      end;
+      --  Clear takes the lock itself.
+      Text.Clear (Cache);
+   end Font_Cache;
 end Pictlib_Testing.Test_Text;

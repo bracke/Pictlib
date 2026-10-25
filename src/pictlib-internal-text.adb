@@ -85,7 +85,8 @@ package body Pictlib.Internal.Text is
      return Textrender.Status_Code
    is
       Key : constant Ada.Strings.Unbounded.Unbounded_String := Ada.Strings.Unbounded.To_Unbounded_String (Path);
-      Oldest : Positive := 1;
+      Free : Natural := 0;
+      Loaded : Natural := 0;
       Status : Textrender.Status_Code;
    begin
       Cache.Clock := (if Cache.Clock = Natural'Last then 0 else Cache.Clock + 1);
@@ -95,36 +96,48 @@ package body Pictlib.Internal.Text is
             Cache.Items (Index).Stamp := Cache.Clock;
             Slot := Index;
             return Textrender.Success;
-         end if;
-         if not Cache.Items (Index).Used
-           or else (Cache.Items (Oldest).Used and then Cache.Items (Index).Stamp < Cache.Items (Oldest).Stamp)
-         then
-            Oldest := Index;
+         elsif Cache.Items (Index).Used then
+            Loaded := Loaded + 1;
+         elsif Free = 0 then
+            Free := Index;
          end if;
       end loop;
-      Slot := Oldest;
-      --  A font that cannot even be read costs no cached font its slot.
-      if File_Bytes (Path) = 0 then
-         return Textrender.Font_Load_Failed;
-      end if;
+      --  At most Slots of the Slots + 1 renderers are in use, so one is free.
+      Slot := Free;
       declare
-         Item : Slot_Type renames Cache.Items (Oldest);
+         Item : Slot_Type renames Cache.Items (Free);
       begin
-         --  Loading replaces whatever the slot held, so it is free until the load succeeds.
-         Item.Used := False;
          Status := Item.Renderer.Load_Font
            (Path => Path, Pixel_Size => Size, Cell_Width => Cell (Size), Cell_Height => Cell (Size),
             Atlas_Width => Atlas_Side (Size), Atlas_Height => Atlas_Side (Size));
-         if Status = Textrender.Success then
-            --  A full atlas evicts glyphs rather than refusing new ones.
-            Item.Renderer.Set_Atlas_Eviction (True);
-            Item.Path := Key;
-            Item.Size := Size;
-            Item.Used := True;
-            Item.Stamp := Cache.Clock;
+         if Status /= Textrender.Success then
+            return Status;
          end if;
+         --  A full atlas evicts glyphs rather than refusing new ones.
+         Item.Renderer.Set_Atlas_Eviction (True);
+         Item.Path := Key;
+         Item.Size := Size;
+         Item.Used := True;
+         Item.Stamp := Cache.Clock;
       end;
-      return Status;
+      --  The new font is in: only now does the least recently used one make room.
+      if Loaded = Slots then
+         declare
+            Oldest : Natural := 0;
+         begin
+            for Index in Cache.Items'Range loop
+               if Index /= Free and then Cache.Items (Index).Used
+                 and then (Oldest = 0 or else Cache.Items (Index).Stamp < Cache.Items (Oldest).Stamp)
+               then
+                  Oldest := Index;
+               end if;
+            end loop;
+            Cache.Items (Oldest).Renderer.Reset;
+            Cache.Items (Oldest).Used := False;
+            Cache.Items (Oldest).Path := Ada.Strings.Unbounded.Null_Unbounded_String;
+         end;
+      end if;
+      return Textrender.Success;
    end Acquire;
 
    function Renderer (Cache : aliased in out Font_Cache; Slot : Positive)

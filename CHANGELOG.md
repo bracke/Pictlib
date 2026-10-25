@@ -109,7 +109,9 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - A frame over `Max_Canvas_Pixels` leaves the decoder `Failed` with that
   error, since no view can render it; a rejected view still leaves it
   `Header_Read`, as the specification now says of both.
-- A font file that cannot be read no longer evicts a loaded font.
+- A font that fails to load no longer evicts a loaded font: a new font
+  loads into a spare renderer, and the least recently used of the eight is
+  evicted only once it has loaded.
 - The specification describes text cells stretched to their ink, the work
   of copying a region shape, the font file bytes a load is charged, and
   `Font_Unavailable`; `Warning_Record_Limit` is documented as never crossed.
@@ -152,6 +154,10 @@ place:
   happen; a clip and a mask cut a row through one helper, which charges
   the region walk before cutting.
 - `Pictlib.Fonts` keys font IDs by `Font_ID`.
+- `Internal.Sessions.Session` is private: its budget, version, strictness
+  and retention are read through functions, and its reader is reached only
+  for what lies outside an opcode's budget-checked data (the header, opcode
+  words, pad bytes and the probe past the end).
 - `Encode` reads as its steps: check the frame, choose the layout, check
   the plan, write. A QuickTime image's pixel buffer is admitted like every
   other allocation, and `Decide_Layout` keeps one check per pack type and

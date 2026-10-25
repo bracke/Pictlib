@@ -34,7 +34,7 @@ package body Pictlib.Decoding is
       Decode_Limits : Limits.Limit_Set := Limits.Default_Limits) is
    begin
       Object.Decode_Options := Decode_Options;
-      Object.Inner.Session.Budget := Decode_Limits;
+      Internal.Sessions.Set_Budget (Object.Inner.Session, Decode_Limits);
       Bind (Object, Input);
    end Initialize;
 
@@ -87,7 +87,7 @@ package body Pictlib.Decoding is
       end if;
       --  A trailing byte is not picture data: a picture that used its whole byte budget still has it found.
       --  The reader judges the source's reply, a stall included.
-      Step := Internal.Picture_Stream.Probe_Past_End (Object.Inner.Session.Stream);
+      Step := Internal.Picture_Stream.Probe_Past_End (Object.Inner.Session.Stream.all);
       if Errors.Is_Fatal (Step.Error) then
          return Results.Failure (Step.Error);
       elsif Step.Count = 0 then
@@ -95,7 +95,7 @@ package body Pictlib.Decoding is
       end if;
       return Internal.Sessions.Reject_Or_Warn
         (Object.Inner.Session, Errors.Trailing_Data, Errors.Compatibility_Issue, Errors.Compatibility,
-         (Source => Object.Inner.Session.Stream.Offset - 1, others => <>));
+         (Source => Object.Inner.Session.Offset - 1, others => <>));
    end Check_Trailing_Data;
 
    --  How a picture goes on after an opcode.

@@ -246,23 +246,23 @@ package body Pictlib.Internal.Opcode_Reader is
       At_End_Of_Input := False;
 
       if not Sessions.Take_Deferred (S, Op, Event.Offset) then
-         if S.Version /= Version_1 and then Picture_Stream.Picture_Offset (S.Stream) mod 2 = 1 then
-            Outcome := Streams.Skip_Exact (S.Stream, 1);
+         if S.Version /= Version_1 and then S.Picture_Offset mod 2 = 1 then
+            Outcome := Streams.Skip_Exact (S.Stream.all, 1);
          end if;
-         Event.Offset := S.Stream.Offset;
+         Event.Offset := S.Offset;
          if Results.Succeeded (Outcome) then
             if S.Version = Version_1 then
                declare
                   Value : Byte;
                begin
-                  Outcome := Bytes.Read_Byte (S.Stream, Value);
+                  Outcome := Bytes.Read_Byte (S.Stream.all, Value);
                   Op := Opcode (Value);
                end;
             else
                declare
                   Value : Interfaces.Unsigned_16;
                begin
-                  Outcome := Bytes.Read_U16_BE (S.Stream, Value);
+                  Outcome := Bytes.Read_U16_BE (S.Stream.all, Value);
                   Op := Opcode (Value);
                end;
             end if;

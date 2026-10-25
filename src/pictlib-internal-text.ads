@@ -48,8 +48,8 @@ package Pictlib.Internal.Text is
    type Font_Cache is limited private;
 
    --  Acquire.
-   --  @param Cache Cache of loaded fonts; the least recently used one is replaced when it is full, unless Path
-   --  cannot be read at all. A file that is read but does not load still frees the slot it was loaded into.
+   --  @param Cache Cache of loaded fonts. A new font loads into a free renderer, and only once it has loaded is
+   --  the least recently used font evicted to keep Slots loaded, so a font that fails to load evicts none.
    --  @param Path TrueType file.
    --  @param Size Pixel size.
    --  @param Slot The renderer's slot.
@@ -102,6 +102,7 @@ private
    overriding procedure Initialize (Guard : in out Textrender_Guard);
    overriding procedure Finalize (Guard : in out Textrender_Guard);
 
+   --  At most Slots fonts stay loaded; one renderer more lets a font load before any is evicted.
    Slots : constant := 8;
 
    type Slot_Type is limited record
@@ -112,7 +113,7 @@ private
       Stamp : Natural := 0;
    end record;
 
-   type Slot_Array is array (1 .. Slots) of Slot_Type;
+   type Slot_Array is array (1 .. Slots + 1) of Slot_Type;
 
    type Font_Cache is limited record
       Items : Slot_Array;

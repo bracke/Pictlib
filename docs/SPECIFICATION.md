@@ -248,7 +248,7 @@ are retained, never interpreted.
   `Strict` and drawn plain with a warning otherwise.
 - A font's atlas (a square of `max (256, 8 × size + 8)` pixels) and the copy of its file the
   renderer keeps count against `Max_Allocation_Bytes`; up to eight fonts stay loaded during one
-  `Render`. A font file that cannot be read replaces no loaded font.
+  `Render`. A font that fails to load replaces no loaded font.
 
 ### 3.5 Comments and QuickTime
 

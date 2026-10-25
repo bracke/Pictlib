@@ -347,7 +347,7 @@ package body Pictlib.Internal.QuickTime is
       Event : Pictures.Opcode_Event;
       Length : Byte_Count) return Results.Result
    is
-      Start : constant Byte_Count := Picture_Stream.Picture_Offset (S.Stream);
+      Start : constant Byte_Count := S.Picture_Offset;
       Header : Image_Header;
       Item : Description;
       Mask : Regions.Region;
@@ -355,7 +355,7 @@ package body Pictlib.Internal.QuickTime is
       Pixels : Pixel_Buffer_Access;
       Outcome : Results.Result;
 
-      function Used return Byte_Count is (Picture_Stream.Picture_Offset (S.Stream) - Start);
+      function Used return Byte_Count is (S.Picture_Offset - Start);
 
       --  Skip whatever of the opcode is left.
       function Finish (Result : Results.Result) return Results.Result is

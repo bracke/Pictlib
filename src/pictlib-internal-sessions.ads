@@ -22,15 +22,46 @@ package Pictlib.Internal.Sessions is
    --  What a session keeps for its caller, reached only through this package: retained metadata and warnings.
    type Records is limited private;
 
-   type Session is limited record
-      Stream : Picture_Stream.Reader;
-      Version : PICT_Version := Version_1;
-      Strictness : Strictness_Mode := Strict;
-      Retention : Metadata.Retention_Policy;
-      Budget : Limits.Limit_Set := Limits.Default_Limits;
-      Kept : Records;
-      Counts : Accounting;
-   end record;
+   --  Tagged so its operations read as S.Budget, S.Version and the like.
+   type Session is tagged limited private;
+
+   --  Stream: the session's reader, for what is read outside an opcode's budget-checked data -- the header,
+   --  the opcode words and pad bytes -- and for offsets.
+   --  @param S Session.
+   --  @return Its picture reader.
+   function Stream (S : aliased in out Session) return not null access Picture_Stream.Reader;
+   --  Offset.
+   --  @param S Session.
+   --  @return The source offset its reader has reached.
+   function Offset (S : Session) return Source_Offset;
+   --  Picture offset.
+   --  @param S Session.
+   --  @return The offset its reader has reached in the picture, after any file header.
+   function Picture_Offset (S : Session) return Byte_Count;
+   --  Budget.
+   --  @param S Session.
+   --  @return The limits it decodes under.
+   function Budget (S : Session) return Limits.Limit_Set;
+   --  Set budget.
+   --  @param S Session, before it starts a picture.
+   --  @param Budget The limits it decodes under.
+   procedure Set_Budget (S : in out Session; Budget : Limits.Limit_Set);
+   --  Version.
+   --  @param S Session.
+   --  @return The picture's version, once the header says it.
+   function Version (S : Session) return PICT_Version;
+   --  Set version.
+   --  @param S Session reading the header.
+   --  @param Version The version it found.
+   procedure Set_Version (S : in out Session; Version : PICT_Version);
+   --  Strictness.
+   --  @param S Session.
+   --  @return How deviations are treated.
+   function Strictness (S : Session) return Strictness_Mode;
+   --  Retention.
+   --  @param S Session.
+   --  @return What metadata it keeps.
+   function Retention (S : Session) return Metadata.Retention_Policy;
 
    --  Clear.
    --  @param S Session whose stream binding, retained metadata, warnings and counters are discarded.
@@ -60,7 +91,7 @@ package Pictlib.Internal.Sessions is
    --  Is lenient.
    --  @param S Session.
    --  @return True unless the session decodes strictly.
-   function Is_Lenient (S : Session) return Boolean is (S.Strictness /= Strict);
+   function Is_Lenient (S : Session) return Boolean;
 
    --  Is boundary end.
    --  @param Item Result of reading an opcode or its pad byte.
@@ -313,6 +344,16 @@ package Pictlib.Internal.Sessions is
      with Pre => Index <= Warning_Count (S);
 
 private
+   type Session is tagged limited record
+      Stream : aliased Picture_Stream.Reader;
+      Version : PICT_Version := Version_1;
+      Strictness : Strictness_Mode := Strict;
+      Retention : Metadata.Retention_Policy;
+      Budget : Limits.Limit_Set := Limits.Default_Limits;
+      Kept : Records;
+      Counts : Accounting;
+   end record;
+
    type Records is limited record
       Store : Metadata_Store.Store;
       Log : Diagnostics.Warning_Log;
@@ -335,6 +376,14 @@ private
    function Work_Left (S : Session) return Pixel_Count is
      (S.Budget.Max_Drawing_Work - Pixel_Count'Min (S.Counts.Work_Used, S.Budget.Max_Drawing_Work));
    function Opcodes_Read (S : Session) return Opcode_Ordinal is (S.Counts.Next_Ordinal);
+   function Stream (S : aliased in out Session) return not null access Picture_Stream.Reader is (S.Stream'Access);
+   function Offset (S : Session) return Source_Offset is (S.Stream.Offset);
+   function Picture_Offset (S : Session) return Byte_Count is (Picture_Stream.Picture_Offset (S.Stream));
+   function Budget (S : Session) return Limits.Limit_Set is (S.Budget);
+   function Version (S : Session) return PICT_Version is (S.Version);
+   function Strictness (S : Session) return Strictness_Mode is (S.Strictness);
+   function Retention (S : Session) return Metadata.Retention_Policy is (S.Retention);
+   function Is_Lenient (S : Session) return Boolean is (S.Strictness /= Strict);
    function Metadata_Count (S : Session) return Natural is (Metadata_Store.Count (S.Kept.Store));
    function Metadata_Item (S : Session; Index : Positive) return Metadata.Item_Info is
      (Metadata_Store.Info (S.Kept.Store, Index));

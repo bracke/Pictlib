@@ -2,6 +2,16 @@ with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Checked_Arithmetic;
 
 package body Pictlib.Internal.Sessions is
+   procedure Set_Budget (S : in out Session; Budget : Limits.Limit_Set) is
+   begin
+      S.Budget := Budget;
+   end Set_Budget;
+
+   procedure Set_Version (S : in out Session; Version : PICT_Version) is
+   begin
+      S.Version := Version;
+   end Set_Version;
+
 
    procedure Clear (S : in out Session) is
    begin

@@ -6,7 +6,7 @@ with Pictlib.Pictures;
 --  once read. The public Decoding spec names only this, as jpeglib's names its internal decoder.
 package Pictlib.Internal.Decoder_State is
    type State is limited record
-      Session : Sessions.Session;
+      Session : aliased Sessions.Session;
       Info : Pictures.Header_Info;
       Header_Events : Container.Header_Events;
       Header_Event_Count : Natural := 0;
