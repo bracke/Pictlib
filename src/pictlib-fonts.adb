@@ -1,6 +1,4 @@
 package body Pictlib.Fonts is
-   function Key (ID : Font_ID) return String is (Font_ID'Image (ID));
-
    procedure Add (Table : in out Font_Table; Family : String; Path : String) is
    begin
       Table.Names.Include (Family, Path);
@@ -8,7 +6,7 @@ package body Pictlib.Fonts is
 
    procedure Add (Table : in out Font_Table; ID : Font_ID; Path : String) is
    begin
-      Table.IDs.Include (Key (ID), Path);
+      Table.IDs.Include (ID, Path);
    end Add;
 
    procedure Set_Default (Table : in out Font_Table; Path : String) is
@@ -41,8 +39,8 @@ package body Pictlib.Fonts is
    begin
       if Family'Length > 0 and then Table.Names.Contains (Family) then
          return Table.Names.Element (Family);
-      elsif Table.IDs.Contains (Key (ID)) then
-         return Table.IDs.Element (Key (ID));
+      elsif Table.IDs.Contains (ID) then
+         return Table.IDs.Element (ID);
       elsif Classic'Length > 0 and then Table.Names.Contains (Classic) then
          return Table.Names.Element (Classic);
       end if;

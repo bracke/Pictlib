@@ -43,24 +43,35 @@ package body Pictlib.Internal.Picture_Stream is
    function Remaining_Budget (Object : Reader) return Byte_Count is
      (if Object.Consumed >= Object.Max_Bytes then 0 else Object.Max_Bytes - Object.Consumed);
 
-   --  Count what the source delivered for a request of Requested bytes. A source that claims more than it
-   --  was asked for has broken its contract, and the reader's offsets could no longer be trusted.
+   --  The one judgement of a source's reply to a request of Requested bytes made at At_Offset: its own failure;
+   --  Internal_Invariant_Failed when it claims more than it was asked for, since the reader's offsets could no
+   --  longer be trusted; Source_Zero_Progress when it delivers nothing short of the end.
+   function Judged (Step : Streams.Source_Result; Requested : Byte_Count; At_Offset : Source_Offset)
+     return Errors.Error is
+   begin
+      if Errors.Is_Fatal (Step.Error) then
+         return Step.Error;
+      elsif Step.Count > Requested then
+         return Errors.Make
+           (Errors.Internal_Invariant_Failed,
+            (Source => At_Offset, Expected => Requested, Actual => Step.Count, others => <>));
+      elsif Step.Count = 0 and then Requested > 0 and then not Step.End_Of_Input then
+         return Errors.Make (Errors.Source_Zero_Progress, (Source => At_Offset, others => <>));
+      end if;
+      return Errors.Make (Errors.No_Error);
+   end Judged;
+
+   --  Count what the source delivered for a request of Requested bytes, once it is judged sound.
    function Advance
      (Object : in out Reader;
       Step : Streams.Source_Result;
-      Requested : Byte_Count) return Streams.Source_Result is
+      Requested : Byte_Count) return Streams.Source_Result
+   is
+      Failure : constant Errors.Error :=
+        Judged (Step, Requested, Object.Base + Source_Offset (Object.Consumed));
    begin
-      if Step.Count > Requested then
-         return
-           (Error =>
-              Errors.Make
-                (Errors.Internal_Invariant_Failed,
-                 (Source => Object.Base + Source_Offset (Object.Consumed),
-                  Expected => Requested,
-                  Actual => Step.Count,
-                  others => <>)),
-            Count => 0,
-            End_Of_Input => False);
+      if Errors.Is_Fatal (Failure) then
+         return (Error => Failure, Count => 0, End_Of_Input => False);
       end if;
       Object.Consumed := Object.Consumed + Step.Count;
       Object.Input_Ended := Step.End_Of_Input;
@@ -88,14 +99,13 @@ package body Pictlib.Internal.Picture_Stream is
       while Object.Last < Wanted and then not Object.Input_Ended loop
          declare
             Step : constant Streams.Source_Result := Object.Input.Read (Object.Buffer (Object.Last + 1 .. Wanted));
+            --  Buffered bytes are not consumed yet, so the reply is judged where the buffer ends.
+            Failure : constant Errors.Error :=
+              Judged (Step, Byte_Count (Wanted - Object.Last),
+                      Object.Base + Source_Offset (Object.Consumed) + Source_Offset (Buffered (Object)));
          begin
-            if Errors.Is_Fatal (Step.Error) then
-               return Results.Failure (Step.Error);
-            elsif Step.Count > Byte_Count (Wanted - Object.Last) then
-               return Results.Failure (Errors.Internal_Invariant_Failed);
-            elsif Step.Count = 0 and then not Step.End_Of_Input then
-               return Results.Failure
-                 (Errors.Make (Errors.Source_Zero_Progress, (Source => Object.Input.Offset, others => <>)));
+            if Errors.Is_Fatal (Failure) then
+               return Results.Failure (Failure);
             end if;
             Object.Last := Object.Last + Natural (Step.Count);
             Object.Input_Ended := Step.End_Of_Input;
@@ -146,9 +156,6 @@ package body Pictlib.Internal.Picture_Stream is
          Step : constant Streams.Source_Result :=
            Object.Input.Read (Buffer (Buffer'First .. Buffer'First + Allowed - 1));
       begin
-         if Errors.Is_Fatal (Step.Error) then
-            return Step;
-         end if;
          return Advance (Object, Step, Byte_Count (Allowed));
       end;
    end Read;
@@ -168,9 +175,6 @@ package body Pictlib.Internal.Picture_Stream is
       declare
          Step : constant Streams.Source_Result := Object.Input.Read (Probe);
       begin
-         if Errors.Is_Fatal (Step.Error) then
-            return Step;
-         end if;
          return Advance (Object, Step, 1);
       end;
    end Probe_Past_End;
@@ -208,9 +212,6 @@ package body Pictlib.Internal.Picture_Stream is
          Allowed : constant Byte_Count := Byte_Count'Min (Count, Remaining_Budget (Object));
          Step : constant Streams.Source_Result := Object.Input.Skip (Allowed);
       begin
-         if Errors.Is_Fatal (Step.Error) then
-            return Step;
-         end if;
          return Advance (Object, Step, Allowed);
       end;
    end Skip;

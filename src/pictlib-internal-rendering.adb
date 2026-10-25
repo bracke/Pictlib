@@ -69,21 +69,36 @@ package body Pictlib.Internal.Rendering is
       return Hilited;
    end Take_Hilite;
 
-   function Clip_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result is
+   --  Cut Row_Spans to Item's row Row, its columns Shift to the left of the row's: the region walk is charged
+   --  first, and the row is cut only once it is paid for.
+   function Cut_Row
+     (S : in out Sessions.Session;
+      Item : in out Regions.Region;
+      Row, Shift : Integer;
+      Cut, Row_Spans, Scratch : in out Regions.Span_Vectors.Vector) return Results.Result
+   is
       Work : Pixel_Count;
+      Outcome : Results.Result;
    begin
-      if not P.Port.Has_Clip then
-         return Results.Success;
+      Regions.Row_Spans (Item, Row, Cut, Work, Sessions.Work_Left (S));
+      Outcome := Sessions.Charge_Work (S, Work);
+      if Results.Succeeded (Outcome) then
+         if Shift /= 0 then
+            for Span of Cut loop
+               Span := (Span.Left - Shift, Span.Right - Shift);
+            end loop;
+         end if;
+         Regions.Intersect (Row_Spans, Cut, Scratch);
+         Row_Spans.Move (Scratch);
       end if;
-      --  The clip is local: picture row Y is its row Y + origin, and its columns lie origin to the right.
-      Regions.Row_Spans (P.Port.Clip, Y + P.Port.Origin_V, P.Machine.Clip_Spans, Work, Sessions.Work_Left (S));
-      for Item of P.Machine.Clip_Spans loop
-         Item := (Item.Left - P.Port.Origin_H, Item.Right - P.Port.Origin_H);
-      end loop;
-      Regions.Intersect (P.Machine.Row_Spans, P.Machine.Clip_Spans, P.Machine.Scratch);
-      P.Machine.Row_Spans.Move (P.Machine.Scratch);
-      return Sessions.Charge_Work (S, Work);
-   end Clip_Row;
+      return Outcome;
+   end Cut_Row;
+
+   --  The clip is local: picture row Y is its row Y + origin, and its columns lie origin to the right.
+   function Clip_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result is
+     (if not P.Port.Has_Clip then Results.Success
+      else Cut_Row (S, P.Port.Clip, Y + P.Port.Origin_V, P.Port.Origin_H, P.Machine.Clip_Spans, P.Machine.Row_Spans,
+                    P.Machine.Scratch));
 
    procedure Put (P : in out Painter; X, Y : Integer; Color : Images.RGB_Color) is
    begin
@@ -110,19 +125,8 @@ package body Pictlib.Internal.Rendering is
    function Row_Is_Empty (P : Painter) return Boolean is (P.Machine.Row_Spans.Is_Empty);
 
    function Mask_Row (P : in out Painter; S : in out Sessions.Session; Mask : in out Regions.Region; Y : Integer)
-     return Results.Result
-   is
-      Work : Pixel_Count;
-      Outcome : Results.Result;
-   begin
-      Regions.Row_Spans (Mask, Y, P.Machine.Mask_Spans, Work, Sessions.Work_Left (S));
-      Outcome := Sessions.Charge_Work (S, Work);
-      if Results.Succeeded (Outcome) then
-         Regions.Intersect (P.Machine.Row_Spans, P.Machine.Mask_Spans, P.Machine.Scratch);
-         P.Machine.Row_Spans.Move (P.Machine.Scratch);
-      end if;
-      return Outcome;
-   end Mask_Row;
+     return Results.Result is
+     (Cut_Row (S, Mask, Y, 0, P.Machine.Mask_Spans, P.Machine.Row_Spans, P.Machine.Scratch));
 
    function Begin_Masked_Row
      (P : in out Painter;

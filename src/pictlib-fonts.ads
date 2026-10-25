@@ -1,4 +1,5 @@
 private with Ada.Containers.Indefinite_Hashed_Maps;
+private with Ada.Containers.Indefinite_Ordered_Maps;
 private with Ada.Strings.Hash_Case_Insensitive;
 private with Ada.Strings.Equal_Case_Insensitive;
 private with Ada.Strings.Unbounded;
@@ -45,9 +46,11 @@ private
      (Key_Type => String, Element_Type => String, Hash => Ada.Strings.Hash_Case_Insensitive,
       Equivalent_Keys => Ada.Strings.Equal_Case_Insensitive);
 
+   package ID_Maps is new Ada.Containers.Indefinite_Ordered_Maps (Key_Type => Font_ID, Element_Type => String);
+
    type Font_Table is record
       Names : Name_Maps.Map;
-      IDs : Name_Maps.Map;
+      IDs : ID_Maps.Map;
       Default : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 

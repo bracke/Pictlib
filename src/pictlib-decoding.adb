@@ -86,12 +86,10 @@ package body Pictlib.Decoding is
          return Results.Success;
       end if;
       --  A trailing byte is not picture data: a picture that used its whole byte budget still has it found.
+      --  The reader judges the source's reply, a stall included.
       Step := Internal.Picture_Stream.Probe_Past_End (Object.Inner.Session.Stream);
       if Errors.Is_Fatal (Step.Error) then
          return Results.Failure (Step.Error);
-      elsif Step.Count = 0 and then not Step.End_Of_Input then
-         return Results.Failure
-           (Errors.Make (Errors.Source_Zero_Progress, (Source => Object.Inner.Session.Stream.Offset, others => <>)));
       elsif Step.Count = 0 then
          return Results.Success;
       end if;

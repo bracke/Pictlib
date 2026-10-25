@@ -61,7 +61,16 @@ procedure Pictlib_Conformance is
       Case_Of ("indexed_narrow", Samples.Three_Colors, 3, 5, (Layout => Encoding.Indexed_8, others => <>)),
       Case_Of ("mono", Samples.Black_And_White, 37, 23, (Layout => Encoding.Mono_1, others => <>)),
       Case_Of ("mono_wide", Samples.Black_And_White, 2100, 2, (Layout => Encoding.Mono_1, others => <>)),
-      Case_Of ("mono_narrow", Samples.Black_And_White, 3, 5, (Layout => Encoding.Mono_1, others => <>))];
+      Case_Of ("mono_narrow", Samples.Black_And_White, 3, 5, (Layout => Encoding.Mono_1, others => <>)),
+      --  Alpha kept as a fourth plane, packed and unpacked: a reader must still find the colors.
+      Case_Of ("direct_alpha", Samples.Translucent, 37, 23, (Layout => Encoding.Direct_32, Keep_Alpha => True,
+                                                            others => <>), Pictlib.RGBA_32),
+      Case_Of ("direct_alpha_narrow", Samples.Translucent, 1, 6,
+               (Layout => Encoding.Direct_32, Keep_Alpha => True, others => <>), Pictlib.ARGB_32),
+      --  Auto's choice, for each kind of image.
+      Case_Of ("auto_direct", Samples.Gradient, 37, 23, (Layout => Encoding.Auto, others => <>)),
+      Case_Of ("auto_indexed", Samples.Three_Colors, 37, 23, (Layout => Encoding.Auto, others => <>)),
+      Case_Of ("auto_mono", Samples.Black_And_White, 37, 23, (Layout => Encoding.Auto, others => <>))];
 
    function Path (Name, Extension : String) return String is (Directory & "/" & Name & "." & Extension);
 
@@ -159,17 +168,12 @@ procedure Pictlib_Conformance is
       end;
    end Extract_PNG;
 
-   --  rowBytes the encoder writes; below 8 the rows are stored unpacked.
-   function Row_Bytes (Item : Sample_Case) return Natural is
-     (case Item.Settings.Layout is
-         when Encoding.Direct_32 => 4 * Item.Width,
-         when Encoding.Indexed_8 => Item.Width + Item.Width mod 2,
-         when others => ((Item.Width + 7) / 8 + 1) / 2 * 2);
-
-   function Encode (Item : Sample_Case) return Boolean is
+   --  Encode the case, writing its picture; Used is the layout the encoder chose.
+   function Encode (Item : Sample_Case; Used : out Encoding.Layout_Kind) return Boolean is
       Picture : constant Samples.Encoded :=
         Samples.Encode (Item.Item, Item.Width, Item.Height, Item.Settings, Item.Format);
    begin
+      Used := Picture.Layout;
       if not Pictlib.Results.Succeeded (Picture.Outcome) then
          Fail (To_String (Item.Name) & ": encode " & Picture.Outcome.First_Error.Code'Image);
          return False;
@@ -216,59 +220,66 @@ begin
       Ada.Text_IO.Put_Line ("SKIP LibreOffice: soffice (and ImageMagick, to read its PNG) are needed");
       Skipped := Skipped + 1;
    end if;
-   for Item of Cases loop
-      if Encode (Item) then
-         declare
-            Name : constant String := To_String (Item.Name);
-         begin
-            Discard (Path (Name, "magick.ppm"));
-            Discard (Path (Name, "svg"));
-            Discard (Path (Name, "png"));
-            Discard (Path (Name, "soffice.ppm"));
-            if Magick'Length > 0
-              and then (not Item.Settings.File_Header or else Item.Settings.Layout = Encoding.Mono_1
-                        or else Row_Bytes (Item) < 8)
-            then
-               Not_Applicable := Not_Applicable + 1;
-               Ada.Text_IO.Put_Line ("N/A  " & Name & " ImageMagick: a known ImageMagick reader limitation");
-            elsif Magick'Length > 0 then
-               Report (Item, "ImageMagick", Path (Name, "magick.ppm"),
+   for Listed of Cases loop
+      declare
+         Used : Encoding.Layout_Kind;
+         Encoded : constant Boolean := Encode (Listed, Used);
+         --  The case as written: an Auto case is checked as the layout chosen.
+         Item : constant Sample_Case := (Listed with delta Settings => (Listed.Settings with delta Layout => Used));
+      begin
+         if Encoded then
+            declare
+               Name : constant String := To_String (Item.Name);
+            begin
+               Discard (Path (Name, "magick.ppm"));
+               Discard (Path (Name, "svg"));
+               Discard (Path (Name, "png"));
+               Discard (Path (Name, "soffice.ppm"));
+               if Magick'Length > 0
+                 and then (not Item.Settings.File_Header or else Item.Settings.Layout = Encoding.Mono_1
+                           or else Samples.Row_Bytes (Item.Settings.Layout, Item.Width) < 8)
+               then
+                  Not_Applicable := Not_Applicable + 1;
+                  Ada.Text_IO.Put_Line ("N/A  " & Name & " ImageMagick: a known ImageMagick reader limitation");
+               elsif Magick'Length > 0 then
+                  Report (Item, "ImageMagick", Path (Name, "magick.ppm"),
+                          Processes.Run_Status
+                            ("magick", ".", Magick,
+                             Processes.Arguments
+                               ([Processes.Argument (Path (Name, "pict")), Processes.Argument ("-depth"),
+                                 Processes.Argument ("8"), Processes.Argument (Path (Name, "magick.ppm"))]),
+                             Quiet => True));
+               end if;
+               if Office'Length > 0 and then Magick'Length > 0 then
+                  declare
+                     Status : Integer :=
                        Processes.Run_Status
-                         ("magick", ".", Magick,
+                         ("soffice", ".", Office,
                           Processes.Arguments
-                            ([Processes.Argument (Path (Name, "pict")), Processes.Argument ("-depth"),
-                              Processes.Argument ("8"), Processes.Argument (Path (Name, "magick.ppm"))]),
-                          Quiet => True));
-            end if;
-            if Office'Length > 0 and then Magick'Length > 0 then
-               declare
-                  Status : Integer :=
-                    Processes.Run_Status
-                      ("soffice", ".", Office,
-                       Processes.Arguments
-                         ([Processes.Argument ("--headless"), Processes.Argument ("--convert-to"),
-                           Processes.Argument ("svg"), Processes.Argument ("--outdir"),
-                           Processes.Argument (Directory), Processes.Argument (Path (Name, "pict"))]),
-                       Quiet => True);
-               begin
-                  if Status = 0 and then not Extract_PNG (Path (Name, "svg"), Path (Name, "png")) then
-                     Status := 1;
-                  end if;
-                  if Status = 0 then
-                     Status :=
-                       Processes.Run_Status
-                         ("magick", ".", Magick,
-                          Processes.Arguments
-                            ([Processes.Argument (Path (Name, "png")), Processes.Argument ("-alpha"),
-                              Processes.Argument ("off"), Processes.Argument ("-depth"), Processes.Argument ("8"),
-                              Processes.Argument (Path (Name, "soffice.ppm"))]),
+                            ([Processes.Argument ("--headless"), Processes.Argument ("--convert-to"),
+                              Processes.Argument ("svg"), Processes.Argument ("--outdir"),
+                              Processes.Argument (Directory), Processes.Argument (Path (Name, "pict"))]),
                           Quiet => True);
-                  end if;
-                  Report (Item, "LibreOffice", Path (Name, "soffice.ppm"), Status);
-               end;
-            end if;
-         end;
-      end if;
+                  begin
+                     if Status = 0 and then not Extract_PNG (Path (Name, "svg"), Path (Name, "png")) then
+                        Status := 1;
+                     end if;
+                     if Status = 0 then
+                        Status :=
+                          Processes.Run_Status
+                            ("magick", ".", Magick,
+                             Processes.Arguments
+                               ([Processes.Argument (Path (Name, "png")), Processes.Argument ("-alpha"),
+                                 Processes.Argument ("off"), Processes.Argument ("-depth"), Processes.Argument ("8"),
+                                 Processes.Argument (Path (Name, "soffice.ppm"))]),
+                             Quiet => True);
+                     end if;
+                     Report (Item, "LibreOffice", Path (Name, "soffice.ppm"), Status);
+                  end;
+               end if;
+            end;
+         end if;
+      end;
    end loop;
    Ada.Text_IO.Put_Line
      (Natural'Image (Cases'Length) & " pictures," & Pictlib_Testing.Tools.Failures'Image & " failures,"

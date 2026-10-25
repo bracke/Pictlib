@@ -19,6 +19,10 @@ package Pictlib_Testing.Samples is
    function Color (Item : Kind; X, Y : Natural) return Pictlib.Images.RGB_Color;
    --  Alpha of the sample at X, Y in the formats that have it: opaque but for Translucent.
    function Alpha (Item : Kind; X, Y : Natural) return Pictlib.Byte;
+   --  Row bytes: rowBytes the encoder writes for Layout (not Auto) at Width; below 8 rows are stored unpacked.
+   --  The test-side mirror of the encoder's rule, as Expected_Color mirrors its pixels.
+   function Row_Bytes (Layout : Pictlib.Encoding.Layout_Kind; Width : Positive) return Natural
+     with Pre => Pictlib.Encoding."/=" (Layout, Pictlib.Encoding.Auto);
    --  Expected color: what a reader of the sample encoded in Layout must see at X, Y -- the sample's color, or
    --  for Mono_1 black below Threshold luminance and white otherwise. The independent oracle of the round trip
    --  tests and the conformance tool.

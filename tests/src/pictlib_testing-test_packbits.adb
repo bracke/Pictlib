@@ -112,37 +112,36 @@ package body Pictlib_Testing.Test_PackBits is
 
       --  Few distinct values so runs of every length occur.
       function Next_Byte return Pictlib.Byte is (Pictlib.Byte (Pictlib_Testing.Random.Next (Generator, 3)));
+      --  One literal byte, then two equal bytes, repeated: the case that breaks a packer that runs at two.
+      function Alternating (Index : Positive) return Pictlib.Byte is
+        (if Index mod 3 = 1 then Pictlib.Byte (Index mod 251) else 16#EE#);
+      function Random_Byte (Index : Positive) return Pictlib.Byte is
+         pragma Unreferenced (Index);
+      begin
+         return Next_Byte;
+      end Random_Byte;
+
+      --  Pack rows of every length up to 300 filled by Fill, and require each to unpack to itself exactly.
+      procedure Round_Trip (Fill : not null access function (Index : Positive) return Pictlib.Byte; Label : String) is
+      begin
+         for Length in 1 .. 300 loop
+            declare
+               Row : Bytes (1 .. Length);
+               Packed : Bytes (1 .. PackBits.Worst_Case (Length));
+               Back : Bytes (1 .. Length);
+               Written, Unpacked : Natural;
+            begin
+               for Index in Row'Range loop
+                  Row (Index) := Fill (Index);
+               end loop;
+               PackBits.Pack (Row, Packed, Written);
+               Assert (Unpack (Packed (1 .. Written), 1, Back, Unpacked) = PackBits.Exact and then Back = Row,
+                       Label & " round trip failed at" & Length'Image);
+            end;
+         end loop;
+      end Round_Trip;
    begin
-      --  One literal unit, then two equal units, repeated: the case that breaks a packer that runs at two.
-      for Length in 1 .. 300 loop
-         declare
-            Row : Bytes (1 .. Length);
-            Packed : Bytes (1 .. PackBits.Worst_Case (Length));
-            Back : Bytes (1 .. Length);
-            Written, Unpacked : Natural;
-         begin
-            for Index in Row'Range loop
-               Row (Index) := (if Index mod 3 = 1 then Pictlib.Byte (Index mod 251) else 16#EE#);
-            end loop;
-            PackBits.Pack (Row, Packed, Written);
-            Assert (Unpack (Packed (1 .. Written), 1, Back, Unpacked) = PackBits.Exact and then Back = Row,
-                    "alternating round trip failed at" & Length'Image);
-         end;
-      end loop;
-      for Length in 1 .. 300 loop
-         declare
-            Row : Bytes (1 .. Length);
-            Packed : Bytes (1 .. PackBits.Worst_Case (Length));
-            Back : Bytes (1 .. Length);
-            Written, Unpacked : Natural;
-         begin
-            for Item of Row loop
-               Item := Next_Byte;
-            end loop;
-            PackBits.Pack (Row, Packed, Written);
-            Assert (Unpack (Packed (1 .. Written), 1, Back, Unpacked) = PackBits.Exact and then Back = Row,
-                    "round trip failed at" & Length'Image & " random bytes");
-         end;
-      end loop;
+      Round_Trip (Alternating'Access, "alternating");
+      Round_Trip (Random_Byte'Access, "random");
    end Round_Trips;
 end Pictlib_Testing.Test_PackBits;

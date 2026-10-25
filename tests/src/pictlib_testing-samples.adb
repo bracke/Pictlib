@@ -62,6 +62,12 @@ package body Pictlib_Testing.Samples is
          Storage => Storage);
    end View;
 
+   function Row_Bytes (Layout : Pictlib.Encoding.Layout_Kind; Width : Positive) return Natural is
+     (case Layout is
+         when Pictlib.Encoding.Direct_32 => 4 * Width,
+         when Pictlib.Encoding.Indexed_8 => Width + Width mod 2,
+         when others => ((Width + 7) / 8 + 1) / 2 * 2);
+
    function Expected_Color
      (Item : Kind;
       X, Y : Natural;

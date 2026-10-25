@@ -147,6 +147,11 @@ place:
   the opcode table says.
 - `PackBits.Pack` packs bytes, the only rows the encoder writes, and states
   its output size in its precondition.
+- `Picture_Stream` judges every reply of a source in one place, so an
+  over-reported count and a stall carry the same context wherever they
+  happen; a clip and a mask cut a row through one helper, which charges
+  the region walk before cutting.
+- `Pictlib.Fonts` keys font IDs by `Font_ID`.
 - `Encode` reads as its steps: check the frame, choose the layout, check
   the plan, write. A QuickTime image's pixel buffer is admitted like every
   other allocation, and `Decide_Layout` keeps one check per pack type and
@@ -175,3 +180,7 @@ All tooling is Ada, in the `tests` crate:
 - The tests crate has one seeded pseudo-random generator
   (`Pictlib_Testing.Random`) and one file loader; the encoder tests check
   the alpha plane's values byte for byte, independently of the decoder.
+- `pictlib_conformance` has ImageMagick and LibreOffice read pictures that
+  keep alpha and pictures `Auto` laid out; the test-side rowBytes rule lives
+  in `Samples`, and every failing render test checks the decoder's state and
+  last error.
