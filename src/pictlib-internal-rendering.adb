@@ -176,13 +176,24 @@ package body Pictlib.Internal.Rendering is
       --  allowance is over the limit, whatever allowance it was built with.
       Walked : constant Pixel_Count :=
         1 + Pixel_Count (Integer'Max (0, Coverage.Last_Row (Shape) - Coverage.First_Row (Shape) + 1));
-      Outcome : Results.Result :=
-        (if Coverage.Exhausted (Shape) then Sessions.Over_Work (S, Coverage.Work (Shape))
-         else Sessions.Charge_Work (S, Checked_Arithmetic.Saturating_Add (Coverage.Work (Shape), Walked)));
+      Outcome : Results.Result := Results.Success;
       Source : Patterns.Pattern renames P.Port.Pattern_Set (How.Source);
       Colorize : constant Boolean := Patterns.Kind (Source) = Patterns.Bit_Pattern;
-      Kind : constant Transfer_Modes.Mode_Kind := (if Take_Hilite (P) then Transfer_Modes.Hilite else How.Mode);
+      Hilited : constant Boolean := Take_Hilite (P);
+      Kind : constant Transfer_Modes.Mode_Kind := (if Hilited then Transfer_Modes.Hilite else How.Mode);
    begin
+      --  A shape's allowance is the lesser of the drawing work and the spans the allocation total admits, so a
+      --  spent shape names whichever of the two it crossed.
+      if not Coverage.Exhausted (Shape) then
+         Outcome := Sessions.Charge_Work (S, Checked_Arithmetic.Saturating_Add (Coverage.Work (Shape), Walked));
+      elsif Coverage.Work (Shape) > Sessions.Work_Left (S) then
+         return Sessions.Over_Work (S, Coverage.Work (Shape));
+      else
+         Outcome := Sessions.Admit_Aggregate
+           (S, Checked_Arithmetic.Saturating_Multiply
+                 (Byte_Count (Coverage.Work (Shape)), Sessions.Shape_Bytes_Per_Work_Unit));
+         return (if Results.Succeeded (Outcome) then Sessions.Over_Work (S, Coverage.Work (Shape)) else Outcome);
+      end if;
       --  The spans building made count against the session's allocation total.
       if Results.Succeeded (Outcome) then
          Outcome := Sessions.Admit_Aggregate
@@ -193,8 +204,12 @@ package body Pictlib.Internal.Rendering is
          Sample, Color : Images.RGB_Color := Images.Black;
          Effect : Transfer_Modes.Effect_Kind := Transfer_Modes.Depends_On_Destination;
 
+         --  An invert after HiliteMode highlights: every pixel is dark, so the background and highlight swap.
          function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
-           (if How.Kind = Invert_Paint then Transfer_Modes.Invert (Under)
+           (if How.Kind = Invert_Paint and then not Hilited then Transfer_Modes.Invert (Under)
+            elsif How.Kind = Invert_Paint
+            then Transfer_Modes.Compose (Kind, Images.Black, Under, P.Port.Colors, Colorize => False,
+                                         Bit_Source => True)
             else Transfer_Modes.Compose
                    (Kind, Patterns.Sample (Source, X, Y), Under, P.Port.Colors, Colorize, Bit_Source => Colorize));
          function Paint is new Paint_Row (Color_At);

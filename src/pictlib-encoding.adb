@@ -125,7 +125,7 @@ package body Pictlib.Encoding is
    function Row_Buffer_Bytes (Item : Plan) return Byte_Count is
      (Byte_Count (Item.Unpacked_Length) + Byte_Count (Internal.PackBits.Worst_Case (Item.Unpacked_Length)));
 
-   --  Every write after a failure is still made, against a writer that refuses it; the first failure is kept.
+   --  Every write after a failure is refused by the writer, which writes nothing more; the first failure is kept.
    procedure Step (Outcome : in out Results.Result; Item : Results.Result) is
    begin
       if Results.Succeeded (Outcome) then

@@ -143,6 +143,10 @@ package body Pictlib_Testing.Test_Shapes is
    Copy_Transparent : aliased constant Bytes := Pic (8, 2, Red_Under & Bitmap (36));
    Copy_Hilite : aliased constant Bytes := Pic (8, 2, RGB (16#1D#, 16#FFFF#, 0, 0) & Bitmap (50));
    Hilite_Next : aliased constant Bytes := Pic (8, 2, RGB (16#1D#, 16#FFFF#, 0, 0) & W (16#1C#) & Bitmap (0));
+   --  HiliteMode, then two inverts: the first highlights, the second inverts.
+   Hilite_Invert : aliased constant Bytes :=
+     Pic (4, 1, RGB (16#1D#, 16#FFFF#, 0, 0) & W (16#1C#) & Op_Rect (16#33#, 0, 0, 1, 2)
+          & Op_Rect (16#33#, 0, 2, 1, 4));
    Copy_Blend : aliased constant Bytes := Pic (8, 2, RGB (16#1F#, 16#8000#, 16#8000#, 16#8000#) & Bitmap (32));
 
    Overhanging : aliased constant Bytes := Pic (4, 2, Op_Rect (16#31#, -5, -5, 100, 100));
@@ -319,6 +323,7 @@ package body Pictlib_Testing.Test_Shapes is
       Canvases.Expect_Raster (Copy_Transparent, 8, 2, "BRBRRBRB/RRRRBBBB", "transparent");
       Canvases.Expect_Raster (Copy_Hilite, 8, 2, "RWRWWRWR/WWWWRRRR", "hilite");
       Canvases.Expect_Raster (Hilite_Next, 8, 2, "RWRWWRWR/WWWWRRRR", "HiliteMode");
+      Canvases.Expect_Raster (Hilite_Invert, 4, 1, "RRBB", "HiliteMode, then invert");
       Expect_Color (Copy_Blend, 8, 2, (127, 127, 127), "blend at half weight");
    end Copy_Modes;
 

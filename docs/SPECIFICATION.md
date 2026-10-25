@@ -151,7 +151,8 @@ are retained, never interpreted.
   For a bit pattern these modes, like the boolean ones, see its 1 bits as the foreground color and
   its 0 bits as the background color.
   `hilite` (and the drawing operation after `HiliteMode`) swaps the background and highlight
-  colors under dark source pixels; `DefHilite` resets the highlight to black. `grayishTextOr`
+  colors under dark source pixels; an invert verb after `HiliteMode` highlights its whole shape
+  instead of inverting it; `DefHilite` resets the highlight to black. `grayishTextOr`
   acts as `srcOr`. Unknown modes fail with `Transfer_Mode_Invalid` in `Strict` and act as copy
   with a warning otherwise.
 - A real QuickDraw reference renderer was not available when these rules were written; comparing

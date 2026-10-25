@@ -308,6 +308,24 @@ package body Pictlib_Testing.Test_Enumeration is
          Events := (others => <>);
       end loop;
 
+      --  A comment over the per-opcode budget fails on that budget whether or not the store has room for it.
+      declare
+         Long_Comment : aliased constant Bytes := V2_Body (W (16#00A1#) & W (1) & W (100) & Zeros (100) & W (16#00FF#));
+         Full_Store : constant Pictlib.Limits.Limit_Set :=
+           (Pictlib.Limits.Default_Limits with delta Max_Opcode_Bytes => 50, Max_Metadata_Items => 0);
+      begin
+         Recorders.Expect_Failure (Long_Comment, Pictlib.Errors.Limit_Exceeded, "comment over the opcode budget",
+                                   16#00A1#, Budget => Full_Store, Limit => Pictlib.Opcode_Byte_Limit);
+         Recorders.Expect_Failure (Long_Comment, Pictlib.Errors.Limit_Exceeded, "comment over the opcode budget",
+                                   16#00A1#, (Strictness => Pictlib.Compatible, others => <>), Full_Store,
+                                   Pictlib.Opcode_Byte_Limit);
+         Events := (others => <>);
+         Recorders.Decode (Long_Comment, Decoder, Events, Outcome, (Strictness => Pictlib.Compatible, others => <>),
+                           Full_Store);
+         Assert (not Recorders.Has_Warning (Decoder, Pictlib.Errors.Data_Loss),
+                 "a comment that fails its opcode budget was first reported as dropped");
+      end;
+
       Recorders.Expect_Failure (Bad_Font_Name, Pictlib.Errors.Opcode_Length_Invalid, "bad font name", 16#002C#);
       Events := (others => <>);
       Recorders.Decode (Bad_Font_Name, Decoder, Events, Outcome, (Strictness => Pictlib.Compatible, others => <>));

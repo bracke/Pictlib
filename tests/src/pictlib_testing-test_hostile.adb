@@ -317,6 +317,17 @@ package body Pictlib_Testing.Test_Hostile is
                                Budget => Small);
       Canvases.Render (Polygon, Decoder, Canvases.View (Storage'Access, 200, 200), Outcome, Budget => Small);
       Assert (Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit, "zig-zag polygon: wrong limit");
+      --  With drawing work to spare, a shape that the allocation total stops names that limit, at every total.
+      for Step in 0 .. 60 loop
+         Canvases.Render
+           (Polygon, Decoder, Canvases.View (Storage'Access, 200, 200), Outcome,
+            Budget => (Pictlib.Limits.Default_Limits with delta Max_Total_Allocation_Bytes => Pictlib.Byte_Count (Step)
+                                                                                              * 20_000));
+         Assert (Pictlib.Results.Succeeded (Outcome)
+                 or else Outcome.First_Error.Context.Limit = Pictlib.Total_Allocation_Byte_Limit,
+                 "zig-zag polygon at a total of" & Natural'Image (Step * 20_000) & " named "
+                 & Outcome.First_Error.Context.Limit'Image);
+      end loop;
       Canvases.Expect_Raster (Moving_Clip, 4, 4, "BBBB/WWWW/BBBB/WWWW", "clip kept while the origin moves");
       --  A shape that runs out of its allowance part-way covers nothing, whoever asks.
       declare

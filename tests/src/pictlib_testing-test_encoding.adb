@@ -34,13 +34,33 @@ package body Pictlib_Testing.Test_Encoding is
 
    Capacity : constant := 2_000_000;
 
-   type Encoded is record
-      Data : Samples.Bytes_Access;
-      Length : Natural := 0;
-      Outcome : Pictlib.Results.Result;
-      Layout : Encoding.Layout_Kind := Encoding.Auto;
-   end record;
+   subtype Encoded is Samples.Encoded;
 
+   --  A destination that refuses its Fail_At-th write, once, and takes every other.
+   type Flaky is limited new Pictlib.Streams.Destination with record
+      Inner : Pictlib.Streams.Fixed_Buffer_Destination;
+      Calls : Natural := 0;
+      Fail_At : Positive := 1;
+      Writes_After : Natural := 0;
+   end record;
+   overriding function Write (Object : in out Flaky; Buffer : Pictlib.Streams.Byte_Array)
+     return Pictlib.Streams.Destination_Result;
+   overriding function Offset (Object : Flaky) return Pictlib.Destination_Offset is (Object.Inner.Offset);
+   overriding function Flush (Object : in out Flaky) return Pictlib.Errors.Error is (Object.Inner.Flush);
+
+   overriding function Write (Object : in out Flaky; Buffer : Pictlib.Streams.Byte_Array)
+     return Pictlib.Streams.Destination_Result is
+   begin
+      Object.Calls := Object.Calls + 1;
+      if Object.Calls = Object.Fail_At then
+         return (Error => Pictlib.Errors.Make (Pictlib.Errors.Destination_Write_Failed), Count => 0);
+      elsif Object.Calls > Object.Fail_At then
+         Object.Writes_After := Object.Writes_After + 1;
+      end if;
+      return Object.Inner.Write (Buffer);
+   end Write;
+
+   --  Encode through Samples, requiring Bytes_Written to be what the destination holds, failure or not.
    function Encode
      (Item : Kind;
       Width, Height : Positive;
@@ -50,13 +70,12 @@ package body Pictlib_Testing.Test_Encoding is
       Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last;
       Room : Natural := Capacity) return Encoded
    is
-      Picture : constant Samples.Encoded :=
-        Samples.Encode (Item, Width, Height, Settings, Format, Budget, Max_Transfer, Room);
+      Picture : constant Encoded := Samples.Encode (Item, Width, Height, Settings, Format, Budget, Max_Transfer, Room);
    begin
-      Assert (Picture.Bytes_Written = Pictlib.Byte_Count (Picture.Data'Length)
-              or else not Pictlib.Results.Succeeded (Picture.Outcome), "Bytes_Written disagrees with the output");
-      return (Data => Picture.Data, Length => Picture.Data'Length, Outcome => Picture.Outcome,
-              Layout => Picture.Layout);
+      Assert (Picture.Bytes_Written = Pictlib.Byte_Count (Picture.Data'Length),
+              "Bytes_Written" & Picture.Bytes_Written'Image & " disagrees with the" & Picture.Data'Length'Image
+              & " bytes output");
+      return Picture;
    end Encode;
 
    --  Encode, decode with pictlib, and require every pixel, through Expected_Color.
@@ -183,7 +202,7 @@ package body Pictlib_Testing.Test_Encoding is
          Assert (Pictlib.Results.Succeeded (Picture.Outcome), Label & ": encode failed");
          Assert (not Settings.File_Header or else (for all Index in 1 .. 512 => Picture.Data (Index) = 0),
                  Label & ": the file header is not zero");
-         Assert (Picture_Size = (Picture.Length - Header_Bytes) mod 65_536, Label & ": picSize is wrong");
+         Assert (Picture_Size = (Picture.Data'Length - Header_Bytes) mod 65_536, Label & ": picSize is wrong");
          Recorders.Decode (Picture.Data.all, Decoder, Events, Outcome);
          Assert (Pictlib.Results.Succeeded (Outcome), Label & ": enumeration failed");
          Assert (Pictlib.Decoding.Header (Decoder).Version = Pictlib.Extended_Version_2
@@ -198,7 +217,7 @@ package body Pictlib_Testing.Test_Encoding is
             Assert (Events.Events (Index).Op = Expected_Ops (Index), Label & ": wrong opcode" & Index'Image);
          end loop;
          Assert (Pictlib.Decoding.Warning_Count (Decoder) = 0, Label & ": the output draws warnings");
-         Assert (Natural (Events.Events (6).Offset) + 2 = Picture.Length, Label & ": bytes after OpEndPic");
+         Assert (Natural (Events.Events (6).Offset) + 2 = Picture.Data'Length, Label & ": bytes after OpEndPic");
       end Check;
    begin
       Check (Samples.Gradient, Pictlib.Opcodes.Direct_Bits_Rect, (Layout => Encoding.Direct_32, others => <>),
@@ -285,7 +304,7 @@ package body Pictlib_Testing.Test_Encoding is
          Narrow : constant Encoded :=
            Encode (Samples.Translucent, 1, 3, (Layout => Encoding.Direct_32, Keep_Alpha => True, others => <>),
                    Pictlib.ARGB_32);
-         Rows : constant Positive := Narrow.Length - 2 - 12 + 1;
+         Rows : constant Positive := Narrow.Data'Length - 2 - 12 + 1;
       begin
          for Y in 0 .. 2 loop
             Assert (Narrow.Data (Rows + 4 * Y) = Samples.Alpha (Samples.Translucent, 0, Y)
@@ -307,7 +326,7 @@ package body Pictlib_Testing.Test_Encoding is
    begin
       Picture := Encode (Samples.Gradient, 37, 23, (Layout => Encoding.Indexed_8, others => <>));
       Assert (Picture.Outcome.First_Error.Code = Pictlib.Errors.Too_Many_Colors
-              and then Picture.Outcome.First_Error.Context.Actual = 257 and then Picture.Length = 0,
+              and then Picture.Outcome.First_Error.Context.Actual = 257 and then Picture.Data'Length = 0,
               "more than 256 colors were indexed");
       Picture := Encode (Samples.Gradient, 4096, 1, (Layout => Encoding.Direct_32, others => <>));
       Assert (Picture.Outcome.First_Error.Code = Pictlib.Errors.Invalid_Argument,
@@ -327,7 +346,7 @@ package body Pictlib_Testing.Test_Encoding is
       Picture := Encode (Samples.Gradient, 40, 4, Budget => (Defaults with delta Max_Output_Bytes => 600));
       Assert (Picture.Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
               and then Picture.Outcome.First_Error.Context.Limit = Pictlib.Output_Byte_Limit
-              and then Picture.Length = 0,
+              and then Picture.Data'Length = 0,
               "the output limit was not enforced before writing");
       --  The row buffers are a row before packing and its worst case packed: 120 + 121 bytes for 40 direct
       --  pixels, 40 + 41 for 40 indexed ones.
@@ -361,6 +380,25 @@ package body Pictlib_Testing.Test_Encoding is
       Assert (Cramped.Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
               and then Cramped.Outcome.First_Error.Context.Limit = Pictlib.Output_Byte_Limit,
               "a full destination was not reported");
+      --  A destination that fails once and would take the rest is written nothing more: no gap, no end opcode
+      --  after one.
+      declare
+         Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
+         Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
+         Output : aliased Flaky;
+         Encoder : Encoding.Encoder;
+         Outcome : Pictlib.Results.Result;
+      begin
+         Pictlib.Streams.Open (Output.Inner, Storage);
+         Output.Fail_At := 40;
+         Encoding.Initialize (Encoder, Output'Access);
+         Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 37, 23));
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Destination_Write_Failed,
+                 "a failed write was not reported: " & Outcome.First_Error.Code'Image);
+         Assert (Output.Writes_After = 0, "the encoder wrote" & Output.Writes_After'Image & " times after a failure");
+         Assert (Encoding.Bytes_Written (Encoder) = Pictlib.Byte_Count (Output.Offset),
+                 "Bytes_Written disagrees with the destination after a failure");
+      end;
    end Destinations;
 
    procedure States (T : in out AUnit.Test_Cases.Test_Case'Class) is

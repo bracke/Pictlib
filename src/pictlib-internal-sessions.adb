@@ -233,9 +233,13 @@ package body Pictlib.Internal.Sessions is
       In_Opcode : Boolean := True) return Results.Result
    is
       Keep : Boolean;
-      Outcome : Results.Result := Admit_Item (S, Length, Keep);
+      --  The opcode's own budget first, so whether the item is kept never changes which pictures fail.
+      Outcome : Results.Result := (if In_Opcode then Admit_Data (S, Length) else Results.Success);
       Data : Streams.Byte_Array_Access;
    begin
+      if Results.Succeeded (Outcome) then
+         Outcome := Admit_Item (S, Length, Keep);
+      end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
       elsif not Keep then

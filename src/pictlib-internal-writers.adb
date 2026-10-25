@@ -10,6 +10,8 @@ package body Pictlib.Internal.Writers is
       Object.Total := 0;
       Object.Origin := 0;
       Object.Max_Bytes := Max_Bytes;
+      Object.Base := (if Output = null then 0 else Output.Offset);
+      Object.Failure := Results.Success;
    end Start;
 
    function Count (Object : Writer) return Byte_Count is (Object.Total);
@@ -22,22 +24,33 @@ package body Pictlib.Internal.Writers is
    function Picture_Count (Object : Writer) return Byte_Count is (Object.Total - Object.Origin);
 
    function Put (Object : in out Writer; Data : Streams.Byte_Array) return Results.Result is
-      Outcome : Results.Result := Results.Success;
    begin
-      if Byte_Count (Data'Length) > Object.Max_Bytes - Object.Total then
-         return Results.Failure
-           (Errors.Make
-              (Errors.Limit_Exceeded,
-               (Destination => Destination_Offset (Object.Total), Expected => Object.Max_Bytes,
-                Actual => Object.Total + Data'Length, Limit => Output_Byte_Limit, others => <>)));
+      if not Results.Succeeded (Object.Failure) then
+         return Object.Failure;
+      elsif Byte_Count (Data'Length) > Object.Max_Bytes - Object.Total then
+         Object.Failure :=
+           Results.Failure
+             (Errors.Make
+                (Errors.Limit_Exceeded,
+                 (Destination => Destination_Offset (Object.Total), Expected => Object.Max_Bytes,
+                  Actual => Object.Total + Data'Length, Limit => Output_Byte_Limit, others => <>)));
+         return Object.Failure;
+      elsif Object.Output /= null and then Data'Length > 0 then
+         Object.Failure := Streams.Write_All (Object.Output.all, Data);
       end if;
-      if Object.Output /= null and then Data'Length > 0 then
-         Outcome := Streams.Write_All (Object.Output.all, Data);
-      end if;
-      if Results.Succeeded (Outcome) then
+      if Results.Succeeded (Object.Failure) then
          Object.Total := Object.Total + Data'Length;
+      else
+         --  Count what the destination took of Data before it failed, as far as its offset says.
+         declare
+            Moved : constant Destination_Offset := Object.Output.Offset;
+            Taken : constant Byte_Count :=
+              (if Moved <= Object.Base then 0 else Byte_Count (Moved - Object.Base));
+         begin
+            Object.Total := Byte_Count'Min (Object.Total + Data'Length, Byte_Count'Max (Object.Total, Taken));
+         end;
       end if;
-      return Outcome;
+      return Object.Failure;
    end Put;
 
    function Put_Byte (Object : in out Writer; Value : Natural) return Results.Result is

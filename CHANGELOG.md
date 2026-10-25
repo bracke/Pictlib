@@ -94,6 +94,16 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - HeaderOp's own warnings and failures name its offset and ordinal; an
   origin moved out of reach names the origin's bound; the picture byte and
   metadata budgets name the amount that crossed them.
+- The encoder writes nothing more to a destination after it fails once, so
+  a destination that recovers never holds a picture with a gap in it, and
+  `Bytes_Written` counts what the destination took of a cut-short write.
+- An invert verb after `HiliteMode` highlights its shape instead of
+  inverting it, as the specification now says.
+- A shape stopped by `Max_Total_Allocation_Bytes` reports that limit, not
+  `Max_Drawing_Work`.
+- A retained comment is checked against `Max_Opcode_Bytes` before the
+  metadata budgets, so the retention policy never changes which limit a
+  picture crosses.
 
 ### Internal structure
 

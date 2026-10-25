@@ -15,7 +15,7 @@ package Pictlib.Internal.Writers is
    procedure Start (Object : out Writer; Output : access Streams.Destination'Class; Max_Bytes : Byte_Count);
    --  Count.
    --  @param Object Writer.
-   --  @return Bytes produced so far.
+   --  @return Bytes produced so far: after a destination failure, what the destination took.
    function Count (Object : Writer) return Byte_Count;
    --  Start picture.
    --  @param Object Writer whose current count becomes picture offset 0, for alignment.
@@ -25,7 +25,8 @@ package Pictlib.Internal.Writers is
    --  @return Bytes produced since Start_Picture.
    function Picture_Count (Object : Writer) return Byte_Count;
 
-   --  Put.
+   --  Put. The first failure is kept: every later Put returns it and writes nothing, so a destination that fails
+   --  once never receives the rest of the picture after a gap.
    --  @param Object Writer.
    --  @param Data Bytes to produce.
    --  @return Success, Limit_Exceeded beyond Max_Bytes, or the destination's failure.
@@ -64,5 +65,8 @@ private
       Total : Byte_Count := 0;
       Origin : Byte_Count := 0;
       Max_Bytes : Byte_Count := 0;
+      --  The destination's offset at Start, to count a transfer a failure cut short.
+      Base : Destination_Offset := 0;
+      Failure : Results.Result := Results.Success;
    end record;
 end Pictlib.Internal.Writers;
