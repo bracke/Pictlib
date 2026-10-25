@@ -131,7 +131,9 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   `Embedded_Image_Failed` again, and a frame of more components than
   jpeglib decodes is `Unsupported_Feature`; jpeglib's buffers outgrowing
   their share name the share they had. That share is sized over the image's
-  extent rounded up to 16-pixel MCUs, so narrow subsampled JPEGs decode.
+  extent rounded up to 16-pixel MCUs, so narrow subsampled JPEGs decode:
+  `quicktime.narrow_image` renders a 1 × 16000 progressive 4:2:0 JPEG
+  written by jpeglib's encoder, which the unpadded share refused.
 - The picture reader no longer clears the rest of a caller's buffer on
   every short read, which made long payloads from a source that delivers in
   small pieces quadratic in work no budget counted; nor does the source

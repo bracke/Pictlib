@@ -1,6 +1,7 @@
 with AUnit.Assertions;
 with Jpeglib;
 with Jpeglib.Decoding;
+with Jpeglib.Encoding;
 with Jpeglib.Images;
 with Jpeglib.Limits;
 with Jpeglib.Results;
@@ -134,6 +135,7 @@ package body Pictlib_Testing.Test_QuickTime is
    procedure Unsupported_Images (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Broken_Images (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Limits (T : in out AUnit.Test_Cases.Test_Case'Class);
+   procedure Narrow_Image (T : in out AUnit.Test_Cases.Test_Case'Class);
 
    overriding function Name (T : Test) return AUnit.Message_String is
       pragma Unreferenced (T);
@@ -150,6 +152,7 @@ package body Pictlib_Testing.Test_QuickTime is
       Register_Routine (T, Unsupported_Images'Access, "quicktime.unsupported");
       Register_Routine (T, Broken_Images'Access, "quicktime.broken");
       Register_Routine (T, Limits'Access, "quicktime.limits");
+      Register_Routine (T, Narrow_Image'Access, "quicktime.narrow_image");
    end Register_Tests;
 
    procedure Placement (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -447,4 +450,47 @@ package body Pictlib_Testing.Test_QuickTime is
       Assert (Pictlib.Results.Succeeded (Outcome), "a small JPEG under an aggregate quota of the per-allocation "
               & "budget failed with " & Outcome.First_Error.Code'Image);
    end Limits;
+
+   --  A narrow, tall, progressive 4:2:0 JPEG, which jpeglib's encoder writes: jpeglib holds every coefficient of
+   --  its MCU-padded extent, many times its pixels, and it renders under the default limits.
+   procedure Narrow_Image (T : in out AUnit.Test_Cases.Test_Case'Class) is
+      pragma Unreferenced (T);
+      use type Jpeglib.Byte_Count;
+      Tall : constant := 16_000;
+      Pixels : constant Jpeglib.Streams.Byte_Array_Access := new Jpeglib.Streams.Byte_Array (1 .. 3 * Tall);
+      Encoded : constant Jpeglib.Streams.Byte_Array_Access := new Jpeglib.Streams.Byte_Array (1 .. 4_000_000);
+      Output : aliased Jpeglib.Streams.Fixed_Buffer_Destination;
+      Encoder : Jpeglib.Encoding.Encoder;
+      Result : Jpeglib.Results.Result;
+   begin
+      for Index in Pixels'Range loop
+         Pixels (Index) := Jpeglib.Byte ((Index * 7) mod 256);
+      end loop;
+      Jpeglib.Streams.Open (Output, Encoded);
+      Jpeglib.Encoding.Initialize
+        (Encoder, Output'Access,
+         (Progressive => Jpeglib.Encoding.Balanced_Progressive, Subsampling => Jpeglib.Encoding.Subsampling_420,
+          others => <>));
+      Result := Jpeglib.Encoding.Encode_Image
+        (Encoder, (Descriptor => (Width => 1, Height => Tall, Format => Jpeglib.Images.RGB_24, Stride => 3,
+                                  Accessible_Bytes => 3 * Tall),
+                   Storage => Pixels));
+      if Jpeglib.Results.Succeeded (Result) then
+         Result := Jpeglib.Encoding.Finish (Encoder);
+      end if;
+      Assert (Jpeglib.Results.Succeeded (Result), "jpeglib did not encode the narrow image");
+      declare
+         Length : constant Natural := Natural (Output.Offset);
+         Data : constant Bytes := [for Index in 1 .. Length => Pictlib.Byte (Encoded (Index))];
+         Picture : aliased constant Bytes := Image (QuickTime ("jpeg", 1, Tall, Data), 1, Tall);
+         Storage : aliased Bytes := [1 .. 3 * Tall => 0];
+         Decoder : Pictlib.Decoding.Decoder;
+         Outcome : Pictlib.Results.Result;
+      begin
+         Canvases.Render (Picture, Decoder, Canvases.View (Storage'Access, 1, Tall), Outcome);
+         Assert (Pictlib.Results.Succeeded (Outcome),
+                 "a narrow progressive JPEG failed with " & Outcome.First_Error.Code'Image & ", expected"
+                 & Outcome.First_Error.Context.Expected'Image & ", actual" & Outcome.First_Error.Context.Actual'Image);
+      end;
+   end Narrow_Image;
 end Pictlib_Testing.Test_QuickTime;
