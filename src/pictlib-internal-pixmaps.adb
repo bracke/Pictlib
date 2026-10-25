@@ -67,7 +67,6 @@ package body Pictlib.Internal.Pixmaps is
       end;
    end Read_Packed_Count;
 
-   --  Skip rows: unpacked rows of Raw_Row_Length bytes, or rows each prefixed by its packed count.
    --  A pixmap's extent: Pixmap_Invalid for inverted bounds.
    function Extent (S : Sessions.Session; Bounds : Geometry.Rect; Width, Height : out Natural) return Results.Result is
    begin

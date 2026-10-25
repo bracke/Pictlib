@@ -85,7 +85,8 @@ package Pictlib.Internal.Pixmaps is
    --  @param Header The tile's header, as a PackBitsRect's: depth at most 8, a nonempty extent, a layout.
    --  @param For_Decoding True to read the color table into Header and check rows cover the width, as decoding
    --  needs; False to skip the table.
-   --  @return Success, Pattern_Invalid for a depth above 8 or empty bounds, or the PixMap's failure.
+   --  @return Success, Pattern_Invalid for a depth above 8 or empty bounds, Pixmap_Invalid for inverted bounds as
+   --  for any PixMap, or the PixMap's other failures.
    function Read_Pattern_Header
      (S : in out Sessions.Session;
       Header : out Bits_Header;

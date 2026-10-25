@@ -103,9 +103,14 @@ package body Pictlib.Internal.Text is
          end if;
       end loop;
       Slot := Oldest;
+      --  A font that cannot even be read costs no cached font its slot.
+      if File_Bytes (Path) = 0 then
+         return Textrender.Font_Load_Failed;
+      end if;
       declare
          Item : Slot_Type renames Cache.Items (Oldest);
       begin
+         --  Loading replaces whatever the slot held, so it is free until the load succeeds.
          Item.Used := False;
          Status := Item.Renderer.Load_Font
            (Path => Path, Pixel_Size => Size, Cell_Width => Cell (Size), Cell_Height => Cell (Size),

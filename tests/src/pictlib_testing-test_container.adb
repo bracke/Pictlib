@@ -367,6 +367,17 @@ package body Pictlib_Testing.Test_Container is
                  "a retained file header was held to the per-opcode budget: " & Outcome.First_Error.Code'Image);
       end;
 
+      --  The header's opcodes are opcodes: HeaderOp's 24 bytes and the version opcode's data count against the
+      --  per-opcode budget as they would anywhere.
+      Budget := Pictlib.Limits.Default_Limits;
+      Budget.Max_Opcode_Bytes := 23;
+      Recorders.Expect_Failure (V2_In_File, Pictlib.Errors.Limit_Exceeded, "HeaderOp over the opcode budget",
+                                16#0C00#, Budget => Budget, Limit => Pictlib.Opcode_Byte_Limit, Ordinal => 1);
+      Budget.Max_Opcode_Bytes := 1;
+      Recorders.Expect_Failure (V2_In_File, Pictlib.Errors.Limit_Exceeded, "version data over the opcode budget",
+                                16#0011#, Budget => Budget, Limit => Pictlib.Opcode_Byte_Limit, Ordinal => 0);
+      Budget := Pictlib.Limits.Default_Limits;
+
       --  A fontName too short for its own name is malformed whatever the retention policy.
       declare
          Short_Name : aliased constant Bytes :=

@@ -72,9 +72,11 @@ package body Pictlib_Testing.Canvases is
       Op : Pictlib.Opcode := 0;
       Options : Pictlib.Decoding.Options := (others => <>);
       Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
-      Limit : Pictlib.Limit_Kind := Pictlib.No_Limit)
+      Limit : Pictlib.Limit_Kind := Pictlib.No_Limit;
+      State : Pictlib.Decoding.Decoder_State := Pictlib.Decoding.Failed)
    is
       use AUnit.Assertions;
+      use type Pictlib.Decoding.Decoder_State;
       use type Pictlib.Errors.Error_Code;
       use type Pictlib.Limit_Kind;
       use type Pictlib.Opcode;
@@ -89,6 +91,11 @@ package body Pictlib_Testing.Canvases is
               Label & ": the failing opcode was not recorded");
       Assert (Limit = Pictlib.No_Limit or else Outcome.First_Error.Context.Limit = Limit,
               Label & ": expected the " & Limit'Image & ", got " & Outcome.First_Error.Context.Limit'Image);
+      Assert (Pictlib.Decoding.State (Decoder) = State,
+              Label & ": the decoder is " & Pictlib.Decoding.State (Decoder)'Image & ", expected " & State'Image);
+      Assert (Pictlib.Decoding.Last_Error (Decoder).Code
+              = (if State = Pictlib.Decoding.Failed then Code else Pictlib.Errors.No_Error),
+              Label & ": the decoder's last error is " & Pictlib.Decoding.Last_Error (Decoder).Code'Image);
    end Expect_Failure;
 
    procedure Expect_Lenient

@@ -48,7 +48,8 @@ package Pictlib.Internal.Text is
    type Font_Cache is limited private;
 
    --  Acquire.
-   --  @param Cache Cache of loaded fonts; the least recently used one is replaced when it is full.
+   --  @param Cache Cache of loaded fonts; the least recently used one is replaced when it is full, unless Path
+   --  cannot be read at all. A file that is read but does not load still frees the slot it was loaded into.
    --  @param Path TrueType file.
    --  @param Size Pixel size.
    --  @param Slot The renderer's slot.

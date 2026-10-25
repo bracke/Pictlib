@@ -104,6 +104,15 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - A retained comment is checked against `Max_Opcode_Bytes` before the
   metadata budgets, so the retention policy never changes which limit a
   picture crosses.
+- The version opcode's data and HeaderOp's 24 bytes count against
+  `Max_Opcode_Bytes`, as they would anywhere in a picture.
+- A frame over `Max_Canvas_Pixels` leaves the decoder `Failed` with that
+  error, since no view can render it; a rejected view still leaves it
+  `Header_Read`, as the specification now says of both.
+- A font file that cannot be read no longer evicts a loaded font.
+- The specification describes text cells stretched to their ink, the work
+  of copying a region shape, the font file bytes a load is charged, and
+  `Font_Unavailable`; `Warning_Record_Limit` is documented as never crossed.
 
 ### Internal structure
 

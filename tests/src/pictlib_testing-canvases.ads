@@ -35,7 +35,8 @@ package Pictlib_Testing.Canvases is
       Options : Pictlib.Decoding.Options := (others => <>);
       Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last);
 
-   --  Expect failure: rendering Input fails with Code, naming Op when Op is not 0.
+   --  Expect failure: rendering Input fails with Code, naming Op when Op is not 0 and Limit when it is given, and
+   --  leaves the decoder in State, with Code as its last error when that is Failed and none otherwise.
    procedure Expect_Failure
      (Input : aliased Pictlib.Streams.Byte_Array;
       Width, Height : Positive;
@@ -44,7 +45,8 @@ package Pictlib_Testing.Canvases is
       Op : Pictlib.Opcode := 0;
       Options : Pictlib.Decoding.Options := (others => <>);
       Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
-      Limit : Pictlib.Limit_Kind := Pictlib.No_Limit);
+      Limit : Pictlib.Limit_Kind := Pictlib.No_Limit;
+      State : Pictlib.Decoding.Decoder_State := Pictlib.Decoding.Failed);
 
    --  Render leniently: success, Expected, and a warning with Code.
    procedure Expect_Lenient

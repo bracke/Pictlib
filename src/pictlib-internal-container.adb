@@ -188,9 +188,15 @@ package body Pictlib.Internal.Container is
       end if;
       Info.Version := (if Detected = Detected_1 then Version_1 else Version_2);
       S.Version := Info.Version;
-      --  The opcode and its data, each Opcode_Bytes long.
+      --  The opcode and its data, each Opcode_Bytes long; the data counts against the per-opcode budget, as
+      --  every opcode's does.
       Event.Data_Length := Byte_Count (Opcode_Bytes (Info.Version));
-      return Sessions.Attributed (Streams.Skip_Exact (S.Stream, 2 * Event.Data_Length), Event);
+      Outcome := Streams.Skip_Exact (S.Stream, Event.Data_Length);
+      if Results.Succeeded (Outcome) then
+         Sessions.Begin_Opcode_Data (S);
+         Outcome := Sessions.Skip_Data (S, Event.Data_Length);
+      end if;
+      return Sessions.Attributed (Outcome, Event);
    end Read_Version_Opcode;
 
    --  Version 2 continues with the HeaderOp at an even offset.
@@ -237,6 +243,11 @@ package body Pictlib.Internal.Container is
       Found := True;
       Event := (Offset => Header_Offset, Op => Opcodes.Header_Op, Data_Length => Header_Op_Bytes, others => <>);
       Outcome := Sessions.Claim_Ordinal (S, Event.Ordinal);
+      if Results.Succeeded (Outcome) then
+         --  Its data counts against the per-opcode budget, as it would anywhere in the picture.
+         Sessions.Begin_Opcode_Data (S);
+         Outcome := Sessions.Attributed (Sessions.Admit_Data (S, Header_Op_Bytes), Event);
+      end if;
       if Results.Succeeded (Outcome) then
          Outcome := Sessions.Attributed (Read_Header_Op_Data (S, Event, Info), Event);
       end if;

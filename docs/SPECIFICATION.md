@@ -240,14 +240,15 @@ are retained, never interpreted.
   change and, after a space, `SpExtra`. There is no kerning and no antialiasing: coverage of 128 or
   more is ink. The character's cell — from its left edge or the pen, whichever is less, to its
   right edge or the advanced pen, and from the font's ascent above the baseline to its descent
-  below — is drawn through the text mode with ink as a black source and the rest as a white one, so
+  below, stretched to the glyph's ink where that reaches further — is drawn through the text mode with ink as a black source and the rest as a white one, so
   `srcOr` changes only ink and `srcCopy` paints the cell in the background color.
 - Faces: bold smears ink one pixel right and widens the advance by one; italic is textrender's
   synthetic oblique; underline draws the row below the baseline under the whole string; condense and
   extend narrow and widen the advance by one. Outline and shadow are `Unsupported_Feature` in
   `Strict` and drawn plain with a warning otherwise.
-- A font's renderer and atlas (a square of `max (256, 8 × size + 8)` pixels) count against
-  `Max_Allocation_Bytes`; up to eight fonts stay loaded during one `Render`.
+- A font's atlas (a square of `max (256, 8 × size + 8)` pixels) and the copy of its file the
+  renderer keeps count against `Max_Allocation_Bytes`; up to eight fonts stay loaded during one
+  `Render`. A font file that cannot be read replaces no loaded font.
 
 ### 3.5 Comments and QuickTime
 
@@ -395,8 +396,9 @@ with `Invalid_State` (`Operation_Cancelled` after `Cancel`) and change neither t
 last error. `Render` after `Enumerate` requires `Reset` (the stream is forward-only).
 
 `Render` rejects an invalid view or one whose size is not the frame's with `Invalid_Argument`,
-leaving the decoder in `Header_Read`; a frame above `Max_Canvas_Pixels` or a view above
-`Max_Output_Bytes` fails with `Limit_Exceeded`. Drawing opcodes a release does not render yet
+and a view above `Max_Output_Bytes` with `Limit_Exceeded`, leaving the decoder in `Header_Read`
+so another view can be given. A frame above `Max_Canvas_Pixels` fails with `Limit_Exceeded` and
+leaves the decoder `Failed`: no view can render it. Drawing opcodes a release does not render yet
 fail with `Unsupported_Feature` in `Strict` and are skipped with an `Approximated_Rendering`
 warning otherwise; port state they depend on is tracked. In `Recover_When_Safe`, malformed
 picture data (truncation, malformed regions, pixmaps, PackBits, color tables, patterns or opcode
@@ -469,6 +471,7 @@ before or as the work is done, whether or not anything is drawn, and nothing is 
 | Work | Units |
 | --- | --- |
 | a shape opcode | 1, plus every row its shape holds and every row painting walks |
+| a region shape | every unit of its region's size, for the copy moved to the origin, besides building it |
 | building a shape | every row walked and every unit of span, region, polygon and line work; building stops at the budget left, and a shape that stops covers nothing |
 | painting | every pixel painted, underlines included |
 | a copied pixmap | every pixel of every row converted and every destination row walked; 1 for every row a copy skips, a QuickTime placeholder's included |
@@ -486,10 +489,12 @@ bounds a picture to about a minute.
 `Opcode_Length_Invalid`, `Region_Invalid`, `Polygon_Invalid`, `Pixmap_Invalid`,
 `PackBits_Invalid`, `Color_Table_Invalid`, `Pattern_Invalid`, `Transfer_Mode_Invalid`,
 `Embedded_Image_Failed`, `Too_Many_Colors`, `Missing_End_Opcode`, `Trailing_Data`,
-`Unsupported_Feature`, `Invalid_State`, `Invalid_Argument`, `Integer_Overflow`, `Limit_Exceeded`,
+`Font_Unavailable`, `Unsupported_Feature`, `Invalid_State`, `Invalid_Argument`, `Integer_Overflow`, `Limit_Exceeded`,
 `Operation_Cancelled`, `Internal_Invariant_Failed`. Identifiers are stable dotted strings
 (`pict.*`). `Diagnostic_Context` carries source/destination offset, opcode, opcode ordinal, row,
-expected/actual counts, limit kind and an underlying code. Sizes taken from a picture saturate
+expected/actual counts, limit kind and an underlying code. Every limit kind but
+`Warning_Record_Limit` can be reported by `Limit_Exceeded`; that one names `Max_Warning_Records`,
+which caps the warning log instead of failing (section 6). Sizes taken from a picture saturate
 instead of overflowing, so an overflowing size is reported as the limit it exceeds;
 `Integer_Overflow` is kept for callers and for parity with `jpeglib`.
 

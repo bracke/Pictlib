@@ -27,6 +27,8 @@ package Pictlib is
    type Header_Policy is (Auto, Has_File_Header, No_File_Header);
    type Pixel_Format is (RGB_24, BGR_24, RGBA_32, BGRA_32, ARGB_32);
 
+   --  The limit a Limit_Exceeded failure crossed. Warning_Record_Limit names Max_Warning_Records, which caps the
+   --  warning log and is never crossed.
    type Limit_Kind is
      (No_Limit,
       Frame_Width_Limit,

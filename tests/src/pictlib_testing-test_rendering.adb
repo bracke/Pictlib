@@ -348,9 +348,10 @@ package body Pictlib_Testing.Test_Rendering is
       Canvases.Expect_Failure (Unpacked_Bitmap, 8, 2, Errors.Limit_Exceeded, "canvas pixels",
                                Budget => (Defaults with delta Max_Canvas_Pixels => 15),
                                Limit => Pictlib.Canvas_Pixel_Limit);
+      --  A view over the output limit can be replaced by another; a frame over the canvas limit cannot.
       Canvases.Expect_Failure (Unpacked_Bitmap, 8, 2, Errors.Limit_Exceeded, "output bytes",
                                Budget => (Defaults with delta Max_Output_Bytes => 47),
-                               Limit => Pictlib.Output_Byte_Limit);
+                               Limit => Pictlib.Output_Byte_Limit, State => Decoding.Header_Read);
       Canvases.Expect_Failure (Unpacked_Bitmap, 8, 2, Errors.Limit_Exceeded, "drawing work", 16#98#,
                                Budget => (Defaults with delta Max_Drawing_Work => 15),
                                Limit => Pictlib.Drawing_Work_Limit);

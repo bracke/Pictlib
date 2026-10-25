@@ -13,7 +13,10 @@ package Pictlib.Internal.Typesetting is
    --  @param Event The text opcode, for diagnostics.
    --  @param Characters Mac Roman characters.
    --  @return Success; Font_Unavailable strictly when no font resolves or loads; Unsupported_Feature strictly for
-   --  outline and shadow faces, text ratios other than 1:1 and sizes above 512.
+   --  outline and shadow faces, text ratios other than 1:1 and sizes above 512; Transfer_Mode_Invalid strictly
+   --  for an unknown text mode; Limit_Exceeded when a font's allocation, its load or a glyph crosses the budgets.
+   --  Leniently, sizes above 512 are skipped with a warning, and outline, shadow and other ratios are drawn
+   --  plain at the stated size.
    function Draw
      (P : in out Rendering.Painter;
       S : in out Sessions.Session;

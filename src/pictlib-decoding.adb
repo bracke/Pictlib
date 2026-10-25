@@ -210,7 +210,10 @@ package body Pictlib.Decoding is
       declare
          Checked : constant Results.Result := Check_View (Object, Output);
       begin
-         if not Results.Succeeded (Checked) then
+         if not Results.Succeeded (Checked) and then Checked.First_Error.Context.Limit = Canvas_Pixel_Limit then
+            --  The frame, not the view, is over the limit: no view can render this picture.
+            return Finish (Object, Checked);
+         elsif not Results.Succeeded (Checked) then
             --  A bad view is the caller's mistake: the picture is untouched and can still be rendered.
             return Checked;
          end if;

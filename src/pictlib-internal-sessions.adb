@@ -35,7 +35,8 @@ package body Pictlib.Internal.Sessions is
       if Item.Source = 0 then
          Item.Source := S.Stream.Offset;
       end if;
-      --  A warning is never dropped: Max_Warning_Records bounds the log, so it needs no allocation quota.
+      --  Max_Warning_Records bounds the log, so it needs no allocation quota; past it the last record says how
+      --  many warnings were suppressed.
       Diagnostics.Add (S.Kept.Log, Errors.Make_Warning (Code, Severity, Item), S.Budget.Max_Warning_Records);
    end Warn;
 
