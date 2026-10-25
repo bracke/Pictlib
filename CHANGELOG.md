@@ -215,6 +215,8 @@ All tooling is Ada, in the `tests` crate:
 - Every tool reports failures the same way, as `tool: message` on standard
   error with a failing exit status.
 - CI steps are single commands.
+- The library builds with `-gnatwe`: a warning or style finding in any
+  unit it compiles fails the build, so `pictlib_check` cannot pass with one.
 - The tests crate has one seeded pseudo-random generator
   (`Pictlib_Testing.Random`) and one file loader; the encoder tests check
   the alpha plane's values byte for byte, independently of the decoder.
