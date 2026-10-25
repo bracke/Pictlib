@@ -80,6 +80,8 @@ package body Pictlib_Testing.Test_Text is
       Pen : Float := Start_H;
    begin
       Assert (Font.Load_Font (Path, Size, Cell, Cell, Side, Side) = Textrender.Success, "oracle font did not load");
+      --  Each glyph is drawn as soon as it is taken, so the oracle stays right when the atlas empties.
+      Font.Set_Atlas_Eviction (True);
       for Code of Text_Points loop
          declare
             Metric : Textrender.Glyph_Metric;
@@ -196,6 +198,7 @@ package body Pictlib_Testing.Test_Text is
    procedure Spacing_And_Clipping (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Text_Work (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Font_Cache (T : in out AUnit.Test_Cases.Test_Case'Class);
+   procedure Atlas_Eviction (T : in out AUnit.Test_Cases.Test_Case'Class);
 
    overriding function Name (T : Test) return AUnit.Message_String is
       pragma Unreferenced (T);
@@ -216,6 +219,7 @@ package body Pictlib_Testing.Test_Text is
       Register_Routine (T, Spacing_And_Clipping'Access, "text.spacing_and_clipping");
       Register_Routine (T, Text_Work'Access, "text.work");
       Register_Routine (T, Font_Cache'Access, "text.font_cache");
+      Register_Routine (T, Atlas_Eviction'Access, "text.atlas_eviction");
    end Register_Tests;
 
    procedure Plain_Text (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -535,4 +539,28 @@ package body Pictlib_Testing.Test_Text is
       --  Clear takes the lock itself.
       Text.Clear (Cache);
    end Font_Cache;
+
+   --  A string of more glyphs than the atlas holds empties it part-way: the glyphs taken before still draw.
+   procedure Atlas_Eviction (T : in out AUnit.Test_Cases.Test_Case'Class) is
+      pragma Unreferenced (T);
+      Size : constant := 30;
+      Many : constant String := [for Index in 1 .. 94 => Character'Val (16#20# + Index)];
+      Picture : aliased constant Bytes := Pic (Size_Op (Size) & Long_Text (22, 2, Many));
+   begin
+      --  The string does empty an atlas of the size pictlib gives this font.
+      declare
+         Font : Textrender.Renderer;
+         Metric : Textrender.Glyph_Metric;
+      begin
+         Assert (Font.Load_Font (Sans, Size, 2 * Size + 2, 2 * Size + 2, 256, 256) = Textrender.Success,
+                 "the font did not load");
+         Font.Set_Atlas_Eviction (True);
+         for Code of Points (Many) loop
+            Assert (Font.Get_Glyph (Code, Metric) = Textrender.Success, "a glyph is missing");
+         end loop;
+         Assert (Font.Atlas_Generation > 0, "the string fits the atlas, so it tests nothing");
+      end;
+      Canvases.Expect_Raster (Picture, Width, Height, Expected (Sans, Size, 2, 22, Many),
+                              "a string that empties the atlas", With_Fonts);
+   end Atlas_Eviction;
 end Pictlib_Testing.Test_Text;

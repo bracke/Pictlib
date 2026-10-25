@@ -2,7 +2,6 @@ with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Drawing;
-with Pictlib.Internal.Picture_Stream;
 with Pictlib.Internal.Pixmaps;
 with Pictlib.Internal.Region_Reader;
 with Pictlib.Internal.Regions;

@@ -62,12 +62,11 @@ package body Pictlib.Internal.Container is
       Info : in out Pictures.Header_Info) return Results.Result
    is
       Header_Op_Context : constant Errors.Diagnostic_Context := Sessions.Context_Of (Event);
-      Context : constant Bytes.Opcode_Context := Bytes.Within (Opcodes.Header_Op);
       First, Second : Interfaces.Unsigned_16;
-      Outcome : Results.Result := Bytes.Read_U16_BE (S.Stream.all, First, Context);
+      Outcome : Results.Result := Bytes.Read_U16_BE (S.Stream.all, First);
    begin
       if Results.Succeeded (Outcome) then
-         Outcome := Bytes.Read_U16_BE (S.Stream.all, Second, Context);
+         Outcome := Bytes.Read_U16_BE (S.Stream.all, Second);
       end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
@@ -76,15 +75,15 @@ package body Pictlib.Internal.Container is
       if First = 16#FFFF# and then Second = 16#FFFF# then
          Info.Version := Version_2;
          --  The fixed-point bounds are stored x before y: left, top, right, bottom (as Netpbm writes them).
-         Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Fixed_Bounds.Left, Context);
+         Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Fixed_Bounds.Left);
          if Results.Succeeded (Outcome) then
-            Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Fixed_Bounds.Top, Context);
+            Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Fixed_Bounds.Top);
          end if;
          if Results.Succeeded (Outcome) then
-            Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Fixed_Bounds.Right, Context);
+            Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Fixed_Bounds.Right);
          end if;
          if Results.Succeeded (Outcome) then
-            Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Fixed_Bounds.Bottom, Context);
+            Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Fixed_Bounds.Bottom);
          end if;
          if Results.Succeeded (Outcome) then
             Outcome := Streams.Skip_Exact (S.Stream.all, 4);
@@ -92,12 +91,12 @@ package body Pictlib.Internal.Container is
          return Outcome;
       elsif First = Extended_Header_Version then
          Info.Version := Extended_Version_2;
-         Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Horizontal_Resolution, Context);
+         Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Horizontal_Resolution);
          if Results.Succeeded (Outcome) then
-            Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Vertical_Resolution, Context);
+            Outcome := Bytes.Read_Fixed (S.Stream.all, Info.Vertical_Resolution);
          end if;
          if Results.Succeeded (Outcome) then
-            Outcome := Bytes.Read_Rect (S.Stream.all, Info.Source_Rect, Context);
+            Outcome := Bytes.Read_Rect (S.Stream.all, Info.Source_Rect);
          end if;
          if Results.Succeeded (Outcome) then
             Outcome := Streams.Skip_Exact (S.Stream.all, 4);
@@ -219,10 +218,7 @@ package body Pictlib.Internal.Container is
    begin
       Event := (others => <>);
       Found := False;
-      if not Results.Succeeded (Outcome)
-        and then Outcome.First_Error.Code = Errors.Source_Unexpected_End
-        and then S.Offset = Header_Offset
-      then
+      if Sessions.Is_Boundary_End (Outcome) then
          --  The input ends right after the version opcode, at an opcode boundary: the picture has no
          --  HeaderOp, and leniently it then ends without its end opcode, as the opcode reader reports.
          return Sessions.Reject_Or_Warn

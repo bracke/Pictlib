@@ -9,7 +9,8 @@ package Pictlib.Pictures is
       Version : PICT_Version := Version_1;
       --  True when the 512-byte application header of a PICT file preceded the picture.
       Has_File_Header : Boolean := False;
-      --  The low 16 bits of the picture's length as the picture states it; unreliable for version 2.
+      --  The low 16 bits of the picture's length as the picture states it; unreliable in either version, so never
+      --  checked.
       Picture_Size : Interfaces.Unsigned_16 := 0;
       Frame : Geometry.Rect;
       --  True when a version 2 picture carried its HeaderOp (16#0C00#).

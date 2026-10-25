@@ -399,19 +399,26 @@ package body Pictlib.Encoding is
       Colors : Palette) return Results.Result
    is
       Budget : Limits.Limit_Set renames Object.Encode_Limits;
-      Header_Bytes : constant Byte_Count := (if Settings.File_Header then Internal.File_Header_Bytes else 0);
+      File_Header : constant Streams.Byte_Array (1 .. Internal.File_Header_Bytes) := [others => 0];
       Measure : Writers.Writer;
       Output : Writers.Writer;
-      Outcome : Results.Result;
+      Outcome : Results.Result := Results.Success;
    begin
-      Writers.Start (Measure, null, Budget.Max_Output_Bytes - Byte_Count'Min (Header_Bytes, Budget.Max_Output_Bytes));
-      Outcome := Write_Picture (Measure, Image, Settings, Item, Colors, 0);
+      --  The dry run counts what the output will hold, the file header included, against the limit as it was
+      --  set, so a picture that does not fit is reported in the caller's terms.
+      Writers.Start (Measure, null, Budget.Max_Output_Bytes);
+      if Settings.File_Header then
+         Outcome := Writers.Put (Measure, File_Header);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Write_Picture (Measure, Image, Settings, Item, Colors, 0);
+      end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
       Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes);
       if Settings.File_Header then
-         Outcome := Writers.Put (Output, [1 .. Internal.File_Header_Bytes => 0]);
+         Outcome := Writers.Put (Output, File_Header);
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Write_Picture (Output, Image, Settings, Item, Colors, Writers.Picture_Count (Measure));
@@ -438,7 +445,10 @@ package body Pictlib.Encoding is
         Internal.Failures.Check_Frame_Size
           (Natural (Image.Descriptor.Width), Natural (Image.Descriptor.Height), Object.Encode_Limits);
       if Results.Succeeded (Outcome) then
-         Survey (Image, Colors);
+         --  Only Auto's choice and an indexed palette need the colors; the other layouts write pixels as they are.
+         if Settings.Layout in Auto | Indexed_8 then
+            Survey (Image, Colors);
+         end if;
          Choose_Layout (Image, Colors, Settings, Layout);
          declare
             Item : constant Plan := Plan_For (Image, Settings, Layout);

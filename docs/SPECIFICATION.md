@@ -263,8 +263,9 @@ are retained, never interpreted.
   fails with `Region_Invalid`.
 - Codec `'jpeg'` is decoded by `jpeglib`, which reads the data straight from the picture (never
   more than `dataSize` bytes); the decoded RGB image is held on the heap. A JPEG whose size is not
-  the description's, or that `jpeglib` rejects, is `Embedded_Image_Failed`; `Recover_When_Safe`
-  keeps what was drawn before it as a partial picture. Any other codec, a non-empty matte (an alpha
+  the description's, or whose data `jpeglib` finds malformed, is `Embedded_Image_Failed`;
+  `Recover_When_Safe` keeps what was drawn before it as a partial picture. A JPEG feature `jpeglib`
+  does not decode is treated like another codec, below. Any other codec, a non-empty matte (an alpha
   image of its own), and a matrix other than positive scaling plus translation are
   `Unsupported_Feature` in `Strict`; otherwise the image is skipped (the matte ignored) with an
   `Approximated_Rendering` warning.
@@ -279,8 +280,11 @@ are retained, never interpreted.
   would draw.
 - While rendering, QuickTime payloads are read by the decoder and are not retained as metadata;
   enumeration retains them when the policy asks.
-- `jpeglib` errors are mapped to `Embedded_Image_Failed` with the `jpeglib` identifier kept as the
-  underlying code.
+- `jpeglib` errors keep the `jpeglib` code as the underlying code and map to pictlib's: its pixel
+  limit to `Limit_Exceeded` on `Max_Embedded_Image_Pixels`, its allocation limits to
+  `Limit_Exceeded` on `Max_Allocation_Bytes` (whose share it decodes within), its unsupported
+  features to `Unsupported_Feature`, its own invariants to `Internal_Invariant_Failed`, and
+  malformed JPEG data to `Embedded_Image_Failed`. Only the last is ever recovered.
 
 ## 4. Package layout
 
@@ -414,7 +418,8 @@ with a warning otherwise; input that ends inside an opcode always fails with
 `Source_Unexpected_End`. A version 2 picture without `HeaderOp` fails with `Header_Invalid` in
 `Strict`; otherwise it is treated as version 2 at 72 dpi with a warning and the opcode read in its
 place is enumerated. The warning log holds `Max_Warning_Records` entries; when it overflows, the
-last entry becomes `Warnings_Suppressed`.
+last entry becomes `Warnings_Suppressed`, in the context of the first warning suppressed and with
+the number suppressed, the displaced entry included, as its actual count.
 
 ## 7. Encoder contract
 

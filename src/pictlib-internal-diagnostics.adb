@@ -21,6 +21,15 @@ package body Pictlib.Internal.Diagnostics is
            (Log.Items.Last_Index,
             Errors.Make_Warning (Errors.Warnings_Suppressed, Errors.Data_Loss, Item.Context));
       end if;
+      --  The suppression record names the first warning suppressed and, as its Actual, how many have been.
+      if Max_Records > 0 then
+         declare
+            Last : Errors.Warning := Log.Items.Last_Element;
+         begin
+            Last.Context.Actual := Byte_Count (Log.Dropped);
+            Log.Items.Replace_Element (Log.Items.Last_Index, Last);
+         end;
+      end if;
    end Add;
 
    function Count (Log : Warning_Log) return Natural is (Natural (Log.Items.Length));

@@ -18,7 +18,6 @@ package body Pictlib_Testing.Test_Bytes is
    use type Pictlib.Coordinate;
    use type Pictlib.Errors.Error_Code;
    use type Pictlib.Limit_Kind;
-   use type Pictlib.Opcode;
    use type Pictlib.Source_Offset;
    use type Pictlib.Streams.Byte_Array;
 
@@ -85,11 +84,10 @@ package body Pictlib_Testing.Test_Bytes is
       Pictlib.Streams.Open (Source, Input'Unchecked_Access);
       Outcome := Bytes.Read_U16_BE (Source, Value_16);
       Assert (Pictlib.Results.Succeeded (Outcome) and then Value_16 = 16#0098#, "opcode read is wrong");
-      Outcome := Bytes.Read_U32_BE (Source, Value_32, Bytes.Within (16#0098#));
+      --  A byte reader knows no opcode: the session attributes its failure to the opcode being read.
+      Outcome := Bytes.Read_U32_BE (Source, Value_32);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Source_Unexpected_End, "truncation has the wrong error");
       Assert (Value_32 = 0, "failed read must yield zero");
-      Assert (Outcome.First_Error.Context.Has_Opcode and then Outcome.First_Error.Context.Op = 16#0098#,
-              "truncation lost the opcode context");
       Assert (Outcome.First_Error.Context.Expected = 4 and then Outcome.First_Error.Context.Actual = 1,
               "truncation lost its counts");
 

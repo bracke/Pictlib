@@ -127,6 +127,7 @@ package body Pictlib.Internal.Typesetting is
 
       --  A glyph drawn from the pen paints its cell: the larger of its advance box and its ink.
       type Cell is record
+         Code : Textrender.Codepoint := 0;
          Metric : Textrender.Glyph_Metric;
          Drawable : Boolean := False;
          Glyph_Left, Glyph_Top : Integer := 0;
@@ -139,9 +140,15 @@ package body Pictlib.Internal.Typesetting is
       --  The cell Color_At paints.
       Current : Positive := 1;
       Atlas_Width : constant Natural := Font.Atlas_Width;
-      Atlas : constant access constant Textrender.Alpha_Buffer := Font.Atlas_Pixels;
+      Atlas : access constant Textrender.Alpha_Buffer := Font.Atlas_Pixels;
+      --  A metric points into the atlas only until a glyph request empties it, which textrender counts as a new
+      --  generation: Cells (Run_First .. Cell_Count) were all taken in the generation Run_Generation.
+      Run_First : Positive := 1;
+      Run_Generation : Natural := Font.Atlas_Generation;
 
-      procedure Add_Cell (Metric : Textrender.Glyph_Metric; Drawable : Boolean; Advance : Float) is
+      procedure Add_Cell
+        (Code : Textrender.Codepoint; Metric : Textrender.Glyph_Metric; Drawable : Boolean; Advance : Float)
+      is
          Cell_Left : constant Integer := Integer (Float'Rounding (Pen));
          Cell_Right : constant Integer := Integer (Float'Rounding (Pen + Advance));
          Glyph_Left : constant Integer := Integer (Float'Rounding (Pen + Metric.Bearing_X));
@@ -149,7 +156,8 @@ package body Pictlib.Internal.Typesetting is
       begin
          Cell_Count := Cell_Count + 1;
          Cells (Cell_Count) :=
-           (Metric => Metric,
+           (Code => Code,
+            Metric => Metric,
             Drawable => Drawable,
             Glyph_Left => Glyph_Left,
             Glyph_Top => Glyph_Top,
@@ -180,21 +188,20 @@ package body Pictlib.Internal.Typesetting is
       end Ink_Color;
       function Paint_Ink is new Rendering.Paint_Row (Ink_Color);
 
-      --  Paint the cells row by row, top to bottom, so the clip region is walked once for the whole string;
-      --  within a row the cells go in string order, and the underline, the row below the baseline, last.
-      function Paint_Cells return Results.Result is
-         Underlined : constant Boolean := Has (State.Face, Text.Underline);
-         Underline : constant Integer := Baseline + 1;
-         First : Integer := (if Underlined then Underline else Integer'Last);
-         Last : Integer := (if Underlined then Underline else Integer'First);
+      --  Paint Cells (First .. Last) row by row, top to bottom, so the clip region is walked once for them all;
+      --  within a row the cells go in string order. Their metrics must all be of the atlas's current generation.
+      function Paint_Run (First, Last : Positive) return Results.Result is
+         Top : Integer := Integer'Last;
+         Bottom : Integer := Integer'First;
          Result : Results.Result := Results.Success;
       begin
-         for Index in 1 .. Cell_Count loop
-            First := Integer'Min (First, Cells (Index).Top);
-            Last := Integer'Max (Last, Cells (Index).Bottom - 1);
+         Atlas := Font.Atlas_Pixels;
+         for Index in First .. Last loop
+            Top := Integer'Min (Top, Cells (Index).Top);
+            Bottom := Integer'Max (Bottom, Cells (Index).Bottom - 1);
          end loop;
-         for Y in Integer'Max (First, P.Window.Top) .. Integer'Min (Last, P.Window.Bottom - 1) loop
-            for Index in 1 .. Cell_Count loop
+         for Y in Integer'Max (Top, P.Window.Top) .. Integer'Min (Bottom, P.Window.Bottom - 1) loop
+            for Index in First .. Last loop
                if Y in Cells (Index).Top .. Cells (Index).Bottom - 1 then
                   Current := Index;
                   Result := Rendering.Begin_Row (P, S, Y, Cells (Index).Left, Cells (Index).Right);
@@ -204,16 +211,53 @@ package body Pictlib.Internal.Typesetting is
                   exit when not Results.Succeeded (Result);
                end if;
             end loop;
-            if Results.Succeeded (Result) and then Underlined and then Y = Underline then
-               Result := Rendering.Begin_Row (P, S, Y, Start_X, Integer (Float'Rounding (Pen)));
-               if Results.Succeeded (Result) then
-                  Result := Paint_Ink (P, S, Y);
-               end if;
-            end if;
             exit when not Results.Succeeded (Result);
          end loop;
          return Result;
-      end Paint_Cells;
+      end Paint_Run;
+
+      --  Take cell Index's glyph again, into the atlas as it is now: drawing work like the first request.
+      function Retake (Index : Positive) return Results.Result is
+         Result : constant Results.Result :=
+           (if Cells (Index).Drawable then Sessions.Charge_Work (S, Text.Glyph_Work (Size)) else Results.Success);
+      begin
+         if Results.Succeeded (Result) and then Cells (Index).Drawable
+           and then Font.Get_Glyph (Cells (Index).Code, Cells (Index).Metric, Style) /= Textrender.Success
+         then
+            Cells (Index).Drawable := False;
+         end if;
+         return Result;
+      end Retake;
+
+      --  The request for cell Last emptied the atlas, so the run's earlier cells point at pixels no longer
+      --  theirs. Each is taken again and painted at once, alone, since they may not fit the atlas together;
+      --  then cell Last, which those requests may have displaced, starts the next run.
+      function Restart_Run (Last : Positive) return Results.Result is
+         Taken_In : constant Natural := Font.Atlas_Generation;
+         Result : Results.Result := Results.Success;
+      begin
+         for Index in Run_First .. Last - 1 loop
+            Result := Retake (Index);
+            if Results.Succeeded (Result) then
+               Result := Paint_Run (Index, Index);
+            end if;
+            exit when not Results.Succeeded (Result);
+         end loop;
+         if Results.Succeeded (Result) and then Font.Atlas_Generation /= Taken_In then
+            Result := Retake (Last);
+         end if;
+         Run_First := Last;
+         Run_Generation := Font.Atlas_Generation;
+         return Result;
+      end Restart_Run;
+
+      --  The row below the baseline, under the whole string, after every glyph.
+      function Paint_Underline return Results.Result is
+         Result : constant Results.Result :=
+           Rendering.Begin_Row (P, S, Baseline + 1, Start_X, Integer (Float'Rounding (Pen)));
+      begin
+         return (if Results.Succeeded (Result) then Paint_Ink (P, S, Baseline + 1) else Result);
+      end Paint_Underline;
    begin
       for Item of Characters loop
          --  Every glyph request is drawing work, wherever the character lands; control characters draw nothing.
@@ -237,11 +281,21 @@ package body Pictlib.Internal.Typesetting is
                if Item = Space then
                   Advance := Advance + Float (State.Space_Extra) / Float (Geometry.Fixed_One);
                end if;
-               Add_Cell (Metric, Status = Textrender.Success and then Metric.W > 0 and then Metric.H > 0, Advance);
+               Add_Cell (Text.To_Unicode (Item), Metric,
+                         Status = Textrender.Success and then Metric.W > 0 and then Metric.H > 0, Advance);
                Pen := Pen + Advance;
+               if Font.Atlas_Generation /= Run_Generation then
+                  Outcome := Restart_Run (Cell_Count);
+               end if;
             end;
          end if;
       end loop;
-      return (if Results.Succeeded (Outcome) then Paint_Cells else Outcome);
+      if Results.Succeeded (Outcome) and then Cell_Count >= Run_First then
+         Outcome := Paint_Run (Run_First, Cell_Count);
+      end if;
+      if Results.Succeeded (Outcome) and then Has (State.Face, Text.Underline) then
+         Outcome := Paint_Underline;
+      end if;
+      return Outcome;
    end Draw_Characters;
 end Pictlib.Internal.Typesetting;

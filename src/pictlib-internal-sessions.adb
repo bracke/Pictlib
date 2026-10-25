@@ -82,7 +82,7 @@ package body Pictlib.Internal.Sessions is
          return Outcome;
       end if;
       Item := Outcome.First_Error;
-      --  A byte reader names the opcode it reads for, but knows no ordinal.
+      --  A failure that names no opcode is the event's; one that names another keeps it.
       if not Item.Context.Has_Opcode or else Item.Context.Op = Event.Op then
          Item.Context.Op := Event.Op;
          Item.Context.Has_Opcode := True;

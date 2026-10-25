@@ -11,7 +11,8 @@ package Pictlib.Internal.Diagnostics is
    --  Add.
    --  @param Log Log to append to.
    --  @param Item Warning to record.
-   --  @param Max_Records Most warnings the log holds, Warnings_Suppressed included.
+   --  @param Max_Records Most warnings the log holds, Warnings_Suppressed included: past it the last record
+   --  becomes Warnings_Suppressed, with the context of the first warning suppressed and their count as Actual.
    procedure Add (Log : in out Warning_Log; Item : Errors.Warning; Max_Records : Natural);
    --  Count.
    --  @param Log Log to inspect.

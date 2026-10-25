@@ -247,11 +247,23 @@ package body Pictlib_Testing.Test_QuickTime is
         Image (QuickTime ("jpeg", Image_Width, Image_Height, JPEG, Skew => 16#1_0000#), 8, 6);
       With_Matte : aliased constant Bytes :=
         Image (QuickTime ("jpeg", Image_Width, Image_Height, JPEG, Matte => Zeros (8)), 8, 6);
+      --  A DNL marker before the frame, right after SOI: a JPEG feature jpeglib reports as unsupported.
+      With_DNL : constant Bytes := JPEG;
+      Unsupported_JPEG : aliased constant Bytes :=
+        Image (Plain (With_DNL (1 .. 2) & [16#FF#, 16#DC#, 0, 4, 0, 6] & With_DNL (3 .. With_DNL'Last)), 8, 6);
       Storage : aliased Bytes := [1 .. 3 * 48 => 0];
       Decoder : Pictlib.Decoding.Decoder;
       Outcome : Pictlib.Results.Result;
    begin
       Canvases.Expect_Failure (Other_Codec, 8, 6, Errors.Unsupported_Feature, "codec rle", 16#8200#);
+      --  A JPEG jpeglib cannot decode is unsupported, like another codec: strictly a failure, otherwise skipped.
+      Canvases.Expect_Failure (Unsupported_JPEG, 8, 6, Errors.Unsupported_Feature, "JPEG with DNL", 16#8200#);
+      Canvases.Render (Unsupported_JPEG, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome,
+                       (Strictness => Pictlib.Recover_When_Safe, others => <>));
+      Assert (Pictlib.Results.Succeeded (Outcome)
+              and then Recorders.Has_Warning (Decoder, Errors.Approximated_Rendering)
+              and then not Recorders.Has_Warning (Decoder, Errors.Partial_Picture),
+              "a JPEG jpeglib cannot decode was not skipped as unsupported: " & Outcome.First_Error.Code'Image);
       --  UncompressedQuickTime is skipped while rendering, and never retained then, whatever the policy says.
       declare
          Uncompressed : aliased constant Bytes :=
@@ -390,6 +402,16 @@ package body Pictlib_Testing.Test_QuickTime is
                  and then not Pictlib_Renders (Pictlib.Byte_Count (Least_Jpeglib) + 143),
                  "the pixels and jpeglib do not share the allocation budget (jpeglib alone needs"
                  & Least_Jpeglib'Image & ")");
+         --  jpeglib running out of that budget is the allocation limit, never recovered as a partial picture.
+         Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded
+                 and then Outcome.First_Error.Context.Limit = Pictlib.Allocation_Byte_Limit
+                 and then Outcome.First_Error.Context.Has_Underlying_Code,
+                 "jpeglib's allocation limit was reported as " & Outcome.First_Error.Code'Image);
+         Canvases.Render (Picture, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome,
+                          (Strictness => Pictlib.Recover_When_Safe, others => <>),
+                          (Defaults with delta Max_Allocation_Bytes => Pictlib.Byte_Count (Least_Jpeglib) + 143));
+         Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded,
+                 "jpeglib's allocation limit was recovered: " & Outcome.First_Error.Code'Image);
       end;
       --  Decoding is drawing work whether or not anything is drawn: an image moved off the frame still costs its
       --  8 x 6 pixels and rows.

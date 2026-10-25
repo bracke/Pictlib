@@ -112,6 +112,18 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - A font that fails to load no longer evicts a loaded font: a new font
   loads into a spare renderer, and the least recently used of the eight is
   evicted only once it has loaded.
+- Text keeps every glyph when the font atlas empties part-way through a
+  string: a string is painted in runs of glyphs that share one atlas
+  generation, and the glyphs a request displaced are taken again, charged
+  as glyph work, and painted one by one.
+- A jpeglib limit is `Limit_Exceeded` on pictlib's matching limit, a JPEG
+  feature jpeglib does not decode is `Unsupported_Feature` (skipped with a
+  warning in the lenient modes, like another codec), and jpeglib's own
+  invariants are `Internal_Invariant_Failed`; only malformed JPEG data is
+  `Embedded_Image_Failed` and recovered. jpeglib's code is kept underneath.
+- With the file header on, an encoder over `Max_Output_Bytes` reports that
+  limit as set, the header counted, at the file offset.
+- `Warnings_Suppressed` carries the number of warnings suppressed.
 - The specification describes text cells stretched to their ink, the work
   of copying a region shape, the font file bytes a load is charged, and
   `Font_Unavailable`; `Warning_Record_Limit` is documented as never crossed.
@@ -154,6 +166,10 @@ place:
   happen; a clip and a mask cut a row through one helper, which charges
   the region walk before cutting.
 - `Pictlib.Fonts` keys font IDs by `Font_ID`.
+- The byte readers carry no opcode of their own: the session attributes
+  every failure to its opcode in one place. The container uses the one
+  opcode-boundary test, and the encoder surveys colors only for `Auto` and
+  `Indexed_8`.
 - `Internal.Sessions.Session` is private: its budget, version, strictness
   and retention are read through functions, and its reader is reached only
   for what lies outside an opcode's budget-checked data (the header, opcode

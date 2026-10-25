@@ -18,6 +18,7 @@ package body Pictlib_Testing.Test_Encoding is
    use AUnit.Assertions;
    use type Pictlib.Byte;
    use type Pictlib.Byte_Count;
+   use type Pictlib.Destination_Offset;
    use type Pictlib.Encoding.Encoder_State;
    use type Pictlib.Encoding.Layout_Kind;
    use type Pictlib.Errors.Error_Code;
@@ -348,6 +349,12 @@ package body Pictlib_Testing.Test_Encoding is
               and then Picture.Outcome.First_Error.Context.Limit = Pictlib.Output_Byte_Limit
               and then Picture.Data'Length = 0,
               "the output limit was not enforced before writing");
+      --  It is reported as set, with the file header counted: the limit, and more than it.
+      Assert (Picture.Outcome.First_Error.Context.Expected = 600
+              and then Picture.Outcome.First_Error.Context.Actual > 600
+              and then Picture.Outcome.First_Error.Context.Destination > 512,
+              "the output limit was reported as" & Picture.Outcome.First_Error.Context.Expected'Image
+              & ", not as set");
       --  The row buffers are a row before packing and its worst case packed: 120 + 121 bytes for 40 direct
       --  pixels, 40 + 41 for 40 indexed ones.
       Picture := Encode (Samples.Gradient, 40, 4, (Layout => Encoding.Direct_32, others => <>),

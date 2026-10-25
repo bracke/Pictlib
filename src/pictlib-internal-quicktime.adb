@@ -11,8 +11,8 @@ with Pictlib.Errors;
 with Pictlib.Geometry;
 with Pictlib.Images;
 with Pictlib.Internal.Bytes;
+with Pictlib.Internal.Checked_Arithmetic;
 with Pictlib.Internal.Failures;
-with Pictlib.Internal.Picture_Stream;
 with Pictlib.Internal.Region_Reader;
 with Pictlib.Internal.Regions;
 with Pictlib.Internal.Transfer_Modes;
@@ -231,14 +231,42 @@ package body Pictlib.Internal.QuickTime is
       Decoded : Jpeglib.Results.Result;
       Bytes : constant Natural := Bytes_Per_Pixel * Item.Width * Item.Height;
 
+      --  What jpeglib's failure means for the picture. Its limits are pictlib's limits, a JPEG feature it lacks is
+      --  an unsupported feature and its own invariants are an internal failure, none of them recovered; only
+      --  malformed JPEG data is Embedded_Image_Failed. jpeglib's code is kept as the underlying one.
       function Rejected return Results.Result is
-        (if not Results.Succeeded (Input.Failure) then Input.Failure
-         else Results.Failure
+         use type Jpeglib.Errors.Error_Code;
+         Code : constant Jpeglib.Errors.Error_Code := Decoded.First_Error.Code;
+         Pixels_Of : constant Byte_Count := Byte_Count (Item.Width) * Byte_Count (Item.Height);
+         Context : constant Errors.Diagnostic_Context :=
+           (Sessions.Context_Of (Event) with delta
+              Underlying_Code => Long_Long_Integer (Jpeglib.Errors.Error_Code'Pos (Code)),
+              Has_Underlying_Code => True);
+      begin
+         if not Results.Succeeded (Input.Failure) then
+            return Input.Failure;
+         end if;
+         return Results.Failure
            (Errors.Make
-              (Errors.Embedded_Image_Failed,
-               (Sessions.Context_Of (Event) with delta
-                  Underlying_Code => Long_Long_Integer (Jpeglib.Errors.Error_Code'Pos (Decoded.First_Error.Code)),
-                  Has_Underlying_Code => True))));
+              ((case Code is
+                   when Jpeglib.Errors.Pixel_Count_Exceeded | Jpeglib.Errors.Output_Limit_Exceeded
+                      | Jpeglib.Errors.Metadata_Limit_Exceeded => Errors.Limit_Exceeded,
+                   when Jpeglib.Errors.Unsupported_Feature => Errors.Unsupported_Feature,
+                   when Jpeglib.Errors.Invalid_State | Jpeglib.Errors.Operation_Cancelled
+                      | Jpeglib.Errors.Internal_Invariant_Failed => Errors.Internal_Invariant_Failed,
+                   when others => Errors.Embedded_Image_Failed),
+               (case Code is
+                   when Jpeglib.Errors.Pixel_Count_Exceeded =>
+                     (Context with delta
+                        Limit => Embedded_Image_Pixel_Limit,
+                        Expected => Byte_Count (S.Budget.Max_Embedded_Image_Pixels), Actual => Pixels_Of),
+                   --  jpeglib's buffers came from the per-allocation budget the pixels left.
+                   when Jpeglib.Errors.Output_Limit_Exceeded | Jpeglib.Errors.Metadata_Limit_Exceeded =>
+                     (Context with delta
+                        Limit => Allocation_Byte_Limit, Expected => S.Budget.Max_Allocation_Bytes,
+                        Actual => Checked_Arithmetic.Saturating_Add (Bytes_Per_Pixel * Pixels_Of, Share + 1)),
+                   when others => Context)));
+      end Rejected;
    begin
       Pixels := null;
       Jpeglib.Decoding.Initialize
@@ -457,6 +485,14 @@ package body Pictlib.Internal.QuickTime is
                Outcome := Sessions.Admit_Aggregate (S, Share);
                if Results.Succeeded (Outcome) then
                   Outcome := Decode_JPEG (S, Event, Item, Share, Pixels);
+               end if;
+               --  A JPEG jpeglib cannot decode is an image this renderer cannot draw, as another codec is:
+               --  strictly unsupported, otherwise skipped with a warning, the rest of the opcode with it.
+               if not Results.Succeeded (Outcome)
+                 and then Errors."=" (Outcome.First_Error.Code, Errors.Unsupported_Feature)
+                 and then Sessions.Is_Lenient (S)
+               then
+                  return Finish (Rendering.Unsupported (S, Event));
                end if;
             end;
          end if;

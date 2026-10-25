@@ -359,6 +359,9 @@ package body Pictlib_Testing.Test_Enumeration is
       Assert (Decoding.Warning_At (Decoder, 1).Code = Pictlib.Errors.Reserved_Opcode_Skipped
               and then Decoding.Warning_At (Decoder, 2).Code = Pictlib.Errors.Warnings_Suppressed,
               "suppression was not reported in the last slot");
+      --  Of the four warnings, the displaced second and the two after it were suppressed.
+      Assert (Decoding.Warning_At (Decoder, 2).Context.Actual = 3,
+              "the suppression record counts" & Decoding.Warning_At (Decoder, 2).Context.Actual'Image);
    end Reserved_Warnings;
 
    procedure Expect_Data_Length (Input : aliased Bytes; Op : Pictlib.Opcode; Length : Pictlib.Byte_Count;
