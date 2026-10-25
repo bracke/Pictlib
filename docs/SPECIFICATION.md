@@ -265,7 +265,8 @@ are retained, never interpreted.
   more than `dataSize` bytes); the decoded RGB image is held on the heap. A JPEG whose size is not
   the description's, or whose data `jpeglib` finds malformed, is `Embedded_Image_Failed`;
   `Recover_When_Safe` keeps what was drawn before it as a partial picture. A JPEG feature `jpeglib`
-  does not decode is treated like another codec, below. Any other codec, a non-empty matte (an alpha
+  does not decode, and a lossless JPEG (which `jpeglib` decodes through stack buffers no budget
+  bounds), is treated like another codec, below. Any other codec, a non-empty matte (an alpha
   image of its own), and a matrix other than positive scaling plus translation are
   `Unsupported_Feature` in `Strict`; otherwise the image is skipped (the matte ignored) with an
   `Approximated_Rendering` warning.
@@ -287,7 +288,9 @@ are retained, never interpreted.
   `Unsupported_Feature`; its own invariants to `Internal_Invariant_Failed`; and malformed JPEG data,
   malformed metadata included, to `Embedded_Image_Failed`. Only the last is ever recovered.
 - `jpeglib`'s share is what `Max_Allocation_Bytes` leaves once the pixels are admitted, but no more
-  than 8 times the image's RGB bytes over its extent rounded up to 16-pixel MCUs, plus 1 MiB.
+  than 8 times the image's RGB bytes over its extent rounded up to 32-pixel MCUs (8 pixels times the
+  largest sampling factor, 4), plus 1 MiB. Its coefficient and output limits are that share and the
+  image's RGB bytes, so every `jpeglib` limit is one of pictlib's.
 
 ## 4. Package layout
 

@@ -41,8 +41,8 @@ package body Pictlib.Internal.QuickTime is
    --  and however its chroma is subsampled, so one image does not take a session's whole allocation quota.
    Jpeglib_Pixel_Factor : constant := 8;
    Jpeglib_Fixed_Bytes : constant := 1_048_576;
-   --  The largest MCU side, 16 pixels for 2:1 subsampling.
-   MCU_Side : constant := 16;
+   --  The largest MCU side: 8 pixels times jpeglib's largest sampling factor, 4.
+   MCU_Side : constant := 32;
    --  The most jpeglib is handed at once.
    Read_Chunk : constant := 4096;
 
@@ -289,7 +289,10 @@ package body Pictlib.Internal.QuickTime is
          (Output_Format => Jpeglib.Images.RGB_24, others => <>),
          (Jpeglib.Limits.Default_Limits with delta
             Max_Pixels => Jpeglib.Pixel_Count (S.Budget.Max_Embedded_Image_Pixels),
-            Max_Allocation_Bytes => Jpeglib.Byte_Count (Share)));
+            --  Its own caps are pictlib's: the coefficients come out of its share, and its output is the pixels.
+            Max_Allocation_Bytes => Jpeglib.Byte_Count (Share),
+            Max_Coefficient_Bytes => Jpeglib.Byte_Count (Share),
+            Max_Output_Bytes => Jpeglib.Byte_Count (Bytes)));
       Decoded := Jpeglib.Decoding.Read_Header (Decoder);
       if Jpeglib.Results.Succeeded (Decoded)
         and then (Natural (Jpeglib.Decoding.Header (Decoder).Width) /= Item.Width
@@ -298,6 +301,13 @@ package body Pictlib.Internal.QuickTime is
          --  The JPEG must be the image the description states.
          Jpeglib.Decoding.Finalize (Decoder);
          return Failures.In_Opcode (Event, Errors.Embedded_Image_Failed);
+      elsif Jpeglib.Results.Succeeded (Decoded)
+        and then Jpeglib.Decoding.Header (Decoder).Mode in Jpeglib.Lossless | Jpeglib.Differential_Lossless
+      then
+         --  jpeglib decodes a lossless JPEG through planes it holds on the stack, sized by the image: no budget
+         --  bounds them, so a lossless image is one this renderer does not draw.
+         Jpeglib.Decoding.Finalize (Decoder);
+         return Failures.In_Opcode (Event, Errors.Unsupported_Feature);
       end if;
       if Jpeglib.Results.Succeeded (Decoded) then
          Pixels := new Jpeglib.Streams.Byte_Array (1 .. Bytes);

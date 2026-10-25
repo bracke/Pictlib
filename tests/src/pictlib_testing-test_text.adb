@@ -632,6 +632,10 @@ package body Pictlib_Testing.Test_Text is
             Whole_Storage, Storage : aliased Bytes := [1 .. 3 * Width * Height => 0];
             Decoder : Pictlib.Decoding.Decoder;
             Outcome : Pictlib.Results.Result;
+            --  The font's load and a request per character: a failure beyond it is inside the repaint.
+            Requests : constant Pictlib.Pixel_Count :=
+              Pictlib.Pixel_Count (Characters'Length) * Glyph + Text.Load_Work (Size, Text.File_Bytes (Sans));
+            Inside_Repaint : Boolean := False;
          begin
             Canvases.Render (Picture, Decoder, Canvases.View (Whole_Storage'Access, Width, Height), Outcome,
                              With_Fonts);
@@ -642,9 +646,12 @@ package body Pictlib_Testing.Test_Text is
                Canvases.Render
                  (Picture, Decoder, Canvases.View (Storage'Access, Width, Height), Outcome, With_Fonts,
                   (Pictlib.Limits.Default_Limits with delta
-                     Max_Drawing_Work => Pictlib.Pixel_Count (Characters'Length) * Glyph
-                                         + Text.Load_Work (Size, Text.File_Bytes (Sans))
-                                         + Pictlib.Pixel_Count (Step) * 16_000));
+                     Max_Drawing_Work => Requests + Pictlib.Pixel_Count (Step) * 16_000));
+               if not Pictlib.Results.Succeeded (Outcome)
+                 and then Pictlib."<" (Pictlib.Byte_Count (Requests), Outcome.First_Error.Context.Actual)
+               then
+                  Inside_Repaint := True;
+               end if;
                Assert ((Pictlib.Results.Succeeded (Outcome) and then Storage = Whole_Storage)
                        or else (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
                                 and then Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit),
@@ -652,6 +659,8 @@ package body Pictlib_Testing.Test_Text is
                        & (if Pictlib.Results.Succeeded (Outcome) then "succeeded with glyphs missing"
                           else "failed with " & Outcome.First_Error.Code'Image));
             end loop;
+            --  The sweep reaches the repaint, or it tests nothing.
+            Assert (Inside_Repaint, "no budget of the sweep ran out inside the repaint");
          end;
       end;
    end Eviction_Over_Budget;

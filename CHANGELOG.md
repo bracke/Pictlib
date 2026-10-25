@@ -131,15 +131,24 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   `Embedded_Image_Failed` again, and a frame of more components than
   jpeglib decodes is `Unsupported_Feature`; jpeglib's buffers outgrowing
   their share name the share they had. That share is sized over the image's
-  extent rounded up to 16-pixel MCUs, so narrow subsampled JPEGs decode:
+  extent rounded up to whole MCUs, so narrow subsampled JPEGs decode:
   `quicktime.narrow_image` renders a 1 × 16000 progressive 4:2:0 JPEG
   written by jpeglib's encoder, which the unpadded share refused.
+- `text.eviction_over_budget` requires its sweep to reach the repaint, so a
+  drift in the costs it is built on cannot leave it testing nothing.
 - The picture reader no longer clears the rest of a caller's buffer on
   every short read, which made long payloads from a source that delivers in
   small pieces quadratic in work no budget counted; nor does the source
   jpeglib reads QuickTime images through.
 - Source offsets saturate, so a source reporting offsets near the largest
   there is cannot make the decoder raise.
+- A lossless JPEG is `Unsupported_Feature` once its header is read: jpeglib
+  decodes one through stack buffers sized by the image, which no budget
+  bounds, so a large one could overflow the stack.
+- jpeglib's share is sized over 32-pixel MCUs, the largest jpeglib's
+  sampling factors make, and its coefficient and output limits are that
+  share and the image's pixels, so none of jpeglib's own defaults is
+  reported as pictlib's allocation limit.
 - The specification describes text cells stretched to their ink, the work
   of copying a region shape, the font file bytes a load is charged, and
   `Font_Unavailable`; `Warning_Record_Limit` is documented as never crossed.

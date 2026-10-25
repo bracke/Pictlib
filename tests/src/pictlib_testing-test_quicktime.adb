@@ -124,6 +124,33 @@ package body Pictlib_Testing.Test_QuickTime is
       return False;
    end Nothing;
 
+   --  An Image_Width x Image_Height RGB image as jpeglib's encoder writes it with Settings.
+   function Encoded_JPEG (Settings : Jpeglib.Encoding.Options) return Bytes is
+      use type Jpeglib.Byte_Count;
+      Pixels : constant Jpeglib.Streams.Byte_Array_Access :=
+        new Jpeglib.Streams.Byte_Array (1 .. 3 * Image_Width * Image_Height);
+      Encoded : constant Jpeglib.Streams.Byte_Array_Access := new Jpeglib.Streams.Byte_Array (1 .. 100_000);
+      Output : aliased Jpeglib.Streams.Fixed_Buffer_Destination;
+      Encoder : Jpeglib.Encoding.Encoder;
+      Result : Jpeglib.Results.Result;
+   begin
+      for Index in Pixels'Range loop
+         Pixels (Index) := Jpeglib.Byte ((Index * 37) mod 256);
+      end loop;
+      Jpeglib.Streams.Open (Output, Encoded);
+      Jpeglib.Encoding.Initialize (Encoder, Output'Access, Settings);
+      Result := Jpeglib.Encoding.Encode_Image
+        (Encoder, (Descriptor => (Width => Image_Width, Height => Image_Height, Format => Jpeglib.Images.RGB_24,
+                                  Stride => Jpeglib.Row_Stride (3 * Image_Width),
+                                  Accessible_Bytes => 3 * Image_Width * Image_Height),
+                   Storage => Pixels));
+      if Jpeglib.Results.Succeeded (Result) then
+         Result := Jpeglib.Encoding.Finish (Encoder);
+      end if;
+      Assert (Jpeglib.Results.Succeeded (Result), "jpeglib did not encode the image");
+      return [for Index in 1 .. Natural (Output.Offset) => Pictlib.Byte (Encoded (Index))];
+   end Encoded_JPEG;
+
    function Image (Data : Bytes; Width, Height : Positive; Extra : Bytes := [1 .. 0 => 0]) return Bytes is
      (V2_Picture (0, 0, Height, Width, Data & Extra));
    function Plain (Data : Bytes := JPEG) return Bytes is
@@ -259,6 +286,19 @@ package body Pictlib_Testing.Test_QuickTime is
       Outcome : Pictlib.Results.Result;
    begin
       Canvases.Expect_Failure (Other_Codec, 8, 6, Errors.Unsupported_Feature, "codec rle", 16#8200#);
+      --  A lossless JPEG, which jpeglib decodes through planes on the stack that no budget bounds, is unsupported
+      --  before it is decoded.
+      declare
+         Lossless : aliased constant Bytes :=
+           Image (Plain (Encoded_JPEG ((Mode => Jpeglib.Encoding.Lossless_Huffman, others => <>))), 8, 6);
+      begin
+         Canvases.Expect_Failure (Lossless, 8, 6, Errors.Unsupported_Feature, "lossless JPEG", 16#8200#);
+         Canvases.Render (Lossless, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome,
+                          (Strictness => Pictlib.Compatible, others => <>));
+         Assert (Pictlib.Results.Succeeded (Outcome)
+                 and then Recorders.Has_Warning (Decoder, Errors.Approximated_Rendering),
+                 "a lossless JPEG was not skipped: " & Outcome.First_Error.Code'Image);
+      end;
       --  A JPEG jpeglib cannot decode is unsupported, like another codec: strictly a failure, otherwise skipped.
       Canvases.Expect_Failure (Unsupported_JPEG, 8, 6, Errors.Unsupported_Feature, "JPEG with DNL", 16#8200#);
       Canvases.Render (Unsupported_JPEG, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome,

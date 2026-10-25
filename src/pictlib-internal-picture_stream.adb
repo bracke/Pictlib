@@ -1,4 +1,5 @@
 with Pictlib.Errors;
+with Pictlib.Internal.Checked_Arithmetic;
 with Pictlib.Internal.Failures;
 
 package body Pictlib.Internal.Picture_Stream is
@@ -33,16 +34,17 @@ package body Pictlib.Internal.Picture_Stream is
    function Lookahead_At (Object : Reader; Index : Positive) return Byte is
      (Object.Buffer (Object.First + Index - 1));
 
-   --  The budget is spent: the next byte would be one past it.
    --  The source offset Ahead bytes past what the reader consumed, saturating: a source may report any offset.
    function At_Offset (Object : Reader; Ahead : Natural := 0) return Source_Offset is
      (if Object.Base > Source_Offset'Last - Source_Offset (Object.Consumed) - Source_Offset (Ahead)
       then Source_Offset'Last
       else Object.Base + Source_Offset (Object.Consumed) + Source_Offset (Ahead));
 
+   --  The budget is spent: the next byte would be one past it.
    function Over_Budget (Object : Reader) return Errors.Error is
      (Failures.Over_Limit
-        (Picture_Byte_Limit, Object.Max_Bytes, Object.Consumed + 1, At_Offset (Object))
+        (Picture_Byte_Limit, Object.Max_Bytes, Checked_Arithmetic.Saturating_Add (Object.Consumed, 1),
+         At_Offset (Object))
         .First_Error);
 
    --  Bytes the reader may still deliver.
