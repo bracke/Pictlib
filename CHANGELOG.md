@@ -69,6 +69,21 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   ways, and every failure inside an opcode names its ordinal.
 - The encoder checks `Max_Allocation_Bytes` against the row buffers of the
   layout it writes, not always against 32-bit rows.
+- Copying a metadata item reads it in place instead of copying it to the
+  stack first, and a too-short buffer reports its size as the expected
+  value and the item's size as the actual one.
+- A framed polygon stops working once its shape's allowance is spent,
+  instead of sizing and clearing row buffers for every later segment.
+- The decoder fails with `Internal_Invariant_Failed` when a source claims
+  more bytes than it was asked for after the picture byte budget capped the
+  request, instead of trusting the count.
+- Going over `Max_Total_Allocation_Bytes` while retaining metadata always
+  fails, as every limit does; a lenient decoder drops an item only when the
+  metadata budgets have no room for it.
+- Text is painted row by row across the whole string, so a complex clip
+  region is walked once per opcode, not once per glyph.
+- A QuickTime image's matte and mask that leave no room for the image
+  description fail before the description is read.
 
 ### Internal structure
 
@@ -90,6 +105,9 @@ place:
   render starts from it, so no field can keep a value from the last render.
 - `Opcode_Bytes` gives the size of an opcode, and of the version opcode's
   data, for every version in one place.
+- Retained metadata and warnings are private to `Internal.Sessions`: one
+  `Retain` for data read from the stream, the file header included, and one
+  `Retain_Bytes` for data already read.
 - `Encode` reads as its steps: check the frame, choose the layout, check
   the plan, write. A QuickTime image's pixel buffer is admitted like every
   other allocation, and `Decide_Layout` keeps one check per pack type and

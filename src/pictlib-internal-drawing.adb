@@ -222,6 +222,7 @@ package body Pictlib.Internal.Drawing is
                elsif Natural (Points.Length) >= 2 then
                   --  FramePoly draws the polygon's lines; it does not close the polygon.
                   for Index in 1 .. Natural (Points.Length) - 1 loop
+                     exit when Coverage.Exhausted (Shape);
                      Coverage.Line (Shape, Points (Index), Points (Index + 1), P.Port.Pen_Width, P.Port.Pen_Height);
                   end loop;
                end if;

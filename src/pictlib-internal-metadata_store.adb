@@ -61,13 +61,14 @@ package body Pictlib.Internal.Metadata_Store is
                (Expected => Byte_Count (Object.Infos.Length), Actual => Byte_Count (Index), others => <>)));
       end if;
       declare
-         Item : constant Streams.Byte_Array := Object.Data.Element (Index);
+         --  A reference, not a copy: an item may be as large as the retained metadata budget.
+         Item : Streams.Byte_Array renames Object.Data.Constant_Reference (Index).Element.all;
       begin
          if Item'Length > Buffer'Length then
             return Results.Failure
               (Errors.Make
                  (Errors.Limit_Exceeded,
-                  (Expected => Item'Length, Actual => Buffer'Length, Limit => Output_Byte_Limit, others => <>)));
+                  (Expected => Buffer'Length, Actual => Item'Length, Limit => Output_Byte_Limit, others => <>)));
          end if;
          Buffer (Buffer'First .. Buffer'First + Item'Length - 1) := Item;
          Count := Item'Length;

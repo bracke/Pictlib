@@ -2,7 +2,6 @@ with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Drawing;
-with Pictlib.Internal.Metadata_Store;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Internal.Pixmaps;
 with Pictlib.Internal.Region_Reader;
@@ -71,15 +70,11 @@ package body Pictlib.Internal.Opcode_Reader is
 
    function Consume_Short_Comment (S : in out Session; Event : Pictures.Opcode_Event) return Results.Result is
       Kind : Interfaces.Unsigned_16;
-      Keep : Boolean;
-      Outcome : Results.Result := Sessions.Read_Word (S, Kind);
+      Outcome : constant Results.Result := Sessions.Read_Word (S, Kind);
    begin
       if Results.Succeeded (Outcome) and then S.Retention.Comments then
-         Outcome := Sessions.Admit_Item (S, 0, Keep);
-         if Results.Succeeded (Outcome) and then Keep then
-            Metadata_Store.Append
-              (S.Store, (Item_For (Metadata.Short_Comment, Event) with delta Comment_Kind => Kind), [1 .. 0 => 0]);
-         end if;
+         return Sessions.Retain_Bytes
+           (S, (Item_For (Metadata.Short_Comment, Event) with delta Comment_Kind => Kind), [1 .. 0 => 0]);
       end if;
       return Outcome;
    end Consume_Short_Comment;
@@ -108,7 +103,6 @@ package body Pictlib.Internal.Opcode_Reader is
       Paint : access Rendering.Painter) return Results.Result
    is
       Data : Streams.Byte_Array_Access;
-      Keep : Boolean;
       Outcome : Results.Result := Sessions.Read_Payload (S, Length, Data);
    begin
       if not Results.Succeeded (Outcome) then
@@ -140,13 +134,8 @@ package body Pictlib.Internal.Opcode_Reader is
             end;
          end if;
          if S.Retention.Font_Names then
-            Outcome := Sessions.Admit_Item (S, Byte_Count (Name_Length), Keep);
-         else
-            Keep := False;
-         end if;
-         if Results.Succeeded (Outcome) and then Keep then
-            Metadata_Store.Append
-              (S.Store, (Item_For (Metadata.Font_Name, Event) with delta Font_ID => Font), Data (4 .. 3 + Name_Length));
+            Outcome := Sessions.Retain_Bytes
+              (S, (Item_For (Metadata.Font_Name, Event) with delta Font_ID => Font), Data (4 .. 3 + Name_Length));
          end if;
       end;
       Bytes.Free (Data);

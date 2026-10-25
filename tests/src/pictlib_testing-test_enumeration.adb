@@ -231,8 +231,10 @@ package body Pictlib_Testing.Test_Enumeration is
 
       Outcome := Decoding.Copy_Metadata (Decoder, 1, Small, Count);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
-              and then Outcome.First_Error.Context.Limit = Pictlib.Output_Byte_Limit and then Count = 0,
-              "a short buffer was not rejected");
+              and then Outcome.First_Error.Context.Limit = Pictlib.Output_Byte_Limit and then Count = 0
+              and then Outcome.First_Error.Context.Expected = Small'Length
+              and then Outcome.First_Error.Context.Actual = 3,
+              "a short buffer was not rejected with its size and the item's");
       Outcome := Decoding.Copy_Metadata (Decoder, 4, Small, Count);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_Argument, "an index out of range was accepted");
 
@@ -293,6 +295,18 @@ package body Pictlib_Testing.Test_Enumeration is
       Assert (Decoding.Metadata_Count (Decoder) = 1, "only the empty ShortComment fits two bytes");
       Assert (Recorders.Has_Warning (Decoder, Pictlib.Errors.Data_Loss), "dropped metadata was not reported");
       Check_Events (Events, V2_Expected, "v2, dropped metadata");
+
+      --  The session's allocation limit is never recovered, not even by dropping an item: at every total, a
+      --  compatible decoder keeps everything or fails over that limit.
+      for Total in Pictlib.Byte_Count range 0 .. 600 loop
+         Recorders.Decode (V2_Picture, Decoder, Events, Outcome, (Strictness => Pictlib.Compatible, others => <>),
+                           (Pictlib.Limits.Default_Limits with delta Max_Total_Allocation_Bytes => Total));
+         Assert ((Pictlib.Results.Succeeded (Outcome) and then Decoding.Metadata_Count (Decoder) = 3)
+                 or else (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
+                          and then Outcome.First_Error.Context.Limit = Pictlib.Total_Allocation_Byte_Limit),
+                 "a total allocation of" & Total'Image & " bytes dropped metadata");
+         Events := (others => <>);
+      end loop;
 
       Recorders.Expect_Failure (Bad_Font_Name, Pictlib.Errors.Opcode_Length_Invalid, "bad font name", 16#002C#);
       Events := (others => <>);

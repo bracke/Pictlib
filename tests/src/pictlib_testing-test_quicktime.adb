@@ -287,10 +287,17 @@ package body Pictlib_Testing.Test_QuickTime is
       --  dataSize claims more than the opcode holds.
       Past_The_Opcode : aliased constant Bytes :=
         Image (Overlong (1 .. 6 + 68 + 44) & L (100_000) & Overlong (6 + 68 + 49 .. Overlong'Last), 8, 6);
+      --  A matte that fills the opcode, leaving no room for the description, which follows the opcode instead.
+      Matte_Only : constant Bytes := QuickTime ("jpeg", Image_Width, Image_Height, [1 .. 0 => 0], Matte => Zeros (100));
+      Filled_By_Matte : aliased constant Bytes :=
+        Image (W (16#8200#) & L (68 + 100) & Matte_Only (7 .. 6 + 68 + 100), 8, 6,
+               Matte_Only (6 + 68 + 100 + 1 .. Matte_Only'Last));
       Storage : aliased Bytes := [1 .. 3 * 48 => 0];
       Decoder : Pictlib.Decoding.Decoder;
       Outcome : Pictlib.Results.Result;
    begin
+      Canvases.Expect_Failure (Filled_By_Matte, 8, 6, Errors.Opcode_Length_Invalid, "matte fills the opcode", 16#8200#,
+                               (Strictness => Pictlib.Compatible, others => <>));
       Canvases.Expect_Failure (Truncated, 8, 6, Errors.Embedded_Image_Failed, "truncated JPEG", 16#8200#);
       Canvases.Expect_Failure (Garbage, 8, 6, Errors.Embedded_Image_Failed, "not a JPEG", 16#8200#);
       Canvases.Expect_Failure (Wrong_Size, 9, 6, Errors.Embedded_Image_Failed, "description size disagrees",

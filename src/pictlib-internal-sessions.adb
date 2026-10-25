@@ -7,8 +7,8 @@ package body Pictlib.Internal.Sessions is
    begin
       Picture_Stream.Unbind (S.Stream);
       S.Version := Version_1;
-      Metadata_Store.Clear (S.Store);
-      Diagnostics.Clear (S.Log);
+      Metadata_Store.Clear (S.Kept.Store);
+      Diagnostics.Clear (S.Kept.Log);
       S.Counts := (others => <>);
    end Clear;
 
@@ -36,7 +36,7 @@ package body Pictlib.Internal.Sessions is
          Item.Source := S.Stream.Offset;
       end if;
       --  A warning is never dropped: Max_Warning_Records bounds the log, so it needs no allocation quota.
-      Diagnostics.Add (S.Log, Errors.Make_Warning (Code, Severity, Item), S.Budget.Max_Warning_Records);
+      Diagnostics.Add (S.Kept.Log, Errors.Make_Warning (Code, Severity, Item), S.Budget.Max_Warning_Records);
    end Warn;
 
    function Fail (S : Session; Code : Errors.Error_Code; Expected, Actual : Byte_Count := 0) return Results.Result
@@ -184,13 +184,13 @@ package body Pictlib.Internal.Sessions is
       return Streams.Skip_Exact (S.Stream, Count);
    end Skip_Data;
 
-   --  Read Length bytes into a heap buffer the caller frees.
    function Read_Payload
      (S : in out Session;
       Length : Byte_Count;
-      Data : out Streams.Byte_Array_Access) return Results.Result
+      Data : out Streams.Byte_Array_Access;
+      In_Opcode : Boolean := True) return Results.Result
    is
-      Outcome : Results.Result := Admit_Data (S, Length);
+      Outcome : Results.Result := (if In_Opcode then Admit_Data (S, Length) else Results.Success);
    begin
       Data := null;
       if not Results.Succeeded (Outcome) then
@@ -210,25 +210,28 @@ package body Pictlib.Internal.Sessions is
       return Outcome;
    end Read_Payload;
 
-   --  Decide whether an item of Length bytes may be kept: a strict session fails when it does not fit,
-   --  a lenient one records Data_Loss and sets Keep to False.
+   --  Decide whether an item of Length bytes may be kept, admitting it to the allocation budget when it is. When
+   --  the metadata budgets have no room a strict session fails and a lenient one records Data_Loss and sets Keep
+   --  to False; the session's allocation limit is never recovered.
    function Admit_Item (S : in out Session; Length : Byte_Count; Keep : out Boolean) return Results.Result is
-      Admission : Results.Result := Metadata_Store.Admits (S.Store, Length, S.Budget);
+      Admission : constant Results.Result := Metadata_Store.Admits (S.Kept.Store, Length, S.Budget);
    begin
-      Keep := Results.Succeeded (Admission);
-      if Keep then
-         Admission := Admit_Aggregate (S, Checked_Arithmetic.Saturating_Add (Length, Item_Overhead_Bytes));
-         Keep := Results.Succeeded (Admission);
+      Keep := False;
+      if not Results.Succeeded (Admission) then
+         return Reject_Or_Warn
+           (S, Admission.First_Error.Code, Errors.Data_Loss, Errors.Data_Loss,
+            (Admission.First_Error.Context with delta Source => S.Stream.Offset));
       end if;
-      if Keep then
-         return Admission;
-      end if;
-      return Reject_Or_Warn
-        (S, Admission.First_Error.Code, Errors.Data_Loss, Errors.Data_Loss,
-         (Admission.First_Error.Context with delta Source => S.Stream.Offset));
+      Keep := True;
+      return Admit_Aggregate (S, Checked_Arithmetic.Saturating_Add (Length, Item_Overhead_Bytes));
    end Admit_Item;
 
-   function Retain (S : in out Session; Info : Metadata.Item_Info; Length : Byte_Count) return Results.Result is
+   function Retain
+     (S : in out Session;
+      Info : Metadata.Item_Info;
+      Length : Byte_Count;
+      In_Opcode : Boolean := True) return Results.Result
+   is
       Keep : Boolean;
       Outcome : Results.Result := Admit_Item (S, Length, Keep);
       Data : Streams.Byte_Array_Access;
@@ -236,15 +239,27 @@ package body Pictlib.Internal.Sessions is
       if not Results.Succeeded (Outcome) then
          return Outcome;
       elsif not Keep then
-         return Skip_Data (S, Length);
+         return (if In_Opcode then Skip_Data (S, Length) else Streams.Skip_Exact (S.Stream, Length));
       end if;
-      Outcome := Read_Payload (S, Length, Data);
+      Outcome := Read_Payload (S, Length, Data, In_Opcode);
       if Results.Succeeded (Outcome) then
-         Metadata_Store.Append (S.Store, Info, Data.all);
+         Metadata_Store.Append (S.Kept.Store, Info, Data.all);
          Bytes.Free (Data);
       end if;
       return Outcome;
    end Retain;
+
+   function Retain_Bytes (S : in out Session; Info : Metadata.Item_Info; Data : Streams.Byte_Array)
+     return Results.Result
+   is
+      Keep : Boolean;
+      Outcome : constant Results.Result := Admit_Item (S, Data'Length, Keep);
+   begin
+      if Results.Succeeded (Outcome) and then Keep then
+         Metadata_Store.Append (S.Kept.Store, Info, Data);
+      end if;
+      return Outcome;
+   end Retain_Bytes;
 
    function Read_Polygon_Size (S : in out Session; Points : out Natural) return Results.Result is
       use type Interfaces.Unsigned_16;

@@ -1,9 +1,7 @@
 with Pictlib.Internal.Container;
 with Pictlib.Internal.Sessions;
-with Pictlib.Internal.Diagnostics;
 with Pictlib.Internal.Failures;
 with Pictlib.Internal.Opcode_Reader;
-with Pictlib.Internal.Metadata_Store;
 with Pictlib.Geometry;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Internal.Rendering;
@@ -258,23 +256,23 @@ package body Pictlib.Decoding is
    function Last_Error (Object : Decoder) return Errors.Error is (Object.First_Error);
 
    function Warning_Count (Object : Decoder) return Natural is
-     (Internal.Diagnostics.Count (Object.Inner.Session.Log));
+     (Internal.Sessions.Warning_Count (Object.Inner.Session));
 
    function Warning_At (Object : Decoder; Index : Positive) return Errors.Warning is
-     (Internal.Diagnostics.Element (Object.Inner.Session.Log, Index));
+     (Internal.Sessions.Warning_At (Object.Inner.Session, Index));
 
    function Metadata_Count (Object : Decoder) return Natural is
-     (Internal.Metadata_Store.Count (Object.Inner.Session.Store));
+     (Internal.Sessions.Metadata_Count (Object.Inner.Session));
 
    function Metadata_Item (Object : Decoder; Index : Positive) return Metadata.Item_Info is
-     (Internal.Metadata_Store.Info (Object.Inner.Session.Store, Index));
+     (Internal.Sessions.Metadata_Item (Object.Inner.Session, Index));
 
    function Copy_Metadata
      (Object : Decoder;
       Index : Positive;
       Buffer : out Streams.Byte_Array;
       Count : out Byte_Count) return Results.Result is
-     (Internal.Metadata_Store.Copy_Data (Object.Inner.Session.Store, Index, Buffer, Count));
+     (Internal.Sessions.Copy_Metadata (Object.Inner.Session, Index, Buffer, Count));
 
    procedure Cancel (Object : in out Decoder) is
    begin

@@ -3,6 +3,7 @@ with AUnit.Assertions;
 with Pictlib;
 with Pictlib.Decoding;
 with Pictlib.Errors;
+with Pictlib.Limits;
 with Pictlib.Results;
 with Pictlib.Streams;
 with Pictlib_Testing.Builders;
@@ -24,6 +25,9 @@ package body Pictlib_Testing.Test_Decoder is
      V2_Prefix (0, 0, 4, 8) & W (16#001E#) & W (16#00A0#) & W (7) & W (16#0030#) & Rect (0, 0, 1, 1) & W (16#00FF#);
    Other : aliased constant Bytes := V1_Prefix (0, 0, 2, 2) & B (16#A0#) & W (9) & B (16#FF#);
    Broken : aliased constant Bytes := V2_Prefix (0, 0, 4, 8) & W (16#0001#) & W (2) & W (16#00FF#);
+   --  A reserved opcode whose data is skipped, longer than the reader's lookahead.
+   Skipped : aliased constant Bytes :=
+     V2_Prefix (0, 0, 4, 8) & W (16#8100#) & L (10_000) & Zeros (10_000) & W (16#00FF#);
 
    procedure Wrong_State_Calls (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Visitor_Stops (T : in out AUnit.Test_Cases.Test_Case'Class);
@@ -32,6 +36,27 @@ package body Pictlib_Testing.Test_Decoder is
    procedure Reset_Reuses_The_Decoder (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Finalize_Is_Idempotent (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Source_Failure (T : in out AUnit.Test_Cases.Test_Case'Class);
+   procedure Overreporting_Source (T : in out AUnit.Test_Cases.Test_Case'Class);
+
+   --  A source that delivers honestly but claims one byte more than it skipped.
+   type Overreporting is limited new Pictlib.Streams.Source with record
+      Inner : Pictlib.Streams.Memory_Source;
+   end record;
+   overriding function Read
+     (Object : in out Overreporting; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result
+   is (Object.Inner.Read (Buffer));
+   overriding function Offset (Object : Overreporting) return Pictlib.Source_Offset is (Object.Inner.Offset);
+   overriding function Skip
+     (Object : in out Overreporting; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result;
+
+   overriding function Skip
+     (Object : in out Overreporting; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result
+   is
+      use type Pictlib.Byte_Count;
+      Step : constant Pictlib.Streams.Source_Result := Object.Inner.Skip (Count);
+   begin
+      return (Step with delta Count => Step.Count + 1);
+   end Skip;
 
    overriding function Name (T : Test) return AUnit.Message_String is
       pragma Unreferenced (T);
@@ -49,6 +74,7 @@ package body Pictlib_Testing.Test_Decoder is
       Register_Routine (T, Reset_Reuses_The_Decoder'Access, "decoder.state.reset_reuse");
       Register_Routine (T, Finalize_Is_Idempotent'Access, "decoder.state.finalize");
       Register_Routine (T, Source_Failure'Access, "decoder.source_failure");
+      Register_Routine (T, Overreporting_Source'Access, "decoder.source_overreports");
    end Register_Tests;
 
    procedure Wrong_State_Calls (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -240,4 +266,24 @@ package body Pictlib_Testing.Test_Decoder is
       Outcome := Decoding.Read_Header (Decoder);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Source_Zero_Progress, "a stalled source was not rejected");
    end Source_Failure;
+
+   procedure Overreporting_Source (T : in out AUnit.Test_Cases.Test_Case'Class) is
+      pragma Unreferenced (T);
+      Source : aliased Overreporting;
+      Decoder : Decoding.Decoder;
+      Visitor : Recorders.Null_Visitor;
+      Outcome : Pictlib.Results.Result;
+   begin
+      Pictlib.Streams.Open (Source.Inner, Skipped'Access);
+      --  The picture byte budget ends inside the skipped data, so the reader asks the source for less than the
+      --  opcode's length and the extra byte claimed still lies within that length.
+      Decoding.Initialize
+        (Decoder, Source'Access,
+         Decode_Limits => (Pictlib.Limits.Default_Limits with delta Max_Picture_Bytes => 5_000));
+      Outcome := Decoding.Read_Header (Decoder);
+      Assert (Pictlib.Results.Succeeded (Outcome), "the header did not read");
+      Outcome := Decoding.Enumerate (Decoder, Visitor);
+      Assert (Outcome.First_Error.Code = Pictlib.Errors.Internal_Invariant_Failed,
+              "a source claiming more than it skipped was trusted: " & Outcome.First_Error.Code'Image);
+   end Overreporting_Source;
 end Pictlib_Testing.Test_Decoder;

@@ -410,6 +410,10 @@ package body Pictlib.Internal.QuickTime is
          end;
       end if;
 
+      --  The matte and mask may leave no room for the description.
+      if Description_Bytes > Length - Used then
+         return Too_Long (Description_Bytes);
+      end if;
       Outcome := Read_Description (S, Item);
       if not Results.Succeeded (Outcome) then
          return Outcome;

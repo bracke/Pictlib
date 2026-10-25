@@ -425,7 +425,8 @@ package body Pictlib.Internal.Coverage is
       --  Along a line the columns move one way as the rows go down.
       Increasing : constant Boolean := (To.H >= From.H) = (To.V >= From.V);
    begin
-      if Pen_Width <= 0 or else Pen_Height <= 0 or else Kept_Top > Kept_Bottom then
+      --  A spent shape takes no more work, not even this line's row buffers.
+      if Item.Spent or else Pen_Width <= 0 or else Pen_Height <= 0 or else Kept_Top > Kept_Bottom then
          return;
       end if;
       Low_X.Set_Length (Ada.Containers.Count_Type (Kept_Bottom - Kept_Top + 1));

@@ -3,7 +3,6 @@ with Pictlib.Errors;
 with Pictlib.Geometry;
 with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Failures;
-with Pictlib.Internal.Metadata_Store;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Metadata;
 with Pictlib.Opcodes;
@@ -40,30 +39,11 @@ package body Pictlib.Internal.Container is
 
    --  The file header is not an opcode: retained or skipped, the per-opcode byte budget does not apply to it.
    function Read_File_Header (S : in out Sessions.Session) return Results.Result is
-      Keep : Boolean := False;
-      Outcome : Results.Result := Results.Success;
-      Data : Streams.Byte_Array_Access;
-      Offset : constant Source_Offset := S.Stream.Offset;
-   begin
-      if S.Retention.File_Headers then
-         Outcome := Sessions.Admit_Item (S, File_Header_Bytes, Keep);
-      end if;
-      if Results.Succeeded (Outcome) and then Keep then
-         Outcome := Sessions.Admit_Allocation (S, File_Header_Bytes);
-      end if;
-      if not Results.Succeeded (Outcome) then
-         return Outcome;
-      elsif not Keep then
-         return Streams.Skip_Exact (S.Stream, File_Header_Bytes);
-      end if;
-      Data := new Streams.Byte_Array (1 .. File_Header_Bytes);
-      Outcome := Streams.Read_Exact (S.Stream, Data.all);
-      if Results.Succeeded (Outcome) then
-         Metadata_Store.Append (S.Store, (Kind => Metadata.File_Header, Offset => Offset, others => <>), Data.all);
-      end if;
-      Bytes.Free (Data);
-      return Outcome;
-   end Read_File_Header;
+     (if S.Retention.File_Headers
+      then Sessions.Retain
+             (S, (Kind => Metadata.File_Header, Offset => S.Stream.Offset, others => <>), File_Header_Bytes,
+              In_Opcode => False)
+      else Streams.Skip_Exact (S.Stream, File_Header_Bytes));
 
    function Check_Frame (S : Sessions.Session; Frame : Geometry.Rect) return Results.Result is
      (if Geometry.Is_Empty (Frame)
