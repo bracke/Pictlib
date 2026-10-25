@@ -248,8 +248,11 @@ package body Pictlib.Internal.Pixmaps is
          Header.Encoding := XRGB_Chunky;
       end if;
 
-      --  The pack types and component counts a direct pixmap allows, whether or not its rows are packed.
-      if Header.Is_Pixmap and then Depth = 16 and then Pack not in 0 | 1 | 3 then
+      --  The pack types and component counts each depth allows, whether or not its rows are packed: an indexed
+      --  pixmap is packed by default or not at all.
+      if Header.Is_Pixmap and then Depth <= 8 and then Pack not in 0 | 1 then
+         return Invalid (1, Pack);
+      elsif Header.Is_Pixmap and then Depth = 16 and then Pack not in 0 | 1 | 3 then
          return Invalid (3, Pack);
       elsif Header.Is_Pixmap and then Depth = 32 and then Pack not in 0 | 1 | 2 | 4 then
          return Invalid (4, Pack);
@@ -263,10 +266,7 @@ package body Pictlib.Internal.Pixmaps is
          Header.Raw_Length := Header.Row_Bytes;
          Header.Unpacked_Length := Header.Row_Bytes;
       elsif Header.Is_Pixmap and then Pack = 2 then
-         --  32-bit pixels with the pad byte dropped, unpacked.
-         if Depth /= 32 then
-            return Invalid (32, Depth);
-         end if;
+         --  32-bit pixels with the pad byte dropped, unpacked: the checks above leave no other depth.
          Header.Layout := Unpacked;
          Header.Encoding := RGB_Triplets;
          Header.Raw_Length := 3 * Header.Width;

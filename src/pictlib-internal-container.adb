@@ -52,17 +52,16 @@ package body Pictlib.Internal.Container is
               Actual => Byte_Count (Integer'Max (0, Integer'Min (Geometry.Width (Frame), Geometry.Height (Frame)))))
       else Failures.Check_Frame_Size (Geometry.Width (Frame), Geometry.Height (Frame), S.Budget, S.Stream.Offset));
 
-   --  Where HeaderOp's own diagnostics point.
-   Header_Op_Context : constant Errors.Diagnostic_Context :=
-     (Op => Opcodes.Header_Op, Has_Opcode => True, others => <>);
-
    --  The 24 bytes of HeaderOp data. Version -1 (a long) carries fixed-point bounds; version -2 (a word)
    --  carries the resolution and an integer source rectangle.
 
+   --  Its diagnostics name the HeaderOp Event: its offset, opcode and ordinal.
    function Read_Header_Op_Data
      (S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event;
       Info : in out Pictures.Header_Info) return Results.Result
    is
+      Header_Op_Context : constant Errors.Diagnostic_Context := Sessions.Context_Of (Event);
       Context : constant Bytes.Opcode_Context := Bytes.Within (Opcodes.Header_Op);
       First, Second : Interfaces.Unsigned_16;
       Outcome : Results.Result := Bytes.Read_U16_BE (S.Stream, First, Context);
@@ -239,7 +238,7 @@ package body Pictlib.Internal.Container is
       Event := (Offset => Header_Offset, Op => Opcodes.Header_Op, Data_Length => Header_Op_Bytes, others => <>);
       Outcome := Sessions.Claim_Ordinal (S, Event.Ordinal);
       if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Attributed (Read_Header_Op_Data (S, Info), Event);
+         Outcome := Sessions.Attributed (Read_Header_Op_Data (S, Event, Info), Event);
       end if;
       if Results.Succeeded (Outcome) then
          Info.Has_Header_Opcode := True;

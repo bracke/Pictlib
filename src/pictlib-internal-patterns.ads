@@ -54,11 +54,12 @@ package Pictlib.Internal.Patterns is
    --  @param Allowance Drawing work a tile's decoding may take, a unit per pixel and per row; a tile is decoded
    --  only when that fits.
    --  @param Work The drawing work it took, for the caller to charge: a unit for any pattern, plus a decoded
-   --  tile's pixels and rows. The unit alone may exceed Allowance; the charge then fails.
+   --  tile's pixels and rows. The unit alone may exceed Allowance; the charge then fails. For a skipped tile the
+   --  unit is charged here, before its warning, and Work is then 0.
    --  @return Success, Pattern_Invalid for an unknown type, Limit_Exceeded past Allowance or the allocation
    --  budget, or the pixmap's failure. A tile of more than Max_Tile_Pixels pixels is never decoded, whatever the
    --  budgets: strictly it fails with Unsupported_Feature before its rows; leniently its rows are skipped, Item
-   --  holds pat1Data, and an Approximated_Rendering warning says so.
+   --  holds pat1Data, and once its unit is charged an Approximated_Rendering warning says so.
    function Read_Pixel_Pattern
      (S : in out Sessions.Session;
       Event : Pictures.Opcode_Event;

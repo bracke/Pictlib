@@ -194,13 +194,22 @@ package body Pictlib_Testing.Test_Container is
 
       Read_Only_Header (Zero_Resolution, Decoder, Outcome);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Header_Invalid
-              and then Outcome.First_Error.Context.Op = 16#0C00#,
-              "a zero resolution was accepted strictly");
+              and then Outcome.First_Error.Context.Op = 16#0C00#
+              and then Outcome.First_Error.Context.Source = 14
+              and then Outcome.First_Error.Context.Ordinal = 1,
+              "a zero resolution was accepted strictly, or not placed at its HeaderOp");
       Read_Only_Header (Zero_Resolution, Decoder, Outcome, (Strictness => Pictlib.Compatible, others => <>));
       Assert (Pictlib.Results.Succeeded (Outcome)
               and then Decoding.Header (Decoder).Horizontal_Resolution = Pictlib.Geometry.Fixed_72,
               "a compatible decoder did not fall back to 72 dpi");
       Assert (Recorders.Has_Warning (Decoder, Pictlib.Errors.Compatibility_Issue), "the fallback was not reported");
+      declare
+         Item : constant Pictlib.Errors.Warning :=
+           Recorders.Warning_With (Decoder, Pictlib.Errors.Compatibility_Issue);
+      begin
+         Assert (Item.Context.Op = 16#0C00# and then Item.Context.Source = 14 and then Item.Context.Ordinal = 1,
+                 "the fallback warning does not name its HeaderOp the way the strict failure does");
+      end;
    end Extended_Version_2_Resolution;
 
    procedure Invalid_Header_Op (T : in out AUnit.Test_Cases.Test_Case'Class) is

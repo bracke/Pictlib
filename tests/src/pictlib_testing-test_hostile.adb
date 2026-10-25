@@ -65,9 +65,17 @@ package body Pictlib_Testing.Test_Hostile is
       Origin_At_Bound : aliased constant Bytes :=
         Pic (4, 4, Repeat (Origin (-32_768, 0), 511) & W (16#20#) & W (0) & W (-32_768) & W (0) & W (32_767));
       Origin_Past_Bound : aliased constant Bytes := Pic (4, 4, Repeat (Origin (-32_768, 0), 512));
+      Storage : aliased Bytes := [1 .. 3 * 16 => 0];
+      Decoder : Pictlib.Decoding.Decoder;
+      Outcome : Pictlib.Results.Result;
    begin
       Canvases.Expect_Raster (Origin_At_Bound, 4, 4, "WWWW/WWWW/WWWW/WWWW", "a line after the origin at its bound");
       Canvases.Expect_Failure (Origin_Past_Bound, 4, 4, Errors.Opcode_Invalid, "origin past its bound", 16#0C#);
+      --  The failure names the origin's bound, 2^24 - 2^15, not the reach of points.
+      Canvases.Render (Origin_Past_Bound, Decoder, Canvases.View (Storage'Access, 4, 4), Outcome);
+      Assert (Outcome.First_Error.Context.Expected = 2 ** 24 - 2 ** 15
+              and then Outcome.First_Error.Context.Actual = 512 * 32_768,
+              "the origin's failure names the wrong bound:" & Outcome.First_Error.Context.Expected'Image);
       Canvases.Expect_Raster (Extreme_Line, 4, 4, "BWWW/WBWW/WWBW/WWWB", "line from -32768 to 32767");
       Canvases.Expect_Failure (Runaway_Origin, 4, 4, Errors.Opcode_Invalid, "origin moved 600 times", 16#0C#);
       Canvases.Expect_Failure (Runaway_Text, 4, 4, Errors.Opcode_Invalid, "text origin moved 70,000 times", 16#29#,
@@ -205,6 +213,13 @@ package body Pictlib_Testing.Test_Hostile is
                           Budget => Tight);
          Assert (Pictlib.Results.Succeeded (Outcome),
                  "the skipped tile was charged more than its unit: " & Outcome.First_Error.Code'Image);
+         --  With no budget for that unit the skip fails, and leaves no warning that the tile was approximated.
+         Tight.Max_Drawing_Work := 0;
+         Canvases.Render (Whole.all, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Compatible,
+                          Budget => Tight);
+         Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded
+                 and then not Recorders.Has_Warning (Decoder, Errors.Approximated_Rendering),
+                 "an uncharged skipped tile was reported as drawn: " & Outcome.First_Error.Code'Image);
          Tight := Pictlib.Limits.Default_Limits;
          --  Strictly it is unsupported whatever the budgets: none left for the pattern's unit, and too few bytes
          --  per opcode for its rows.

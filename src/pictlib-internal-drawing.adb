@@ -97,10 +97,11 @@ package body Pictlib.Internal.Drawing is
       return Outcome;
    end Read_Polygon;
 
-   --  A coordinate the picture moved beyond Rendering.Reach.
-   function Out_Of_Reach (Event : Pictures.Opcode_Event; Value : Integer) return Results.Result is
-     (Failures.In_Opcode
-        (Event, Errors.Opcode_Invalid, Rendering.Reach, Byte_Count (abs Long_Long_Integer (Value))));
+   --  A coordinate the picture moved beyond Reach: Rendering.Reach for points, Rendering.Origin_Reach for the
+   --  origin.
+   function Out_Of_Reach (Event : Pictures.Opcode_Event; Value : Integer; Reach : Byte_Count := Rendering.Reach)
+     return Results.Result is
+     (Failures.In_Opcode (Event, Errors.Opcode_Invalid, Reach, Byte_Count (abs Long_Long_Integer (Value))));
 
    function Inset (Item : Area; Width, Height : Integer) return Area is
      ((Item.Top + Height, Item.Left + Width, Item.Bottom - Height, Item.Right - Width));
@@ -425,9 +426,9 @@ package body Pictlib.Internal.Drawing is
                Outcome := Read_Pair (S, Dh, Dv);
                if Results.Succeeded (Outcome) then
                   if not Rendering.Origin_Within_Reach (P.Port.Origin_H + Dh) then
-                     return Out_Of_Reach (Event, P.Port.Origin_H + Dh);
+                     return Out_Of_Reach (Event, P.Port.Origin_H + Dh, Rendering.Origin_Reach);
                   elsif not Rendering.Origin_Within_Reach (P.Port.Origin_V + Dv) then
-                     return Out_Of_Reach (Event, P.Port.Origin_V + Dv);
+                     return Out_Of_Reach (Event, P.Port.Origin_V + Dv, Rendering.Origin_Reach);
                   end if;
                   P.Port.Origin_H := P.Port.Origin_H + Dh;
                   P.Port.Origin_V := P.Port.Origin_V + Dv;

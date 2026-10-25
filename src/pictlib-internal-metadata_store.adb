@@ -1,4 +1,6 @@
 with Pictlib.Errors;
+with Pictlib.Internal.Checked_Arithmetic;
+with Pictlib.Internal.Failures;
 
 package body Pictlib.Internal.Metadata_Store is
    procedure Clear (Object : in out Store) is
@@ -10,24 +12,16 @@ package body Pictlib.Internal.Metadata_Store is
 
    function Admits (Object : Store; Length : Byte_Count; Budget : Limits.Limit_Set) return Results.Result is
    begin
+      --  The caller places the failure in the stream.
       if Natural (Object.Infos.Length) >= Budget.Max_Metadata_Items then
-         return Results.Failure
-           (Errors.Make
-              (Errors.Limit_Exceeded,
-               (Expected => Byte_Count (Budget.Max_Metadata_Items),
-                Actual => Byte_Count (Object.Infos.Length) + 1,
-                Limit => Metadata_Item_Limit,
-                others => <>)));
+         return Failures.Over_Limit
+           (Metadata_Item_Limit, Byte_Count (Budget.Max_Metadata_Items), Byte_Count (Object.Infos.Length) + 1);
       elsif Length
         > Budget.Max_Retained_Metadata_Bytes - Byte_Count'Min (Object.Bytes, Budget.Max_Retained_Metadata_Bytes)
       then
-         return Results.Failure
-           (Errors.Make
-              (Errors.Limit_Exceeded,
-               (Expected => Budget.Max_Retained_Metadata_Bytes,
-                Actual => Length,
-                Limit => Retained_Metadata_Byte_Limit,
-                others => <>)));
+         return Failures.Over_Limit
+           (Retained_Metadata_Byte_Limit, Budget.Max_Retained_Metadata_Bytes,
+            Checked_Arithmetic.Saturating_Add (Object.Bytes, Length));
       end if;
       return Results.Success;
    end Admits;

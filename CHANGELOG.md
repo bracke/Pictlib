@@ -84,6 +84,16 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   region is walked once per opcode, not once per glyph.
 - A QuickTime image's matte and mask that leave no room for the image
   description fail before the description is read.
+- A missing end opcode finishes with a `Compatibility_Issue` warning in
+  both lenient modes; the specification no longer also lists it among the
+  partial pictures of `Recover_When_Safe`.
+- An oversized `PixPat` tile's `Approximated_Rendering` warning is recorded
+  only once its rows are skipped and the pattern is charged.
+- An indexed PixMap allows pack types 0 and 1, as the specification now
+  says; any other is `Pixmap_Invalid`, as for direct pixmaps.
+- HeaderOp's own warnings and failures name its offset and ordinal; an
+  origin moved out of reach names the origin's bound; the picture byte and
+  metadata budgets name the amount that crossed them.
 
 ### Internal structure
 

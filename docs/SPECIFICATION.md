@@ -131,7 +131,8 @@ are retained, never interpreted.
   - A tile of more than 2^31 − 1 pixels, more than a tile can index, is never decoded, so no
     budget applies to it. In `Strict` it is `Unsupported_Feature` before its rows are read, so no
     limit on reading them hides it. Otherwise its rows are read past and, once the pattern is
-    charged, an `Approximated_Rendering` warning is recorded and its 1-bit pattern stands in.
+    charged, an `Approximated_Rendering` warning is recorded and its 1-bit pattern stands in; a
+    skip or charge that fails records no warning.
     Either diagnostic gives the bound as Expected and the tile's pixels as Actual.
   - A pattern opcode that fails, in reading or in its charge, leaves that pattern QuickDraw's
     default (white background, black pen and fill); since a failure ends rendering, nothing draws
@@ -203,7 +204,8 @@ are retained, never interpreted.
 - A `srcRect` reaching outside the bounds fails with `Pixmap_Invalid` in `Strict`; otherwise it is
   clamped to the bounds with a warning. An empty source or destination draws nothing.
 - Indexed pixmaps (`BitsRect`, `PackBitsRect`) have 1, 2, 4 or 8 bits per pixel; direct pixmaps 16
-  or 32. 16-bit pixels allow pack types 0, 1, 3; 32-bit pixels 0, 1, 2, 4 with `cmpCount` 3 or 4.
+  or 32. Indexed pixels allow pack types 0 and 1; 16-bit pixels 0, 1, 3; 32-bit pixels 0, 1, 2, 4
+  with `cmpCount` 3 or 4. Any other pack type is `Pixmap_Invalid`.
   A 5-bit component `v` expands to `v * 8 + v / 4`. Source alpha (`cmpCount = 4`) is ignored, as
   QuickDraw ignores it; every pixel written is opaque.
 - A BitMap's 1 bits are black and 0 bits white before the transfer mode applies, so a copy made
@@ -212,7 +214,7 @@ are retained, never interpreted.
   ignored.
 - `hRes`/`vRes`, `pixelType`, `planeBytes` and `pmReserved` are read and ignored: nothing pictlib
   draws depends on them. Pack type and `cmpCount` are checked for every direct pixmap, whether or
-  not its rows are packed.
+  not its rows are packed, and an indexed PixMap's pack type likewise.
 
 ### 3.4 Text
 
@@ -397,8 +399,9 @@ leaving the decoder in `Header_Read`; a frame above `Max_Canvas_Pixels` or a vie
 fail with `Unsupported_Feature` in `Strict` and are skipped with an `Approximated_Rendering`
 warning otherwise; port state they depend on is tracked. In `Recover_When_Safe`, malformed
 picture data (truncation, malformed regions, pixmaps, PackBits, color tables, patterns or opcode
-lengths, a missing end opcode) ends rendering with success and a `Partial_Picture` warning: what
-was drawn stands, the rest is background. Limits, stream failures and unsupported features are
+lengths) ends rendering with success and a `Partial_Picture` warning: what was drawn stands, the
+rest is background. A missing end opcode is not malformed data: every opcode was read whole, so it
+finishes with a warning in both lenient modes, as below. Limits, stream failures and unsupported features are
 never recovered.
 
 The decoder reads nothing after the end opcode unless `Require_End_Of_Input` is set; then one more

@@ -440,6 +440,13 @@ package body Pictlib_Testing.Test_Enumeration is
       Pad_Dropped_16 : aliased constant Bytes :=
         V2_Body (W (16#009A#) & L (16#FF#) & W (16#8000# + 8) & Rect (0, 0, 1, 4) & Pixmap_Tail (2, 16, 3, 5)
                  & Rect (0, 0, 1, 4) & Rect (0, 0, 1, 4) & W (0) & W (16#00FF#));
+      --  An indexed pixmap is packed by default or not at all.
+      function Indexed_Packed (Pack : Natural) return Bytes is
+        (V2_Body (W (16#0098#) & W (16#8000# + 8) & Rect (0, 0, 1, 8) & Pixmap_Tail (Pack, 8, 1, 8)
+                  & L (0) & W (0) & W (0) & Zeros (8) & Rect (0, 0, 1, 8) & Rect (0, 0, 1, 8) & W (0) & Zeros (8)
+                  & W (16#00FF#)));
+      Indexed_Pack_2 : aliased constant Bytes := Indexed_Packed (2);
+      Indexed_Pack_3 : aliased constant Bytes := Indexed_Packed (3);
       Inverted_Bounds : aliased constant Bytes :=
         V2_Body (W (16#0098#) & W (2) & Rect (4, 0, 0, 16) & Rect (0, 0, 1, 1) & Rect (0, 0, 1, 1) & W (0)
                  & W (16#00FF#));
@@ -455,6 +462,8 @@ package body Pictlib_Testing.Test_Enumeration is
       Recorders.Expect_Failure (Bad_Pack, Pictlib.Errors.Pixmap_Invalid, "pack type 5", 16#009A#);
       Recorders.Expect_Failure (Indexed_Direct, Pictlib.Errors.Pixmap_Invalid, "8-bit direct pixels", 16#009A#);
       Recorders.Expect_Failure (Pad_Dropped_16, Pictlib.Errors.Pixmap_Invalid, "pack type 2 at 16 bits", 16#009A#);
+      Recorders.Expect_Failure (Indexed_Pack_2, Pictlib.Errors.Pixmap_Invalid, "pack type 2 at 8 bits", 16#0098#);
+      Recorders.Expect_Failure (Indexed_Pack_3, Pictlib.Errors.Pixmap_Invalid, "pack type 3 at 8 bits", 16#0098#);
       Recorders.Expect_Failure (Inverted_Bounds, Pictlib.Errors.Pixmap_Invalid, "inverted bounds", 16#0098#);
       Recorders.Expect_Failure (Bad_Pattern, Pictlib.Errors.Pattern_Invalid, "pattern type 3", 16#0012#);
       Recorders.Expect_Failure (Bad_Mask, Pictlib.Errors.Region_Invalid, "short mask region", 16#0091#);
@@ -476,15 +485,22 @@ package body Pictlib_Testing.Test_Enumeration is
       Events : Recorders.Recorder;
       Outcome : Pictlib.Results.Result;
 
+      --  Both lenient modes finish with a warning: a missing end opcode is no partial picture.
       procedure Accept_Missing_End (Input : aliased Bytes) is
-         Lenient : Decoding.Decoder;
-         Seen : Recorders.Recorder;
       begin
-         Recorders.Decode (Input, Lenient, Seen, Outcome, (Strictness => Pictlib.Compatible, others => <>));
-         Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.State (Lenient) = Decoding.Finished,
-                 "a compatible decoder rejected a missing end opcode");
-         Assert (Recorders.Has_Warning (Lenient, Pictlib.Errors.Compatibility_Issue),
-                 "a missing end opcode was not reported");
+         for Mode in Pictlib.Compatible .. Pictlib.Recover_When_Safe loop
+            declare
+               Lenient : Decoding.Decoder;
+               Seen : Recorders.Recorder;
+            begin
+               Recorders.Decode (Input, Lenient, Seen, Outcome, (Strictness => Mode, others => <>));
+               Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.State (Lenient) = Decoding.Finished,
+                       "a lenient decoder rejected a missing end opcode in " & Mode'Image);
+               Assert (Recorders.Has_Warning (Lenient, Pictlib.Errors.Compatibility_Issue)
+                       and then not Recorders.Has_Warning (Lenient, Pictlib.Errors.Partial_Picture),
+                       "a missing end opcode was not reported as a compatibility issue in " & Mode'Image);
+            end;
+         end loop;
       end Accept_Missing_End;
    begin
       Recorders.Expect_Failure (Truncated, Pictlib.Errors.Source_Unexpected_End, "truncated rect", 16#0030#);

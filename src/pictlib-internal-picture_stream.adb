@@ -1,4 +1,5 @@
 with Pictlib.Errors;
+with Pictlib.Internal.Failures;
 
 package body Pictlib.Internal.Picture_Stream is
    procedure Bind (Object : in out Reader; Input : not null access Streams.Source'Class; Max_Bytes : Byte_Count) is
@@ -32,13 +33,11 @@ package body Pictlib.Internal.Picture_Stream is
    function Lookahead_At (Object : Reader; Index : Positive) return Byte is
      (Object.Buffer (Object.First + Index - 1));
 
+   --  The budget is spent: the next byte would be one past it.
    function Over_Budget (Object : Reader) return Errors.Error is
-     (Errors.Make
-        (Errors.Limit_Exceeded,
-         (Source => Object.Base + Source_Offset (Object.Consumed),
-          Expected => Object.Max_Bytes,
-          Limit => Picture_Byte_Limit,
-          others => <>)));
+     (Failures.Over_Limit
+        (Picture_Byte_Limit, Object.Max_Bytes, Object.Consumed + 1, Object.Base + Source_Offset (Object.Consumed))
+        .First_Error);
 
    --  Bytes the reader may still deliver.
    function Remaining_Budget (Object : Reader) return Byte_Count is
