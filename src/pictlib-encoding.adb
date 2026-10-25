@@ -17,9 +17,10 @@ package body Pictlib.Encoding is
 
    --  The longest even rowBytes a PixMap can state.
    Largest_Row_Bytes : constant := Internal.Pixmap_Row_Bytes_Mask - 1;
-   --  The PixMap fields this encoder writes: packType 0 (none) or 4 (each component plane packed), pixelType
+   --  The PixMap fields this encoder writes: packType 0 (the default: PackBits from rowBytes 8, as the indexed
+   --  layout's rows are written) or 4 (each component plane packed), pixelType
    --  0 (indexed) or 16 (RGBDirect), and the baseAddr QuickDraw writes for a DirectBitsRect.
-   Pack_None : constant := 0;
+   Pack_Default : constant := 0;
    Pack_Component_Planes : constant := 4;
    Indexed_Pixels : constant := 0;
    Direct_Pixels : constant := 16;
@@ -198,7 +199,7 @@ package body Pictlib.Encoding is
             Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Pack_Bits_Rect)));
             Step (Outcome, Writers.Put_Word (Out_Bytes, Internal.Pixmap_Flag + Item.Stored));
             Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
-            Put_Pixmap_Tail (Pack => Pack_None, Pixel_Type => Indexed_Pixels, Pixel_Size => 8, Component_Count => 1,
+            Put_Pixmap_Tail (Pack => Pack_Default, Pixel_Type => Indexed_Pixels, Pixel_Size => 8, Component_Count => 1,
                              Component_Size => 8);
             --  The color table: ctSeed, ctFlags, ctSize, then each entry's value, which is its index.
             Step (Outcome, Writers.Put_Long (Out_Bytes, 0));

@@ -167,6 +167,10 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   thousands of steps a byte.
 - jpeglib's metadata limits are raised to what the embedded data can hold,
   so a valid JPEG's metadata is never refused; pictlib keeps none of it.
+- A round rect whose corner oval holds no pixel centre in a row keeps that
+  row's straight edge between the corners; a narrow corner oval (2 wide,
+  10 high) used to drop the rect's top and bottom rows, and a framed round
+  rect's inner shape with them.
 - Clearing a decoder releases the storage its metadata and warnings held,
   as the specification says, rather than keeping the emptied vectors'
   capacity.
@@ -227,6 +231,11 @@ place:
 - The font cache's operations that reach textrender take the textrender
   guard as a parameter, so a call without the process-wide lock does not
   compile.
+- The specification says the encoder's resolution only labels a picture,
+  every rectangle staying in pixels, and names its two departures from
+  QuickDraw: patterns tiled from the picture's origin, the pen kept in
+  picture coordinates. The encoder's pack type 0 is named for what it is,
+  the default.
 - The specification tabulates what `Max_Total_Allocation_Bytes` counts at
   fixed rates, lists embedded JPEG data among what `Recover_When_Safe`
   recovers, and the invariant registry names the units and tests that

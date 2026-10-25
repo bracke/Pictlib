@@ -95,7 +95,9 @@ are retained, never interpreted.
 - Coordinates read from the picture are local. `Origin` (`dh`, `dv`) moves the local system and
   accumulates; a local point `p` is picture point `p − origin`. The clip region keeps its local
   coordinates when the origin moves, as `SetOrigin` leaves `clipRgn` alone. Pen location is kept
-  in picture coordinates. Line ends and the text origin stay within ±2^24, and the origin within
+  in picture coordinates, where QuickDraw keeps `pnLoc` in local ones: an `Origin` between two line
+  opcodes leaves the pen where it was drawn, a choice made here and not yet checked against
+  QuickDraw. Line ends and the text origin stay within ±2^24, and the origin within
   ±(2^24 − 2^15), so that every 16-bit point read after it is within ±2^24: an opcode that would
   move one further fails with `Opcode_Invalid`, so no coordinate arithmetic overflows.
 - Pixel model: pixel `(x, y)` is the unit square from `(x, y)` to `(x + 1, y + 1)`; a rectangle
@@ -122,7 +124,9 @@ are retained, never interpreted.
   with `patCopy`, and `invert` inverts each component. One last rectangle serves the "same"
   opcodes of rects, round rects, ovals and arcs; polygons and regions keep their own. Before any
   shape, "same" draws nothing.
-- Patterns tile from picture coordinate (0, 0). A bit pattern's 1 bits are the foreground and its
+- Patterns tile from picture coordinate (0, 0); QuickDraw aligns them to the local origin, so a
+  picture that moves its origin by other than a multiple of 8 tiles its patterns differently here,
+  a choice made here and not yet checked against QuickDraw. A bit pattern's 1 bits are the foreground and its
   0 bits the background; a color `PixPat` (type 1) is drawn with its own colors and is not
   colorized; a dither `PixPat` (type 2) is drawn as its RGB color.
   - A pattern opcode is read, then charged, like every other opcode (section 9).
@@ -443,7 +447,11 @@ default), `picSize` (the low 16 bits of the picture's length; the encoder measur
 dry run first, so the destination stays forward-only), `picFrame` `(0, 0, height, width)`,
 `VersionOp`, `HeaderOp` (version −2, the options' resolution, the frame), `DefHilite`, a clip of the
 frame, one bits opcode copied with `srcCopy` from and to the frame, and `OpEndPic`, with version 2
-alignment.
+alignment. The resolution only labels the picture: `picFrame`, HeaderOp's rectangle and the bits
+opcode's rectangles all hold the image's pixels whatever the resolution, so a reader that sizes a
+picture by `picFrame` shows it at one pixel per point. Inside Macintosh has `OpenCPicture` state
+`picFrame` at 72 dpi instead; pictlib's decoder sizes its canvas by `picFrame`, so writing it that
+way would have pictlib scale its own pictures, and is left until a reader's behaviour is checked.
 
 Layouts:
 - `Direct_32`: `DirectBitsRect`, pixel type 16, 32 bits, `rowBytes = 4 × width`, pack type 4 —

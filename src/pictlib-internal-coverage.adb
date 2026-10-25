@@ -250,7 +250,13 @@ package body Pictlib.Internal.Coverage is
             begin
                if Oval_Y < 0 then
                   Add (Item, Y, Bounds.Left, Bounds.Right);
-               elsif Oval_Row (Corner, Oval_Y, Left, Right) then
+               else
+                  --  A corner row the oval holds no pixel centre of is cut to the corners' meeting point, never
+                  --  away: the straight edge between the two corners stays.
+                  if not Oval_Row (Corner, Oval_Y, Left, Right) then
+                     Left := Width / 2;
+                     Right := Width - Width / 2;
+                  end if;
                   Add (Item, Y, Bounds.Left + Left, Bounds.Right - (Width - Right));
                end if;
             end;

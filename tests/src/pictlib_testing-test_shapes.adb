@@ -90,6 +90,9 @@ package body Pictlib_Testing.Test_Shapes is
    Dot_Oval : aliased constant Bytes := Pic (1, 1, Op_Rect (16#51#, 0, 0, 1, 1));
    Round : aliased constant Bytes := Pic (8, 6, W (16#0B#) & W (4) & W (4) & Op_Rect (16#41#, 0, 0, 6, 8));
    Square_Round : aliased constant Bytes := Pic (3, 2, Op_Rect (16#41#, 0, 0, 2, 3));
+   --  An oval 2 wide and 10 high holds no pixel centre in its first and last rows: the corners meet there.
+   Narrow_Corners : aliased constant Bytes :=
+     Pic (10, 20, W (16#0B#) & W (10) & W (2) & Op_Rect (16#41#, 0, 0, 20, 10));
    Framed_Round : aliased constant Bytes := Pic (8, 6, W (16#0B#) & W (4) & W (4) & Op_Rect (16#40#, 0, 0, 6, 8));
 
    function Arc (Start_Angle, Arc_Angle : Integer) return Bytes is
@@ -251,6 +254,16 @@ package body Pictlib_Testing.Test_Shapes is
       Canvases.Expect_Raster
         (Round, 8, 6, "WBBBBBBW/BBBBBBBB/BBBBBBBB/BBBBBBBB/BBBBBBBB/WBBBBBBW", "paintRoundRect");
       Canvases.Expect_Raster (Square_Round, 3, 2, "BBB/BBB", "round rect without oval size");
+      declare
+         Middle : constant String := "/BBBBBBBBBB";
+         Rows : String (1 .. 18 * Middle'Length);
+      begin
+         for Row in 0 .. 17 loop
+            Rows (Row * Middle'Length + 1 .. (Row + 1) * Middle'Length) := Middle;
+         end loop;
+         Canvases.Expect_Raster (Narrow_Corners, 10, 20, "WBBBBBBBBW" & Rows & "/WBBBBBBBBW",
+                                 "round rect whose corner oval is narrow");
+      end;
       Canvases.Expect_Raster
         (Framed_Round, 8, 6, "WBBBBBBW/BWWWWWWB/BWWWWWWB/BWWWWWWB/BWWWWWWB/WBBBBBBW", "frameRoundRect");
    end Ovals_And_Round_Rects;
