@@ -3,10 +3,11 @@ with Pictlib.Internal.Checked_Arithmetic;
 with Pictlib.Internal.Failures;
 
 package body Pictlib.Internal.Metadata_Store is
+   --  Emptied vectors keep their storage, so the store is replaced by empty ones: what it held is released.
    procedure Clear (Object : in out Store) is
    begin
-      Object.Infos.Clear;
-      Object.Data.Clear;
+      Object.Infos := Info_Vectors.Empty_Vector;
+      Object.Data := Data_Vectors.Empty_Vector;
       Object.Bytes := 0;
    end Clear;
 

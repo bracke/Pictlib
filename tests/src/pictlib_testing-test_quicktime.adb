@@ -298,6 +298,26 @@ package body Pictlib_Testing.Test_QuickTime is
                  and then Recorders.Has_Warning (Decoder, Errors.Approximated_Rendering),
                  "a lossless JPEG was not skipped: " & Outcome.First_Error.Code'Image);
       end;
+      --  A JPEG whose frame leaves its height to a later DNL marker: nothing bounds what jpeglib would need.
+      declare
+         use type Pictlib.Byte;
+         function Height_Undefined return Bytes is
+            Result : Bytes := JPEG;
+         begin
+            for Index in Result'First .. Result'Last - 6 loop
+               if Result (Index) = 16#FF# and then Result (Index + 1) = 16#C0# then
+                  --  SOF0: length, precision, then the height.
+                  Result (Index + 5) := 0;
+                  Result (Index + 6) := 0;
+                  exit;
+               end if;
+            end loop;
+            return Result;
+         end Height_Undefined;
+         Undefined : aliased constant Bytes := Image (Plain (Height_Undefined), 8, 6);
+      begin
+         Canvases.Expect_Failure (Undefined, 8, 6, Errors.Unsupported_Feature, "a height left to DNL", 16#8200#);
+      end;
       --  A progressive JPEG is decoded through a coefficient map on the stack: one whose map would pass the bound
       --  (8192 blocks: 600 x 600 at 4:2:0 has 8664) is unsupported, a smaller one drawn.
       declare
@@ -310,6 +330,10 @@ package body Pictlib_Testing.Test_QuickTime is
            Image (QuickTime ("jpeg", 500, 500, Encoded_JPEG (Progressive, 500, 500)), 8, 6);
       begin
          Canvases.Expect_Failure (Large, 8, 6, Errors.Unsupported_Feature, "large progressive JPEG", 16#8200#);
+         --  pictlib's own refusal, before jpeglib decodes: no jpeglib code underneath.
+         Canvases.Render (Large, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome);
+         Assert (not Outcome.First_Error.Context.Has_Underlying_Code,
+                 "a large progressive JPEG was refused by jpeglib, not by pictlib's bound");
          Canvases.Render (Small, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome);
          Assert (Pictlib.Results.Succeeded (Outcome),
                  "a small progressive JPEG failed with " & Outcome.First_Error.Code'Image);
@@ -515,14 +539,15 @@ package body Pictlib_Testing.Test_QuickTime is
                  "jpeglib's allocation limit was recovered: " & Outcome.First_Error.Code'Image);
       end;
       --  Decoding is drawing work whether or not anything is drawn: an image moved off the frame still costs its
-      --  8 x 6 pixels and rows.
+      --  8 x 6 pixels and rows, and a unit for every byte of its JPEG.
       declare
          use type Pictlib.Pixel_Count;
          Off_Frame : aliased constant Bytes :=
            Image (QuickTime ("jpeg", Image_Width, Image_Height, JPEG, Move_H => 100 * 16#1_0000#), 8, 6);
          High : constant Pictlib.Pixel_Count := Canvases.Least_Drawing_Work (Off_Frame, 8, 6, "an off-frame image");
       begin
-         Assert (High >= 48 + 6, "an image decoded off the frame cost" & High'Image);
+         Assert (High >= 48 + 6 + Pictlib.Pixel_Count (JPEG'Length),
+                 "an image decoded off the frame cost" & High'Image);
       end;
       --  An aggregate allocation quota no larger than the per-allocation budget still decodes a small JPEG: an
       --  image counts what it needs, not the whole per-allocation budget.

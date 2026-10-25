@@ -158,6 +158,18 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   share, since jpeglib keeps a continuation frame's beside the first's.
 - jpeglib's `Invalid_State`, which only malformed data makes when pictlib
   drives it, is `Embedded_Image_Failed`.
+- A JPEG whose height a later DNL marker gives is `Unsupported_Feature`:
+  jpeglib reports neither its height nor the coefficients it needs, so it
+  slipped past the bounds on progressive and hierarchical images.
+- A QuickTime image costs a unit of drawing work for every byte of its
+  compressed data besides its pixels and rows; jpeglib now finds each
+  Huffman code without scanning its table, which made a crafted JPEG cost
+  thousands of steps a byte.
+- jpeglib's metadata limits are raised to what the embedded data can hold,
+  so a valid JPEG's metadata is never refused; pictlib keeps none of it.
+- Clearing a decoder releases the storage its metadata and warnings held,
+  as the specification says, rather than keeping the emptied vectors'
+  capacity.
 - jpeglib's share is sized over 32-pixel MCUs, the largest jpeglib's
   sampling factors make, and its coefficient and output limits are that
   share and the image's pixels, so none of jpeglib's own defaults is

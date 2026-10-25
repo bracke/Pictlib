@@ -265,7 +265,8 @@ are retained, never interpreted.
   more than `dataSize` bytes); the decoded RGB image is held on the heap. A JPEG whose size is not
   the description's, or whose data `jpeglib` finds malformed, is `Embedded_Image_Failed`;
   `Recover_When_Safe` keeps what was drawn before it as a partial picture. A JPEG feature `jpeglib`
-  does not decode, a lossless JPEG, and a progressive or hierarchical JPEG of more than 8192 blocks
+  does not decode, a lossless JPEG, a JPEG whose height a later DNL marker gives (nothing bounds
+  what it will need), and a progressive or hierarchical JPEG of more than 8192 blocks
   (`jpeglib` decodes these through stack buffers sized by the image, which no budget bounds) are
   treated like another codec, below. A hierarchical JPEG's coefficients count twice against
   `jpeglib`'s share, since a continuation frame's are held beside the first frame's. Any other codec, a non-empty matte (an alpha
@@ -489,7 +490,7 @@ before or as the work is done, whether or not anything is drawn, and nothing is 
 | painting | every pixel painted, underlines included |
 | a copied pixmap | every pixel of every row converted and every destination row walked; 1 for every row a copy skips, a QuickTime placeholder's included |
 | a pattern | 1, plus every pixel and row of a color `PixPat` tile decoded |
-| a QuickTime image | every pixel and row decoded |
+| a QuickTime image | every pixel and row decoded, and every byte of its compressed data |
 | text | every font loaded: its atlas bytes, its file bytes and 65 536; every glyph asked for, wherever it lands: 16 per pixel of its cell |
 | a region walk | every inversion point and line passed |
 
@@ -502,7 +503,8 @@ and storage that is no single allocation at fixed rates:
 | Storage | Bytes counted |
 | --- | --- |
 | a retained metadata item or font name | its bytes, plus 128 |
-| a polygon drawn | 8 per point, plus 104 per edge when it is filled |
+| a polygon read | 8 per point |
+| a polygon drawn | 8 per point again, for the copy drawn, plus 104 per edge when it is filled |
 | a region read | 4 per byte of it, for its scanlines and inversion points |
 | a region shape drawn | 8 per unit of its region's size, for the copy moved to the origin |
 | building a shape | 256 per unit of shape work, the spans it can make; building stops at what the total still admits |

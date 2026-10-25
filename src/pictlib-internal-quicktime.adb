@@ -299,9 +299,19 @@ package body Pictlib.Internal.QuickTime is
             --  Its own caps are pictlib's: the coefficients come out of its share, and its output is the pixels.
             Max_Allocation_Bytes => Jpeglib.Byte_Count (Share),
             Max_Coefficient_Bytes => Jpeglib.Byte_Count (Share),
-            Max_Output_Bytes => Jpeglib.Byte_Count (Bytes)));
+            Max_Output_Bytes => Jpeglib.Byte_Count (Bytes),
+            --  pictlib keeps no JPEG metadata, and what jpeglib counts of it lies within the data, which
+            --  Max_Embedded_Image_Bytes bounds: a valid JPEG's metadata is never over a limit.
+            Max_Metadata_Segments => Natural'Last,
+            Max_Metadata_Bytes => Jpeglib.Byte_Count (Item.Data_Size),
+            Max_ICC_Profile_Bytes => Jpeglib.Byte_Count (Item.Data_Size)));
       Decoded := Jpeglib.Decoding.Read_Header (Decoder);
-      if Jpeglib.Results.Succeeded (Decoded)
+      if Jpeglib.Results.Succeeded (Decoded) and then not Jpeglib.Decoding.Header (Decoder).Height_Defined then
+         --  A height a later DNL marker gives: jpeglib reports neither the height nor the coefficients it will
+         --  need, so nothing here could bound them.
+         Jpeglib.Decoding.Finalize (Decoder);
+         return Failures.In_Opcode (Event, Errors.Unsupported_Feature);
+      elsif Jpeglib.Results.Succeeded (Decoded)
         and then (Natural (Jpeglib.Decoding.Header (Decoder).Width) /= Item.Width
                   or else Natural (Jpeglib.Decoding.Header (Decoder).Height) /= Item.Height)
       then
@@ -526,12 +536,13 @@ package body Pictlib.Internal.QuickTime is
          Pixel_Bytes : constant Byte_Count := Bytes_Per_Pixel * Byte_Count (Item.Width) * Byte_Count (Item.Height);
       begin
          --  The pixels are one allocation. Decoding is drawing work, a unit per pixel and per row, drawn or not,
-         --  as for a copied pixmap.
+         --  as for a copied pixmap, and a unit per byte of compressed data, which jpeglib reads bit by bit.
          Outcome := Sessions.Admit_Allocation (S, Pixel_Bytes);
          if Results.Succeeded (Outcome) then
             Outcome :=
               Sessions.Charge_Work
-                (S, Pixel_Count (Item.Width) * Pixel_Count (Item.Height) + Pixel_Count (Item.Height));
+                (S, Pixel_Count (Item.Width) * Pixel_Count (Item.Height) + Pixel_Count (Item.Height)
+                    + Pixel_Count (Item.Data_Size));
          end if;
          if Results.Succeeded (Outcome) then
             declare

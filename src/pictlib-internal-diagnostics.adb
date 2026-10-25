@@ -1,7 +1,8 @@
 package body Pictlib.Internal.Diagnostics is
+   --  An emptied vector keeps its storage, so the log is replaced by an empty one.
    procedure Clear (Log : in out Warning_Log) is
    begin
-      Log.Items.Clear;
+      Log.Items := Warning_Vectors.Empty_Vector;
       Log.Dropped := 0;
    end Clear;
 
