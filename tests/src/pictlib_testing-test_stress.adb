@@ -280,7 +280,7 @@ package body Pictlib_Testing.Test_Stress is
       end loop;
    end Limit_Matrix;
 
-   --  The largest frame the default limits allow is refused before any allocation when the view is wrong, and
+   --  The largest frame the default limits allow is refused, the decoder kept, when the view is wrong, and
    --  a picture of 100_000 opcodes enumerates.
    procedure Large_Inputs (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);

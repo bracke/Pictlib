@@ -331,7 +331,7 @@ package Pictlib.Internal.Sessions is
    --  @param Index Item index.
    --  @param Buffer Receives the item's data.
    --  @param Count Bytes written.
-   --  @return Success, Invalid_Argument for an index out of range, or Limit_Exceeded when Buffer is too short.
+   --  @return Success, or Invalid_Argument for an index out of range or a Buffer shorter than the item.
    function Copy_Metadata
      (S : Session;
       Index : Positive;

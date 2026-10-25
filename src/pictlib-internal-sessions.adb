@@ -12,7 +12,6 @@ package body Pictlib.Internal.Sessions is
       S.Version := Version;
    end Set_Version;
 
-
    procedure Clear (S : in out Session) is
    begin
       Picture_Stream.Unbind (S.Stream);
@@ -42,6 +41,8 @@ package body Pictlib.Internal.Sessions is
    is
       Item : Errors.Diagnostic_Context := Context;
    begin
+      --  A context without a source offset leaves it 0, which no warning's offset can be: every warning comes from
+      --  at least the frame, past picSize, so 0 means none was given.
       if Item.Source = 0 then
          Item.Source := S.Stream.Offset;
       end if;
@@ -220,6 +221,12 @@ package body Pictlib.Internal.Sessions is
       Data := null;
       if not Results.Succeeded (Outcome) then
          return Outcome;
+      --  More than the picture can still hold is over the picture byte limit before anything is set aside for it.
+      elsif Length > Picture_Stream.Remaining_Budget (S.Stream) then
+         return Over_Limit
+           (S, Picture_Byte_Limit, S.Budget.Max_Picture_Bytes,
+            Checked_Arithmetic.Saturating_Add
+              (S.Budget.Max_Picture_Bytes - Picture_Stream.Remaining_Budget (S.Stream), Length));
       --  The budget as set first, then the most one buffer can hold whatever the budget.
       elsif Length > S.Budget.Max_Allocation_Bytes then
          return Over_Limit (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Length);
@@ -261,7 +268,8 @@ package body Pictlib.Internal.Sessions is
       In_Opcode : Boolean := True) return Results.Result
    is
       Keep : Boolean;
-      --  The opcode's own budget first, so whether the item is kept never changes which pictures fail.
+      --  The opcode's own budget first, so whether metadata is retained never changes which pictures its budgets
+      --  fail; a kept item is then admitted against the allocation budgets, which keeping can cross.
       Outcome : Results.Result := (if In_Opcode then Admit_Data (S, Length) else Results.Success);
       Data : Streams.Byte_Array_Access;
    begin

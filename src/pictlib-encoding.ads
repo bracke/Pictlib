@@ -57,7 +57,8 @@ package Pictlib.Encoding is
    --  Limit_Exceeded above the frame, output or allocation limits; the destination's failure.
    function Encode (Object : in out Encoder; Image : Images.Image_View) return Results.Result;
    --  Finish.
-   --  @param Object Encoder in state Encoded; Finished on success.
+   --  @param Object Encoder in state Encoded; Finished on success, Failed when the flush fails or raises (which
+   --  propagates).
    --  @return Success, or the destination's flush failure.
    function Finish (Object : in out Encoder) return Results.Result;
    --  Layout used.
@@ -66,7 +67,8 @@ package Pictlib.Encoding is
    function Layout_Used (Object : Encoder) return Layout_Kind;
    --  Bytes written.
    --  @param Object Encoder.
-   --  @return Bytes written to the destination.
+   --  @return Bytes written to the destination; not known after the destination raised, when it keeps what it
+   --  was before.
    function Bytes_Written (Object : Encoder) return Byte_Count;
    --  Last error.
    --  @param Object Encoder.
@@ -91,5 +93,7 @@ private
       Layout : Layout_Kind := Auto;
       Written : Byte_Count := 0;
       First_Error : aliased Errors.Error := Errors.Make (Errors.No_Error);
+      --  True while Encode or Finish runs the destination, which may not call into the encoder under it.
+      Busy : aliased Boolean := False;
    end record;
 end Pictlib.Encoding;

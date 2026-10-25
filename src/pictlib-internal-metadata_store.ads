@@ -38,7 +38,7 @@ package Pictlib.Internal.Metadata_Store is
    --  @param Index 1-based item position.
    --  @param Buffer Receives the item data from Buffer'First.
    --  @param Count Bytes copied; 0 on failure.
-   --  @return Success, Invalid_Argument for an index out of range, or Limit_Exceeded when Buffer is short.
+   --  @return Success, or Invalid_Argument for an index out of range or a Buffer shorter than the item.
    function Copy_Data
      (Object : Store;
       Index : Positive;

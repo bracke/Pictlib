@@ -432,7 +432,9 @@ leaves stands, and `Enumerate` returns what a call in that state gets (`Operatio
 `Cancel`, `Invalid_State` otherwise) without visiting another opcode. An exception raised by caller
 code (the visitor, or the source during `Read_Header`, `Enumerate` or `Render`) propagates; a decoder
 the call left in the state it began in, its stream partly read, is then `Stopped`, and is usable
-again after `Reset` or `Initialize`.
+again after `Reset` or `Initialize`. The same holds for the source: while `Read_Header`,
+`Enumerate` or `Render` runs it, a nested call of any of them fails with `Invalid_State`, and a
+`Cancel` it makes stands, the call returning `Operation_Cancelled`.
 
 `Render` rejects an invalid view or one whose size is not the frame's with `Invalid_Argument`
 (expecting the frame's pixels against the view's, or, for an invalid view of the frame's size, the
@@ -469,8 +471,10 @@ in the wrong state fail with `Invalid_State` (`Operation_Cancelled` after `Cance
 found before the destination is written to (an invalid view or a non-positive resolution, an image
 too wide, too many colors, a frame, allocation or output limit) leaves the encoder `Ready`, so
 another image or encoder can be tried, and does not set `Last_Error`; a failure while writing
-leaves it `Failed`, as does an exception the destination raises once writing began, which propagates
-with `Destination_Write_Failed` as the last error; `Bytes_Written` is then not known. An invalid view's `Invalid_Argument` reports the least a valid view of its size
+leaves it `Failed`, as does an exception the destination raises once writing began, or from
+`Flush` in `Finish`, which propagates with `Destination_Write_Failed` as the last error;
+`Bytes_Written` is then not known. While `Encode` or `Finish` runs the destination, a nested
+`Encode` or `Finish` fails with `Invalid_State`. An invalid view's `Invalid_Argument` reports the least a valid view of its size
 and format holds as expected and its accessible bytes as actual, and a non-positive resolution's
 expects 1 (the least positive Fixed) against 0, whatever the value; `Too_Many_Colors` reports 256 as
 expected and 257 as actual, as counting stops there.
@@ -484,7 +488,8 @@ alignment. The resolution only labels the picture: `picFrame`, HeaderOp's rectan
 opcode's rectangles all hold the image's pixels whatever the resolution, so a reader that sizes a
 picture by `picFrame` shows it at one pixel per point. Inside Macintosh has `OpenCPicture` state
 `picFrame` at 72 dpi instead; pictlib's decoder sizes its canvas by `picFrame`, so writing it that
-way would have pictlib scale its own pictures, and is left until a reader's behaviour is checked.
+way would have pictlib scale its own pictures. ImageMagick and LibreOffice read a 144 dpi picture
+written this way at its pixels too (`pictlib_conformance`, `direct_144dpi`).
 
 Layouts:
 - `Direct_32`: `DirectBitsRect`, pixel type 16, 32 bits, `rowBytes = 4 × width`, pack type 4 —

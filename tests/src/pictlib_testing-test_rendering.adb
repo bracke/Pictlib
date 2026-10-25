@@ -78,10 +78,7 @@ package body Pictlib_Testing.Test_Rendering is
                  & B (0));
 
    function Direct (Width, Row_Bytes, Pack, Depth, Components, Component_Size : Natural; Pixels : Bytes)
-     return Bytes is
-     (W (16#9A#) & L (16#FF#) & W (16#8000# + Row_Bytes) & Rect (0, 0, 1, Width)
-      & Pixmap_Tail (Pack, Depth, Components, Component_Size)
-      & Rect (0, 0, 1, Width) & Rect (0, 0, 1, Width) & W (0) & Pixels);
+     return Bytes renames Direct_Row;
    --  16 bits, pack type 3: a literal of four words, red, green, blue, white.
    Sixteen_Literal : aliased constant Bytes :=
      V2_Picture (0, 0, 1, 4, Direct (4, 8, 3, 16, 3, 5,
@@ -188,6 +185,13 @@ package body Pictlib_Testing.Test_Rendering is
      V2_Picture (0, 0, 2, 16, Bitmap_2x8 (Source => Rect (0, 0, 2, 16), Destination => Rect (0, 0, 2, 16)));
    Left_Clamped : aliased constant Bytes :=
      V2_Picture (0, 0, 2, 16, Bitmap_2x8 (Source => Rect (0, -8, 2, 8), Destination => Rect (0, 0, 2, 16)));
+   --  srcRect columns -1 .. 6 over 10 destination columns: column k samples -1 + floor (k * 8 / 10), so columns 2 ..
+   --  9 sample 0, 1, 2, 3, 3, 4, 5, 6, and columns 0 and 1, sampling column -1, are left alone.
+   Scaled_Clamp : aliased constant Bytes :=
+     V2_Picture (0, 0, 2, 10, Bitmap_2x8 (Source => Rect (0, -1, 2, 7), Destination => Rect (0, 0, 2, 10)));
+   --  srcRect rows -1 .. 1 over 5 destination rows: rows 2 and 3 sample row 0, row 4 row 1.
+   Rows_Clamped : aliased constant Bytes :=
+     V2_Picture (0, 0, 5, 8, Bitmap_2x8 (Source => Rect (-1, 0, 2, 8), Destination => Rect (0, 0, 5, 8)));
    Empty_Destination : aliased constant Bytes :=
      V2_Picture (0, 0, 2, 8, Copy (16#98#, 2, Rect (0, 0, 2, 8), Rect (0, 0, 2, 8), Rect (0, 0, 0, 8))
                  & B (16#A5#) & B (0) & B (16#0F#) & B (0));
@@ -379,6 +383,10 @@ package body Pictlib_Testing.Test_Rendering is
                                "srcRect clamped on the right keeps its scale");
       Canvases.Expect_Lenient (Left_Clamped, 16, 2, "WWWWWWWWBWBWWBWB/WWWWWWWWWWWWBBBB", Errors.Recovery_Applied,
                                "srcRect clamped on the left keeps its scale");
+      Canvases.Expect_Lenient (Scaled_Clamp, 10, 2, "WWBWBWWWBW/WWWWWWWBBB", Errors.Recovery_Applied,
+                               "a clamped srcRect samples as the whole srcRect would");
+      Canvases.Expect_Lenient (Rows_Clamped, 8, 5, "WWWWWWWW/WWWWWWWW/BWBWWBWB/BWBWWBWB/WWWWBBBB",
+                               Errors.Recovery_Applied, "srcRect clamped at the top keeps its scale");
 
       Canvases.Expect_Failure (Truncated_Pixels, 8, 2, Errors.Source_Unexpected_End, "truncated pixels", 16#98#);
       Canvases.Expect_Failure (Truncated_Pixels, 8, 2, Errors.Source_Unexpected_End, "truncated pixels",

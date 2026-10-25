@@ -571,15 +571,16 @@ package body Pictlib.Internal.Coverage is
                   Scratch : Span_List;
                begin
                   for R in 0 .. Natural (Narrowed.Length) - Reach - 1 loop
-                     Regions.Intersect (Narrowed (R), Narrowed (R + Reach), Scratch);
-                     Charge (Item, Natural (Scratch.Length) + 1);
+                     --  An intersection walks both its rows: charged before it is made.
+                     Charge (Item, Natural (Narrowed (R).Length) + Natural (Narrowed (R + Reach).Length) + 1);
                      --  A part-eroded shape is never used.
                      if Item.Spent then
                         return;
                      end if;
+                     Regions.Intersect (Narrowed (R), Narrowed (R + Reach), Scratch);
                      Next.Append (Scratch);
                   end loop;
-                  Narrowed := Next;
+                  Narrowed.Move (Next);
                end;
                Reach := 2 * Reach;
             end loop;

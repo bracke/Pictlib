@@ -85,6 +85,12 @@ package body Pictlib_Testing.Builders is
       & W ((if Pixel_Size >= 16 then 16 else 0)) & W (Pixel_Size) & W (Component_Count) & W (Component_Size)
       & L (0) & L (0) & L (0));
 
+   function Direct_Row (Width, Row_Bytes, Pack, Depth, Components, Component_Size : Natural; Pixels : Bytes)
+     return Bytes is
+     (W (16#9A#) & L (16#FF#) & W (16#8000# + Row_Bytes) & Rect (0, 0, 1, Width)
+      & Pixmap_Tail (Pack, Depth, Components, Component_Size)
+      & Rect (0, 0, 1, Width) & Rect (0, 0, 1, Width) & W (0) & Pixels);
+
    function Pic (Width, Height : Natural; Body_Bytes : Bytes) return Bytes is
      (V2_Picture (0, 0, Height, Width, Body_Bytes));
 

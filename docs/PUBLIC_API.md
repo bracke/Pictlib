@@ -53,4 +53,5 @@ Available since Gate M6:
   `Finalize`.
 
 Changed at Gate M7: `Limits.Max_Canvas_Bytes` and `Limit_Kind'(Canvas_Byte_Limit)`
-were removed; they were never enforced (the renderer allocates no canvas).
+were removed; they were never enforced (the renderer allocates no canvas). `Pack_Type`
+was moved into the library's internals: no public subprogram used it.

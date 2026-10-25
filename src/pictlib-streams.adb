@@ -59,26 +59,13 @@ package body Pictlib.Streams is
          declare
             Step : constant Destination_Result :=
               Object.Write (Buffer (Buffer'First + Completed .. Buffer'Last));
-            Remaining : constant Natural := Buffer'Length - Completed;
+            Failure : constant Errors.Error :=
+              Internal.Replies.Judged_Write (Step, Byte_Count (Buffer'Length - Completed), Object.Offset);
          begin
-            if Errors.Is_Fatal (Step.Error) then
-               return Results.Failure (Step.Error);
-            elsif Step.Count > Byte_Count (Remaining) then
-               return Results.Failure
-                 (Errors.Make
-                    (Errors.Internal_Invariant_Failed,
-                     (Destination => Object.Offset,
-                      Expected => Byte_Count (Remaining),
-                      Actual => Step.Count,
-                      others => <>)));
-            elsif Step.Count = 0 then
-               return Results.Failure
-                 (Errors.Make
-                    (Errors.Destination_Zero_Progress,
-                     (Destination => Object.Offset, others => <>)));
-            else
-               Completed := Completed + Natural (Step.Count);
+            if Errors.Is_Fatal (Failure) then
+               return Results.Failure (Failure);
             end if;
+            Completed := Completed + Natural (Step.Count);
          end;
       end loop;
       return Results.Success;

@@ -166,8 +166,6 @@ package body Pictlib.Internal.QuickTime is
       return Results.Success;
    end Check_Image;
 
-   --  Decode the JPEG, read straight from the picture, at most Item.Data_Size bytes, into Pixels, which is set
-   --  aside only once the JPEG's header agrees with the description; jpeglib is given Share for its buffers.
    --  What jpeglib's failure means for the picture. Its pixel and buffer limits are pictlib's limits, a JPEG
    --  feature it lacks is an unsupported feature and its own invariants are an internal failure, none of them
    --  recovered; malformed JPEG data, its metadata included, is Embedded_Image_Failed. jpeglib's code is kept
@@ -272,6 +270,8 @@ package body Pictlib.Internal.QuickTime is
       return Results.Success;
    end Check_Header;
 
+   --  Decode the JPEG, read straight from the picture, at most Item.Data_Size bytes, into Pixels, which is set
+   --  aside only once the JPEG's header agrees with the description; jpeglib is given Share for its buffers.
    function Decode_JPEG
      (S : in out Sessions.Session;
       Event : Pictures.Opcode_Event;
@@ -400,7 +400,6 @@ package body Pictlib.Internal.QuickTime is
       return Results.Success;
    end Decode_JPEG;
 
-   --  Draw srcRect, in image coordinates, through the matrix onto the picture, a row at a time.
    --  Admit the image's pixels and jpeglib's share of the allocation budgets, charge its decoding, and decode it.
    --  The pixels are one allocation. Decoding is drawing work, a unit per pixel and per row, drawn or not, as for
    --  a copied pixmap, and a unit per byte of compressed data, which jpeglib reads bit by bit. jpeglib's own
@@ -441,6 +440,7 @@ package body Pictlib.Internal.QuickTime is
       end;
    end Admit_And_Decode;
 
+   --  Draw srcRect, in image coordinates, through the matrix onto the picture, a row at a time.
    function Paint_Image
      (P : in out Rendering.Painter;
       S : in out Sessions.Session;

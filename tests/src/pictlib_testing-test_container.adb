@@ -354,6 +354,18 @@ package body Pictlib_Testing.Test_Container is
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
               and then Outcome.First_Error.Context.Limit = Pictlib.Picture_Byte_Limit,
               "a byte budget that cuts the look-ahead short: " & Outcome.First_Error.Code'Image);
+      --  One that leaves the version in view, wrong, is the bad version: no file header, a 100-byte budget.
+      declare
+         Bad_Version : aliased constant Bytes :=
+           W (0) & Rect (0, 0, 4, 4) & W (16#1234#) & W (16#5678#) & Zeros (200);
+         Small : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+      begin
+         Small.Max_Picture_Bytes := 100;
+         Read_Only_Header (Bad_Version, Decoder, Outcome, (File_Header => Pictlib.No_File_Header, others => <>),
+                           Budget => Small);
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Version_Invalid,
+                 "a wrong version the budget left in view was reported as " & Outcome.First_Error.Code'Image);
+      end;
 
       --  The file header is not an opcode: retaining it is not bounded by the per-opcode byte budget.
       declare

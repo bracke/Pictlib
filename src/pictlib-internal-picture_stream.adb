@@ -48,7 +48,6 @@ package body Pictlib.Internal.Picture_Stream is
          At_Offset (Object))
         .First_Error);
 
-   --  Bytes the reader may still deliver.
    function Remaining_Budget (Object : Reader) return Byte_Count is
      (if Object.Consumed >= Object.Max_Bytes then 0 else Object.Max_Bytes - Object.Consumed);
 

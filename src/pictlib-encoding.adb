@@ -1,10 +1,10 @@
-with Ada.Finalization;
-with Pictlib.Internal.Canvas;
 with Ada.Containers.Hashed_Maps;
-with Pictlib.Internal.Bytes;
-with Pictlib.Internal.Failures;
 with Ada.Containers.Vectors;
+with Ada.Finalization;
 with Interfaces;
+with Pictlib.Internal.Bytes;
+with Pictlib.Internal.Canvas;
+with Pictlib.Internal.Failures;
 with Pictlib.Internal.PackBits;
 with Pictlib.Internal.Writers;
 with Pictlib.Opcodes;
@@ -14,7 +14,6 @@ package body Pictlib.Encoding is
    use type Geometry.Fixed;
 
    package Writers renames Internal.Writers;
-
 
    --  The longest even rowBytes a PixMap can state.
    Largest_Row_Bytes : constant := Internal.Pixmap_Row_Bytes_Mask - 1;
@@ -163,6 +162,25 @@ package body Pictlib.Encoding is
       Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
    end Put_Header;
 
+   --  An Indexed_8 picture's color table: ctSeed, ctFlags, ctSize, then each entry's value, which is its index, and
+   --  its components widened to 16 bits, in the order the colors first appear.
+   procedure Put_Color_Table (Out_Bytes : in out Writers.Writer; Colors : Palette; Outcome : in out Results.Result) is
+   begin
+      Step (Outcome, Writers.Put_Long (Out_Bytes, 0));
+      Step (Outcome, Writers.Put_Word (Out_Bytes, 0));
+      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Colors.Colors.Length) - 1));
+      for Index in 0 .. Natural (Colors.Colors.Length) - 1 loop
+         declare
+            Color : constant Images.RGB_Color := Colors.Colors (Index);
+         begin
+            Step (Outcome, Writers.Put_Word (Out_Bytes, Index));
+            Step (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Red)));
+            Step (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Green)));
+            Step (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Blue)));
+         end;
+      end loop;
+   end Put_Color_Table;
+
    --  The bits opcode up to its pixel data: rowBytes, bounds, a PixMap's fields and color table, srcRect,
    --  dstRect and srcCopy.
    procedure Put_Bits_Header
@@ -202,20 +220,7 @@ package body Pictlib.Encoding is
             Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
             Put_Pixmap_Tail (Pack => Pack_Default, Pixel_Type => Indexed_Pixels, Pixel_Size => 8, Component_Count => 1,
                              Component_Size => 8);
-            --  The color table: ctSeed, ctFlags, ctSize, then each entry's value, which is its index.
-            Step (Outcome, Writers.Put_Long (Out_Bytes, 0));
-            Step (Outcome, Writers.Put_Word (Out_Bytes, 0));
-            Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Colors.Colors.Length) - 1));
-            for Index in 0 .. Natural (Colors.Colors.Length) - 1 loop
-               declare
-                  Color : constant Images.RGB_Color := Colors.Colors (Index);
-               begin
-                  Step (Outcome, Writers.Put_Word (Out_Bytes, Index));
-                  Step (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Red)));
-                  Step (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Green)));
-                  Step (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Blue)));
-               end;
-            end loop;
+            Put_Color_Table (Out_Bytes, Colors, Outcome);
          when others =>
             Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Pack_Bits_Rect)));
             Step (Outcome, Writers.Put_Word (Out_Bytes, Item.Stored));
@@ -302,6 +307,12 @@ package body Pictlib.Encoding is
       end loop;
       Internal.Bytes.Free (Row);
       Internal.Bytes.Free (Packed);
+   exception
+      --  A destination's exception passes through, the row buffers released.
+      when others =>
+         Internal.Bytes.Free (Row);
+         Internal.Bytes.Free (Packed);
+         raise;
    end Put_Rows;
 
    --  One picture, measured or written.
@@ -403,54 +414,69 @@ package body Pictlib.Encoding is
       Started : not null access Boolean) return Results.Result
    is
       Budget : Limits.Limit_Set renames Object.Encode_Limits;
-      File_Header : constant Streams.Byte_Array (1 .. Internal.File_Header_Bytes) := [others => 0];
       Measure : Writers.Writer;
       Output : Writers.Writer;
-      Outcome : Results.Result := Results.Success;
+      Outcome : Results.Result;
+
+      --  What both runs write: the optional file header, then the picture. The dry run and the real one are this
+      --  one sequence, so the real run writes exactly the bytes the dry run measured.
+      function Emit (Into : in out Writers.Writer; Picture_Size : Byte_Count) return Results.Result is
+         File_Header : constant Streams.Byte_Array (1 .. Internal.File_Header_Bytes) := [others => 0];
+         Result : Results.Result := Results.Success;
+      begin
+         if Settings.File_Header then
+            Result := Writers.Put (Into, File_Header);
+         end if;
+         if Results.Succeeded (Result) then
+            Result := Write_Picture (Into, Image, Settings, Item, Colors, Picture_Size);
+         end if;
+         return Result;
+      end Emit;
    begin
       Started.all := False;
       --  The dry run counts what the output will hold, the file header included, against the limit as it was
       --  set, so a picture that does not fit is reported in the caller's terms.
       Writers.Start (Measure, null, Budget.Max_Output_Bytes);
-      if Settings.File_Header then
-         Outcome := Writers.Put (Measure, File_Header);
-      end if;
-      if Results.Succeeded (Outcome) then
-         Outcome := Write_Picture (Measure, Image, Settings, Item, Colors, 0);
-      end if;
+      Outcome := Emit (Measure, 0);
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
       Started.all := True;
       Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes);
-      if Settings.File_Header then
-         Outcome := Writers.Put (Output, File_Header);
-      end if;
-      if Results.Succeeded (Outcome) then
-         Outcome := Write_Picture (Output, Image, Settings, Item, Colors, Writers.Picture_Count (Measure));
-      end if;
+      Outcome := Emit (Output, Writers.Picture_Count (Measure));
       Object.Written := Writers.Count (Output);
       return Outcome;
    end Write;
 
-   --  Guards an encoding that may write: the destination is caller code, which may raise, or the task be aborted.
-   --  An encoding that wrote and left the encoder Ready did not return, since every return moves it on, and
-   --  leaves it Failed with Destination_Write_Failed, so no second picture follows a part of the first.
+   --  Guards a call that runs the destination, caller code which may raise, or the task be aborted. Busy is held
+   --  for the call. A call that used the destination and left the encoder in From, the state it began in, did not
+   --  return, since every return moves it on, and leaves it Failed with Destination_Write_Failed, so no second
+   --  picture follows a part of the first.
    type Write_Guard
-     (State : not null access Encoder_State;
+     (From : Encoder_State;
+      State : not null access Encoder_State;
       Error : not null access Errors.Error;
-      Started : not null access Boolean) is new Ada.Finalization.Limited_Controlled with null record;
+      Started : not null access constant Boolean;
+      Busy : not null access Boolean) is new Ada.Finalization.Limited_Controlled with null record;
 
+   overriding procedure Initialize (Guard : in out Write_Guard);
    overriding procedure Finalize (Guard : in out Write_Guard);
+
+   overriding procedure Initialize (Guard : in out Write_Guard) is
+   begin
+      Guard.Busy.all := True;
+   end Initialize;
+
    overriding procedure Finalize (Guard : in out Write_Guard) is
    begin
-      if Guard.Started.all and then Guard.State.all = Ready then
+      Guard.Busy.all := False;
+      if Guard.Started.all and then Guard.State.all = Guard.From then
          Guard.State.all := Failed;
          Guard.Error.all := Errors.Make (Errors.Destination_Write_Failed);
       end if;
    end Finalize;
 
-   function Encode (Object : in out Encoder; Image : Images.Image_View) return Results.Result is
+   function Encode_Picture (Object : in out Encoder; Image : Images.Image_View) return Results.Result is
       --  The settings the picture is written with.
       Settings : Options := Object.Encode_Options;
       Colors : Palette;
@@ -458,7 +484,8 @@ package body Pictlib.Encoding is
       Outcome : Results.Result;
       --  Whether the destination was written to: a failure before leaves the encoder Ready.
       Started : aliased Boolean := False;
-      Guard : Write_Guard (Object.Current_State'Access, Object.First_Error'Access, Started'Access);
+      Guard : Write_Guard
+        (Ready, Object.Current_State'Access, Object.First_Error'Access, Started'Access, Object.Busy'Access);
       pragma Unreferenced (Guard);
    begin
       if Object.Current_State /= Ready then
@@ -497,22 +524,32 @@ package body Pictlib.Encoding is
          return Outcome;
       end if;
       return Fail (Object, Outcome);
-   end Encode;
+   end Encode_Picture;
+
+   function Encode (Object : in out Encoder; Image : Images.Image_View) return Results.Result is
+     (if Object.Busy then Results.Failure (Errors.Invalid_State) else Encode_Picture (Object, Image));
 
    function Finish (Object : in out Encoder) return Results.Result is
+      Flushing : aliased constant Boolean := True;
    begin
-      if Object.Current_State /= Encoded then
+      if Object.Busy then
+         return Results.Failure (Errors.Invalid_State);
+      elsif Object.Current_State /= Encoded then
          return Wrong_State (Object);
       end if;
       declare
+         Guard : Write_Guard
+           (Encoded, Object.Current_State'Access, Object.First_Error'Access, Flushing'Access, Object.Busy'Access);
+         pragma Unreferenced (Guard);
          Flushed : constant Errors.Error := Object.Output.Flush;
       begin
          if Errors.Is_Fatal (Flushed) then
             return Fail (Object, Results.Failure (Flushed));
          end if;
+         --  Inside the guard's scope, so a flush that returned is not taken for one that raised.
+         Object.Current_State := Finished;
+         return Results.Success;
       end;
-      Object.Current_State := Finished;
-      return Results.Success;
    end Finish;
 
    function Layout_Used (Object : Encoder) return Layout_Kind is (Object.Layout);

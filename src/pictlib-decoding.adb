@@ -94,14 +94,17 @@ package body Pictlib.Decoding is
          return Wrong_State (Object);
       end if;
       declare
-         Guard : Call_Guard (Ready, Object.Current_State'Access, null);
+         Guard : Call_Guard (Ready, Object.Current_State'Access, Object.Visiting'Access);
          pragma Unreferenced (Guard);
          Outcome : constant Results.Result :=
            Internal.Container.Read_Header
              (Object.Inner.Session, Object.Decode_Options.File_Header, Object.Inner.Info, Object.Inner.Header_Events,
               Object.Inner.Header_Event_Count);
       begin
-         if Results.Succeeded (Outcome) then
+         --  The source cancelled the decoder under it: that stands.
+         if Object.Current_State /= Ready then
+            return Wrong_State (Object);
+         elsif Results.Succeeded (Outcome) then
             Object.Current_State := Header_Read;
          end if;
          return Finish (Object, Outcome);
@@ -186,7 +189,10 @@ package body Pictlib.Decoding is
             Kind : Step_Kind;
             Outcome : constant Results.Result := Step (Object, Event, Kind);
          begin
-            if not Results.Succeeded (Outcome) then
+            --  The source cancelled the decoder under it: that stands.
+            if Object.Current_State /= Header_Read then
+               return Wrong_State (Object);
+            elsif not Results.Succeeded (Outcome) then
                return Finish (Object, Outcome);
             elsif Kind = Ended_By_Input then
                Object.Current_State := Finished;
@@ -202,7 +208,9 @@ package body Pictlib.Decoding is
                declare
                   Trailing : constant Results.Result := Check_Trailing_Data (Object);
                begin
-                  if Results.Succeeded (Trailing) then
+                  if Object.Current_State /= Header_Read then
+                     return Wrong_State (Object);
+                  elsif Results.Succeeded (Trailing) then
                      Object.Current_State := Finished;
                   end if;
                   return Finish (Object, Trailing);
@@ -309,7 +317,7 @@ package body Pictlib.Decoding is
 
       declare
          --  Before the painter, so the painter is finalized first.
-         Guard : Call_Guard (Header_Read, Object.Current_State'Access, null);
+         Guard : Call_Guard (Header_Read, Object.Current_State'Access, Object.Visiting'Access);
          pragma Unreferenced (Guard);
          Paint : aliased Internal.Rendering.Painter;
          Outcome : Results.Result := Results.Success;
@@ -324,9 +332,16 @@ package body Pictlib.Decoding is
                Kind : Step_Kind;
             begin
                Outcome := Step (Object, Event, Kind, Paint'Access);
+               --  The source cancelled the decoder under it: that stands.
+               if Object.Current_State /= Header_Read then
+                  return Wrong_State (Object);
+               end if;
                exit when not Results.Succeeded (Outcome) or else Kind = Ended_By_Input;
                if Kind = Ended_By_End_Opcode then
                   Outcome := Check_Trailing_Data (Object);
+                  if Object.Current_State /= Header_Read then
+                     return Wrong_State (Object);
+                  end if;
                   exit;
                end if;
             end;

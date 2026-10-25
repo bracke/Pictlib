@@ -10,6 +10,7 @@ with Pictlib.Limits;
 with Pictlib.Opcodes;
 with Pictlib.Results;
 with Pictlib.Streams;
+with Pictlib_Testing.Builders;
 with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Recorders;
 with Pictlib_Testing.Samples;
@@ -44,6 +45,11 @@ package body Pictlib_Testing.Test_Encoding is
       Fail_At : Positive := 1;
       --  Raise at Fail_At instead of failing.
       Raises : Boolean := False;
+      --  At Fail_At, call Encode on Target instead, keeping what it returns in Nested.
+      Target : access Encoding.Encoder;
+      Nested : Pictlib.Results.Result := Pictlib.Results.Success;
+      --  What Flush does: succeed, fail, or raise.
+      Flush_Fails, Flush_Raises : Boolean := False;
       Writes_After : Natural := 0;
    end record;
 
@@ -51,13 +57,19 @@ package body Pictlib_Testing.Test_Encoding is
    overriding function Write (Object : in out Flaky; Buffer : Pictlib.Streams.Byte_Array)
      return Pictlib.Streams.Destination_Result;
    overriding function Offset (Object : Flaky) return Pictlib.Destination_Offset is (Object.Inner.Offset);
-   overriding function Flush (Object : in out Flaky) return Pictlib.Errors.Error is (Object.Inner.Flush);
+   overriding function Flush (Object : in out Flaky) return Pictlib.Errors.Error;
 
    overriding function Write (Object : in out Flaky; Buffer : Pictlib.Streams.Byte_Array)
      return Pictlib.Streams.Destination_Result is
    begin
       Object.Calls := Object.Calls + 1;
-      if Object.Calls = Object.Fail_At and then Object.Raises then
+      if Object.Calls = Object.Fail_At and then Object.Target /= null then
+         declare
+            Again : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 2, 2);
+         begin
+            Object.Nested := Encoding.Encode (Object.Target.all, Samples.View (Again, 2, 2));
+         end;
+      elsif Object.Calls = Object.Fail_At and then Object.Raises then
          raise Destination_Raised;
       elsif Object.Calls = Object.Fail_At then
          return (Error => Pictlib.Errors.Make (Pictlib.Errors.Destination_Write_Failed), Count => 0);
@@ -66,6 +78,16 @@ package body Pictlib_Testing.Test_Encoding is
       end if;
       return Object.Inner.Write (Buffer);
    end Write;
+
+   overriding function Flush (Object : in out Flaky) return Pictlib.Errors.Error is
+   begin
+      if Object.Flush_Raises then
+         raise Destination_Raised;
+      elsif Object.Flush_Fails then
+         return Pictlib.Errors.Make (Pictlib.Errors.Destination_Write_Failed);
+      end if;
+      return Object.Inner.Flush;
+   end Flush;
 
    --  Encode through Samples, requiring Bytes_Written to be what the destination holds, failure or not.
    function Encode
@@ -120,6 +142,7 @@ package body Pictlib_Testing.Test_Encoding is
    procedure Row_Lengths (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Automatic_Layout (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Picture_Structure (T : in out AUnit.Test_Cases.Test_Case'Class);
+   procedure Golden_Bytes (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Formats_And_Alpha (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Rejections (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Destinations (T : in out AUnit.Test_Cases.Test_Case'Class);
@@ -142,6 +165,7 @@ package body Pictlib_Testing.Test_Encoding is
       Register_Routine (T, Rejections'Access, "encoding.rejections");
       Register_Routine (T, Destinations'Access, "encoding.destinations");
       Register_Routine (T, States'Access, "encoding.states");
+      Register_Routine (T, Golden_Bytes'Access, "encoding.golden_bytes");
    end Register_Tests;
 
    procedure Layouts (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -180,6 +204,34 @@ package body Pictlib_Testing.Test_Encoding is
       Round_Trip (Samples.Black_And_White, 3, 4, Encoding.Mono_1, "Mono_1, 3 pixels wide");
       Round_Trip (Samples.Black_And_White, 2100, 2, Encoding.Mono_1, "Mono_1, word counts");
       Round_Trip (Samples.Gradient, 4095, 1, Encoding.Direct_32, "Direct_32, widest");
+      --  Indexed_8 of one row at 250 and 251 pixels: rowBytes 250 behind a byte count, 252 behind a word. The row
+      --  starts 152 bytes in, after the header, the bits opcode's fields and a three-entry color table; its count
+      --  and the packed bytes it counts, an even pad and OpEndPic end the picture.
+      for Width in 250 .. 251 loop
+         declare
+            Picture : constant Encoded :=
+              Encode (Samples.Three_Colors, Width, 1,
+                      (Layout => Encoding.Indexed_8, File_Header => False, others => <>));
+            Row_Start : constant Positive := Picture.Data'First + 152;
+            Word : constant Boolean := Width = 251;
+            Count : constant Natural :=
+              (if Word then Natural (Picture.Data (Row_Start)) * 256 + Natural (Picture.Data (Row_Start + 1))
+               else Natural (Picture.Data (Row_Start)));
+            Used : constant Natural := 152 + (if Word then 2 else 1) + Count;
+         begin
+            Assert (Pictlib.Results.Succeeded (Picture.Outcome)
+                    and then Picture.Data'Length = Used + Used mod 2 + 2,
+                    "Indexed_8," & Width'Image & " wide: the row's count is not a "
+                    & (if Word then "word" else "byte"));
+         end;
+      end loop;
+      Round_Trip (Samples.Three_Colors, 250, 2, Encoding.Indexed_8, "Indexed_8, rowBytes 250");
+      Round_Trip (Samples.Three_Colors, 251, 2, Encoding.Indexed_8, "Indexed_8, rowBytes 252");
+      --  The widest Indexed_8 row is 16382 bytes, and one more is refused.
+      Round_Trip (Samples.Three_Colors, 16_382, 1, Encoding.Indexed_8, "Indexed_8 at its widest");
+      Assert (Encode (Samples.Three_Colors, 16_383, 1, (Layout => Encoding.Indexed_8, others => <>)).Outcome
+                .First_Error.Code = Pictlib.Errors.Invalid_Argument,
+              "Indexed_8 past its widest row was written");
    end Row_Lengths;
 
    procedure Automatic_Layout (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -330,6 +382,7 @@ package body Pictlib_Testing.Test_Encoding is
          for Y in 0 .. 2 loop
             Assert (Narrow.Data (Rows + 4 * Y) = Samples.Alpha (Samples.Translucent, 0, Y)
                     and then Narrow.Data (Rows + 4 * Y + 1) = Samples.Color (Samples.Translucent, 0, Y).Red
+                    and then Narrow.Data (Rows + 4 * Y + 2) = Samples.Color (Samples.Translucent, 0, Y).Green
                     and then Narrow.Data (Rows + 4 * Y + 3) = Samples.Color (Samples.Translucent, 0, Y).Blue,
                     "unpacked row" & Y'Image & " is not its alpha and color");
          end loop;
@@ -455,6 +508,8 @@ package body Pictlib_Testing.Test_Encoding is
          Assert (Encoding.State (Encoder) = Encoding.Failed
                  and then Encoding.Last_Error (Encoder).Code = Pictlib.Errors.Destination_Write_Failed,
                  "a wrong-state call changed a failed encoder");
+         Encoding.Cancel (Encoder);
+         Assert (Encoding.State (Encoder) = Encoding.Failed, "cancelling a failed encoder changed it");
       end;
       --  A destination that raises part-way propagates its exception and fails the encoder, so no second picture
       --  can follow the part of the first it took.
@@ -483,6 +538,41 @@ package body Pictlib_Testing.Test_Encoding is
          Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State,
                  "an encoder whose destination raised encoded again");
       end;
+      --  A destination that calls Encode on its encoder is refused; a flush that fails or raises fails the encoder.
+      for Move in 1 .. 3 loop
+         declare
+            Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
+            Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
+            Output : aliased Flaky;
+            Encoder : aliased Encoding.Encoder;
+            Outcome : Pictlib.Results.Result;
+            Raised : Boolean := False;
+         begin
+            Pictlib.Streams.Open (Output.Inner, Storage);
+            Output.Fail_At := (if Move = 1 then 40 else Positive'Last);
+            Output.Target := (if Move = 1 then Encoder'Unchecked_Access else null);
+            Output.Flush_Fails := Move = 2;
+            Output.Flush_Raises := Move = 3;
+            Encoding.Initialize (Encoder, Output'Access);
+            Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 37, 23));
+            if Move = 1 then
+               Assert (Output.Nested.First_Error.Code = Pictlib.Errors.Invalid_State
+                       and then Pictlib.Results.Succeeded (Outcome),
+                       "a destination encoded through the encoder writing to it");
+            else
+               Assert (Pictlib.Results.Succeeded (Outcome), "encode failed before the flush");
+               begin
+                  Outcome := Encoding.Finish (Encoder);
+               exception
+                  when Destination_Raised => Raised := True;
+               end;
+               Assert (Raised = (Move = 3), "a flush's exception did not propagate");
+               Assert (Encoding.State (Encoder) = Encoding.Failed
+                       and then Encoding.Last_Error (Encoder).Code = Pictlib.Errors.Destination_Write_Failed,
+                       "a flush that failed left the encoder " & Encoding.State (Encoder)'Image);
+            end if;
+         end;
+      end loop;
    end Destinations;
 
    procedure States (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -517,8 +607,94 @@ package body Pictlib_Testing.Test_Encoding is
               and then Encoding.State (Encoder) = Encoding.Cancelled
               and then Encoding.Last_Error (Encoder).Code = Pictlib.Errors.No_Error,
               "a cancelled encoder finished, or a wrong-state call changed it");
+      --  Cancel cancels an Encoded encoder too, and leaves a Finished or Failed one as it is.
+      Encoding.Initialize (Encoder, Output'Access);
+      Outcome := Encoding.Encode (Encoder, Image);
+      Assert (Pictlib.Results.Succeeded (Outcome), "encode before cancelling failed");
+      Encoding.Cancel (Encoder);
+      Assert (Encoding.State (Encoder) = Encoding.Cancelled, "an encoded encoder was not cancelled");
+      Outcome := Encoding.Finish (Encoder);
+      Assert (Outcome.First_Error.Code = Pictlib.Errors.Operation_Cancelled, "a cancelled encoder finished");
+      Encoding.Initialize (Encoder, Output'Access);
+      Outcome := Encoding.Encode (Encoder, Image);
+      Assert (Pictlib.Results.Succeeded (Outcome), "encode before finishing failed");
+      Outcome := Encoding.Finish (Encoder);
+      Assert (Pictlib.Results.Succeeded (Outcome), "finish before cancelling failed");
+      Encoding.Cancel (Encoder);
+      Assert (Encoding.State (Encoder) = Encoding.Finished, "cancelling a finished encoder changed it");
       Encoding.Finalize (Encoder);
       Encoding.Finalize (Encoder);
       Assert (Encoding.State (Encoder) = Encoding.Created, "finalize is not idempotent");
    end States;
+   --  Tiny pictures, byte for byte as spec section 7 and Inside Macintosh lay them out, assembled independently of
+   --  the encoder from the opcode tables: what a decoder sharing the encoder's constants could not catch.
+   procedure Golden_Bytes (T : in out AUnit.Test_Cases.Test_Case'Class) is
+      pragma Unreferenced (T);
+      use Pictlib_Testing.Builders;
+      No_Header : constant Encoding.Options := (File_Header => False, others => <>);
+
+      --  The picture around Bits: picSize of the whole, the frame, VersionOp, HeaderOp, DefHilite, a clip of the
+      --  frame, Bits, a pad byte to an even offset, OpEndPic.
+      function Picture (Width, Height : Natural; Bits : Bytes) return Bytes is
+         Unsized : constant Bytes :=
+           V2_Prefix (0, 0, Height, Width) & W (16#1E#) & W (1) & Region (0, 0, Height, Width);
+         Padded : constant Bytes :=
+           (if (Unsized'Length + Bits'Length) mod 2 = 0 then Bits else Bits & B (0));
+         Size : constant Natural := Unsized'Length + Padded'Length + 2;
+      begin
+         return V2_Prefix (0, 0, Height, Width, Size mod 16#1_0000#) & W (16#1E#) & W (1)
+                & Region (0, 0, Height, Width) & Padded & W (16#FF#);
+      end Picture;
+
+      procedure Expect (Item : Kind; Width, Height : Positive; Settings : Encoding.Options; Expected : Bytes;
+                        Label : String) is
+         Got : constant Encoded := Encode (Item, Width, Height, Settings);
+      begin
+         Assert (Pictlib.Results.Succeeded (Got.Outcome), Label & ": encode failed");
+         for Index in 1 .. Natural'Min (Got.Data'Length, Expected'Length) loop
+            Assert (Got.Data (Got.Data'First + Index - 1) = Expected (Expected'First + Index - 1),
+                    Label & ": byte" & Natural'Image (Index - 1) & " is"
+                    & Got.Data (Got.Data'First + Index - 1)'Image & ", expected"
+                    & Expected (Expected'First + Index - 1)'Image);
+         end loop;
+         Assert (Got.Data'Length = Expected'Length,
+                 Label & ":" & Got.Data'Length'Image & " bytes, expected" & Expected'Length'Image);
+      end Expect;
+   begin
+      --  Three_Colors, 9 x 1: three red, three 12 34 56, three white. rowBytes 10, so packed behind a byte count:
+      --  the indexes 0 0 0 1 1 1 2 2 2 and a pad index 0 are three runs of three and a literal of one. The table
+      --  holds the colors in the order they first appear, each component widened by 257.
+      Expect (Samples.Three_Colors, 9, 1, (No_Header with delta Layout => Encoding.Indexed_8),
+              Picture (9, 1,
+                       W (16#98#) & W (16#8000# + 10) & Rect (0, 0, 1, 9) & Pixmap_Tail (0, 8, 1, 8)
+                       & Table_Header (0, 3) & Table_Entry (0, 16#FFFF#, 0, 0)
+                       & Table_Entry (1, 16#1212#, 16#3434#, 16#5656#) & Table_Entry (2, 16#FFFF#, 16#FFFF#, 16#FFFF#)
+                       & Rect (0, 0, 1, 9) & Rect (0, 0, 1, 9) & W (0)
+                       & B (8) & B (16#FE#) & B (0) & B (16#FE#) & B (1) & B (16#FE#) & B (2) & B (0) & B (0)),
+              "Indexed_8");
+      --  Black_And_White, 4 x 1: black, black, white, black, most significant bit first, 1 black: 16#D0#. A BitMap
+      --  of rowBytes 2, below 8, so stored unpacked.
+      Expect (Samples.Black_And_White, 4, 1, (No_Header with delta Layout => Encoding.Mono_1),
+              Picture (4, 1,
+                       W (16#98#) & W (2) & Rect (0, 0, 1, 4) & Rect (0, 0, 1, 4) & Rect (0, 0, 1, 4) & W (0)
+                       & B (16#D0#) & B (0)),
+              "Mono_1");
+      --  Gradient, 2 x 1: black and (7, 0, 0). DirectBitsRect, baseAddr 16#FF#, rowBytes 8, pack type 4 over three
+      --  planes: red 0 7, green 0 0, blue 0 0, packed as a literal of two and a run of four.
+      Expect (Samples.Gradient, 2, 1, (No_Header with delta Layout => Encoding.Direct_32),
+              Picture (2, 1,
+                       W (16#9A#) & L (16#FF#) & W (16#8000# + 8) & Rect (0, 0, 1, 2) & Pixmap_Tail (4, 32, 3, 8)
+                       & Rect (0, 0, 1, 2) & Rect (0, 0, 1, 2) & W (0)
+                       & B (5) & B (1) & B (0) & B (7) & B (16#FD#) & B (0)),
+              "Direct_32");
+      --  picSize is the low 16 bits of a picture past 64 KiB.
+      declare
+         Big : constant Encoded :=
+           Encode (Samples.Gradient, 4000, 10, (No_Header with delta Layout => Encoding.Direct_32));
+         Size : constant Natural := Natural (Big.Data (Big.Data'First)) * 256 + Natural (Big.Data (Big.Data'First + 1));
+      begin
+         Assert (Big.Data'Length > 16#1_0000# and then Size = Big.Data'Length mod 16#1_0000#,
+                 "picSize of a" & Big.Data'Length'Image & "-byte picture is" & Size'Image);
+      end;
+   end Golden_Bytes;
 end Pictlib_Testing.Test_Encoding;

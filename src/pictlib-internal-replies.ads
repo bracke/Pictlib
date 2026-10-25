@@ -14,4 +14,13 @@ package Pictlib.Internal.Replies is
    --  No_Error otherwise, a reply of nothing at the end included.
    function Judged (Step : Streams.Source_Result; Requested : Byte_Count; Where : Source_Offset)
      return Errors.Error;
+
+   --  Judged write.
+   --  @param Step The destination's reply to a write.
+   --  @param Requested The bytes given it.
+   --  @param Where The destination offset the write was made at.
+   --  @return The destination's own failure; Internal_Invariant_Failed when it claims more than it was given;
+   --  Destination_Zero_Progress when it takes nothing of a write; No_Error otherwise.
+   function Judged_Write (Step : Streams.Destination_Result; Requested : Byte_Count; Where : Destination_Offset)
+     return Errors.Error;
 end Pictlib.Internal.Replies;

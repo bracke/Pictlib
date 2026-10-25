@@ -26,12 +26,17 @@ package body Pictlib.Internal.Container is
 
       function At_Index (Index : Positive) return Byte is (Picture_Stream.Lookahead_At (S.Stream.all, Index));
    begin
+      --  Version 2: the version opcode as a word, then Version_2_Word; version 1: the opcode as a byte, then 1.
       if Available >= First + 3
-        and then At_Index (First) = 16#00# and then At_Index (First + 1) = 16#11#
-        and then At_Index (First + 2) = 16#02# and then At_Index (First + 3) = 16#FF#
+        and then At_Index (First) = Byte (Opcodes.Version_Op / 256)
+        and then At_Index (First + 1) = Byte (Opcodes.Version_Op mod 256)
+        and then At_Index (First + 2) = Byte (Version_2_Word / 256)
+        and then At_Index (First + 3) = Byte (Version_2_Word mod 256)
       then
          return Detected_2;
-      elsif Available >= First + 1 and then At_Index (First) = 16#11# and then At_Index (First + 1) = 16#01# then
+      elsif Available >= First + 1
+        and then At_Index (First) = Byte (Opcodes.Version_Op mod 256) and then At_Index (First + 1) = Version_1_Number
+      then
          return Detected_1;
       end if;
       return None;
@@ -143,15 +148,23 @@ package body Pictlib.Internal.Container is
             File_Header_Present := False;
       end case;
       Detected := Version_At (S, (if File_Header_Present then File_Header_Bytes else 0));
-      if Detected = None
-        and then Byte_Count (Picture_Stream.Lookahead_Length (S.Stream.all)) >= S.Budget.Max_Picture_Bytes
-        and then Picture_Stream.Lookahead_Length (S.Stream.all) < Picture_Stream.Lookahead_Capacity
-        and then not Picture_Stream.Input_Ended (S.Stream.all)
-      then
-         --  The picture byte budget cut the look-ahead short of the version: the limit, not a bad version.
-         return Sessions.Over_Limit
-           (S, Picture_Byte_Limit, S.Budget.Max_Picture_Bytes, S.Budget.Max_Picture_Bytes + 1);
-      elsif Detected = None then
+      declare
+         --  The look-ahead the version needs to be seen: a version 2 opcode's four bytes after the layout the
+         --  policy reads, or, when Auto found no file header, after the file header a cut look-ahead may hide.
+         Needed : constant Natural :=
+           (if File_Header_Present or else Policy = Auto then File_Header_Bytes else 0) + Version_Offset + 4;
+      begin
+         if Detected = None
+           and then Byte_Count (Picture_Stream.Lookahead_Length (S.Stream.all)) >= S.Budget.Max_Picture_Bytes
+           and then Picture_Stream.Lookahead_Length (S.Stream.all) < Needed
+           and then not Picture_Stream.Input_Ended (S.Stream.all)
+         then
+            --  The picture byte budget cut the look-ahead short of the version: the limit, not a bad version.
+            return Sessions.Over_Limit
+              (S, Picture_Byte_Limit, S.Budget.Max_Picture_Bytes, S.Budget.Max_Picture_Bytes + 1);
+         end if;
+      end;
+      if Detected = None then
          return Sessions.Fail (S, Errors.Version_Invalid);
       end if;
       return Results.Success;

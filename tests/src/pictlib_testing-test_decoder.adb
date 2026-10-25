@@ -67,10 +67,17 @@ package body Pictlib_Testing.Test_Decoder is
    overriding function Skip
      (Object : in out Overreporting; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result;
 
-   --  A source that raises once it has delivered After bytes.
+   --  What a meddling source does once it has delivered After bytes.
+   type Source_Move is (Raises, Reenters, Cancels);
+
+   --  A source that, once it has delivered After bytes, raises, or calls into or cancels Target.
    type Raising is limited new Pictlib.Streams.Source with record
       Inner : Pictlib.Streams.Memory_Source;
       After : Pictlib.Byte_Count := 0;
+      Move : Source_Move := Raises;
+      Target : access Decoding.Decoder;
+      Done : Boolean := False;
+      Nested : Pictlib.Results.Result := Pictlib.Results.Success;
    end record;
    overriding function Read
      (Object : in out Raising; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result;
@@ -141,8 +148,16 @@ package body Pictlib_Testing.Test_Decoder is
    is
       use type Pictlib.Byte_Count;
    begin
-      if Pictlib.Byte_Count (Object.Inner.Offset) >= Object.After then
-         raise Source_Raised;
+      if Pictlib.Byte_Count (Object.Inner.Offset) >= Object.After and then not Object.Done then
+         case Object.Move is
+            when Raises => raise Source_Raised;
+            when Reenters =>
+               Object.Done := True;
+               Object.Nested := Decoding.Read_Header (Object.Target.all);
+            when Cancels =>
+               Object.Done := True;
+               Decoding.Cancel (Object.Target.all);
+         end case;
       end if;
       return Object.Inner.Read (Buffer);
    end Read;
@@ -457,6 +472,32 @@ package body Pictlib_Testing.Test_Decoder is
             Decoding.Reset (Inside, Source'Access);
             Outcome := Decoding.Read_Header (Inside);
             Assert (Pictlib.Results.Succeeded (Outcome), "a decoder whose source raised read no header after Reset");
+         end;
+      end loop;
+
+      --  A source that calls into its decoder is refused; one that cancels it mid-render leaves it cancelled.
+      for Move in Reenters .. Cancels loop
+         declare
+            Inside : aliased Decoding.Decoder;
+            Faulty : aliased Raising;
+            Storage : aliased Bytes := [1 .. 3 * 8 * 4 => 0];
+         begin
+            Pictlib.Streams.Open (Faulty.Inner, Skipped'Access);
+            Faulty.After := 528;
+            Faulty.Move := Move;
+            Faulty.Target := Inside'Unchecked_Access;
+            Decoding.Initialize (Inside, Faulty'Access);
+            Outcome := Decoding.Read_Header (Inside);
+            Assert (Pictlib.Results.Succeeded (Outcome), "the header was not read");
+            Outcome := Decoding.Render (Inside, Canvases.View (Storage'Access, 8, 4));
+            if Move = Reenters then
+               Assert (Faulty.Nested.First_Error.Code = Pictlib.Errors.Invalid_State,
+                       "a source called into the decoder rendering through it");
+            else
+               Assert (Outcome.First_Error.Code = Pictlib.Errors.Operation_Cancelled
+                       and then Decoding.State (Inside) = Decoding.Cancelled,
+                       "a source's Cancel mid-render was overwritten: " & Decoding.State (Inside)'Image);
+            end if;
          end;
       end loop;
    end Meddling_Visitors;

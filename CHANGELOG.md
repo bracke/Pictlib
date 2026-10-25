@@ -66,9 +66,23 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   without its first opcodes. One from a destination once writing began
   leaves the encoder `Failed` with `Destination_Write_Failed`, so a retried
   `Encode` cannot append a second picture to part of the first.
-- A `srcRect` clamped to a bits opcode's bounds keeps its scale, drawing
-  only the part of `dstRect` that samples it, as QuickTime images do; the
-  clamped source used to be stretched over the whole destination.
+- A `srcRect` clamped to a bits opcode's bounds keeps its mapping: the
+  whole `srcRect` is sampled over the whole `dstRect` and only the part
+  that samples the bounds is painted, as QuickTime images do. The clamped
+  source used to be stretched over the whole destination, and then, for a
+  while, over the part it maps to, which samples differently when the
+  scale is not whole.
+- While `Read_Header`, `Enumerate` or `Render` runs the source, a nested
+  call of any of them is refused, and a `Cancel` the source makes stands;
+  while `Encode` or `Finish` runs the destination, a nested `Encode` or
+  `Finish` is refused, and a flush that fails or raises fails the encoder.
+- A payload longer than the picture byte limit can still hold fails on
+  that limit before anything is allocated for it, as the specification
+  says; a wrong version the limit leaves in view is `Version_Invalid`, not
+  the limit.
+- The encoder frees its row buffers when the destination raises.
+- The warning log's suppression record keeps the context of the first
+  warning suppressed, as documented, not the latest's.
 - `lineJustify` with extra space is unsupported (strictly a failure,
   leniently drawn unjustified with a warning); it was skipped silently.
 - Shape building charges a line's row buffers, a polygon's edges and an
@@ -299,6 +313,13 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   workflow; the drawing budget's time is one to three minutes everywhere;
   `SECURITY.md` says where to report.
 
+- The specification records that ImageMagick and LibreOffice read a
+  144 dpi picture at its pixels, and the re-entry and flush rules;
+  `Bytes_Written`, `Finish`, `Item_Info`'s fields, the stale
+  `Copy_Metadata` comments and `Retain`'s claim are corrected;
+  `PUBLIC_API.md` records that `Pack_Type` is internal;
+  `tests/fixtures/README.md` says where provenance is actually kept.
+
 ### Internal structure
 
 No behaviour changes; what each part of the library does now lives in one
@@ -359,6 +380,13 @@ place:
   package-level; `Floor_Divide` and `Ceiling_Divide` live in
   `Internal.Divisions`; a shape's row is copied into place without a
   temporary.
+
+- The encoder writes the file header and picture through one sequence
+  for the dry run and the real one, and its color table in a procedure of
+  its own; writes are judged by `Replies.Judged_Write` as reads are; the
+  version bytes are named by their constants; misplaced comments are back
+  above their declarations; region framing charges each intersection's
+  rows before it and moves its rows instead of copying them.
 
 ### Tooling
 
@@ -450,3 +478,17 @@ All tooling is Ada, in the `tests` crate:
   destinations, clamped srcRects on either side, lineJustify, region frames
   with pens up to 4 x 3 against a rectangle and an L, one warning for a
   table's bad entries, and the counts of bad views.
+- `encoding.golden_bytes` holds the encoder to hand-assembled bytes for
+  tiny Indexed_8, Mono_1 and Direct_32 pictures (the color table's ×257
+  widening and order included) and picSize past 64 KiB; the encoder tests
+  cover rowBytes 250 against 252 in the bytes, Indexed_8 at its widest and
+  past it, `Cancel` in every state, a flush that fails or raises, and the
+  unpacked green byte; the PackBits tests pin runs and literals of 128,
+  129, 130 and 300 and the `Worst_Case` bound.
+- `pictlib_conformance` adds the rowBytes boundary, the widest rows, a
+  picture past 64 KiB, a raised Mono_1 threshold, BGR and BGRA sources and
+  a 144 dpi picture: 24 pictures.
+- New tests cover a non-whole-ratio and a vertical srcRect clamp, a source
+  that calls into or cancels its decoder, a destination that calls Encode,
+  the early picture byte check, a wrong version under a small budget, and
+  the suppression record's context; the Direct pixmap builder is shared.

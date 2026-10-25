@@ -22,11 +22,17 @@ package Pictlib.Metadata is
 
    type Item_Info is record
       Kind : Item_Kind := File_Header;
+      --  The opcode's ordinal; 0 for a file header, which is no opcode, Kind telling it from the version opcode.
       Ordinal : Opcode_Ordinal := 0;
+      --  The opcode's source offset; for a file header, where its bytes begin.
       Offset : Source_Offset := 0;
+      --  The opcode; 0 for a file header.
       Op : Opcode := 0;
+      --  A comment's kind, for comments only.
       Comment_Kind : Interfaces.Unsigned_16 := 0;
+      --  The font ID a fontName names, for font names only.
       Font_ID : Interfaces.Unsigned_16 := 0;
+      --  Bytes retained.
       Data_Length : Byte_Count := 0;
    end record;
 end Pictlib.Metadata;

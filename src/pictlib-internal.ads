@@ -37,6 +37,8 @@ package Pictlib.Internal is
 
    --  The version opcode's data in version 2, and the HeaderOp version of an extended version 2 picture (-2).
    Version_2_Word : constant := 16#02FF#;
+   --  Version 1's version opcode carries this byte.
+   Version_1_Number : constant := 1;
    Extended_Header_Version : constant := 16#FFFE#;
 
    --  The application header of a PICT file, before the picture.
@@ -50,10 +52,9 @@ package Pictlib.Internal is
    Bit_Pattern_Bytes : constant := 8;
    --  An RGBColor: three 16-bit components.
    RGB_Color_Bytes : constant := 6;
-   --  A PixPat's patType: a color tile, or an RGB color to dither.
    --  The largest PixMap packType: 0 default, 1 unpacked, 2 pad byte dropped, 3 word runs, 4 component planes.
    Largest_Pack_Type : constant := 4;
-
+   --  A PixPat's patType: a color tile, or an RGB color to dither.
    Color_Pattern_Type : constant := 1;
    Dither_Pattern_Type : constant := 2;
 end Pictlib.Internal;

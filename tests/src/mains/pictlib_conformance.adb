@@ -13,6 +13,7 @@ with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Pictlib;
 with Pictlib.Encoding;
+with Pictlib.Geometry;
 with Pictlib.Images;
 with Pictlib.Results;
 with Pictlib.Streams;
@@ -25,6 +26,7 @@ procedure Pictlib_Conformance is
    use Ada.Strings.Unbounded;
    use type Pictlib.Images.RGB_Color;
    use type Pictlib.Encoding.Layout_Kind;
+   use type Pictlib.Geometry.Fixed;
 
    package Encoding renames Pictlib.Encoding;
    package Processes renames Project_Tools.Processes;
@@ -70,7 +72,24 @@ procedure Pictlib_Conformance is
       --  Auto's choice, for each kind of image.
       Case_Of ("auto_direct", Samples.Gradient, 37, 23, (Layout => Encoding.Auto, others => <>)),
       Case_Of ("auto_indexed", Samples.Three_Colors, 37, 23, (Layout => Encoding.Auto, others => <>)),
-      Case_Of ("auto_mono", Samples.Black_And_White, 37, 23, (Layout => Encoding.Auto, others => <>))];
+      Case_Of ("auto_mono", Samples.Black_And_White, 37, 23, (Layout => Encoding.Auto, others => <>)),
+      --  The row-length boundaries: the last byte count and the first word count, and the widest rows.
+      Case_Of ("indexed_250", Samples.Three_Colors, 250, 3, (Layout => Encoding.Indexed_8, others => <>)),
+      Case_Of ("indexed_252", Samples.Three_Colors, 251, 3, (Layout => Encoding.Indexed_8, others => <>)),
+      Case_Of ("direct_widest", Samples.Gradient, 4095, 2, (Layout => Encoding.Direct_32, others => <>)),
+      Case_Of ("indexed_widest", Samples.Three_Colors, 16_382, 1, (Layout => Encoding.Indexed_8, others => <>)),
+      --  A picture past 64 KiB, whose picSize is its length's low 16 bits.
+      Case_Of ("direct_large", Samples.Gradient, 300, 60, (Layout => Encoding.Direct_32, others => <>)),
+      --  A raised Mono_1 threshold, and sources in the other byte orders.
+      Case_Of ("mono_threshold", Samples.Gray_Ramp, 37, 3,
+               (Layout => Encoding.Mono_1, Mono_Threshold => 200, others => <>)),
+      Case_Of ("direct_bgr", Samples.Gradient, 37, 23, (Layout => Encoding.Direct_32, others => <>), Pictlib.BGR_24),
+      Case_Of ("direct_bgra", Samples.Gradient, 37, 23, (Layout => Encoding.Direct_32, others => <>),
+               Pictlib.BGRA_32),
+      --  A resolution other than 72 dpi labels the picture only: a reader must not scale it.
+      Case_Of ("direct_144dpi", Samples.Gradient, 37, 23,
+               (Layout => Encoding.Direct_32, Horizontal_Resolution => 2 * Pictlib.Geometry.Fixed_72,
+                Vertical_Resolution => 2 * Pictlib.Geometry.Fixed_72, others => <>))];
 
    function Path (Name, Extension : String) return String is (Directory & "/" & Name & "." & Extension);
 

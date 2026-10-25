@@ -135,13 +135,38 @@ package body Pictlib_Testing.Test_PackBits is
                   Row (Index) := Fill (Index);
                end loop;
                PackBits.Pack (Row, Packed, Written);
+               Assert (Written <= PackBits.Worst_Case (Length), Label & " outgrew Worst_Case at" & Length'Image);
                Assert (Unpack (Packed (1 .. Written), 1, Back, Unpacked) = PackBits.Exact and then Back = Row,
                        Label & " round trip failed at" & Length'Image);
             end;
          end loop;
       end Round_Trip;
+
+      --  Pack Row and require exactly Expected, the packing Apple's PackBits gives: runs of 3 to 128 equal bytes,
+      --  literals of up to 128 others.
+      procedure Expect_Packed (Row : Bytes; Expected : Bytes; Label : String) is
+         Packed : Bytes (1 .. PackBits.Worst_Case (Row'Length));
+         Back : Bytes (Row'Range);
+         Written, Unpacked : Natural;
+      begin
+         PackBits.Pack (Row, Packed, Written);
+         Assert (Packed (1 .. Written) = Expected, Label & ": packed differently");
+         Assert (Unpack (Packed (1 .. Written), 1, Back, Unpacked) = PackBits.Exact and then Back = Row,
+                 Label & ": did not unpack to itself");
+      end Expect_Packed;
+
+      Distinct : constant Bytes (1 .. 129) := [for Index in 1 .. 129 => Pictlib.Byte (Index - 1)];
    begin
       Round_Trip (Alternating'Access, "alternating");
       Round_Trip (Random_Byte'Access, "random");
+      --  The longest run is 128 (flag 16#81#); what is left of a longer one is a run when it is 3 or more, else a
+      --  literal.
+      Expect_Packed ([1 .. 128 => 7], [16#81#, 7], "a run of 128");
+      Expect_Packed ([1 .. 129 => 7], [16#81#, 7, 0, 7], "a run of 129");
+      Expect_Packed ([1 .. 130 => 7], [16#81#, 7, 1, 7, 7], "a run of 130");
+      Expect_Packed ([1 .. 300 => 0], [16#81#, 0, 16#81#, 0, 16#D5#, 0], "a run of 300");
+      --  The longest literal is 128 (flag 16#7F#).
+      Expect_Packed (Distinct (1 .. 128), B (16#7F#) & Distinct (1 .. 128), "a literal of 128");
+      Expect_Packed (Distinct, B (16#7F#) & Distinct (1 .. 128) & B (0) & Distinct (129 .. 129), "a literal of 129");
    end Round_Trips;
 end Pictlib_Testing.Test_PackBits;

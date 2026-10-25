@@ -46,6 +46,10 @@ package Pictlib.Internal.Picture_Stream is
    --  @param Object Reader to inspect.
    --  @return Bytes consumed since Start_Picture; version 2 opcodes align on even picture offsets.
    function Picture_Offset (Object : Reader) return Byte_Count;
+   --  Remaining budget.
+   --  @param Object Reader.
+   --  @return Bytes the reader may still deliver within the picture byte limit.
+   function Remaining_Budget (Object : Reader) return Byte_Count;
 
    overriding function Read (Object : in out Reader; Buffer : out Streams.Byte_Array) return Streams.Source_Result;
 

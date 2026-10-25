@@ -256,9 +256,7 @@ package body Pictlib_Testing.Test_Hostile is
       --  Pack types and component counts are checked whether or not the rows are packed.
       declare
          function Direct (Row_Bytes, Pack, Size, Count : Natural; Data : Bytes) return Bytes is
-           (Pic (1, 1, W (16#9A#) & L (16#FF#) & W (16#8000# + Row_Bytes) & Rect (0, 0, 1, 1)
-                       & Pixmap_Tail (Pack, Size, Count, (if Size = 16 then 5 else 8)) & Rect (0, 0, 1, 1)
-                       & Rect (0, 0, 1, 1) & W (0) & Data));
+           (Pic (1, 1, Direct_Row (1, Row_Bytes, Pack, Size, Count, (if Size = 16 then 5 else 8), Data)));
          Pack_4_At_16 : aliased constant Bytes := Direct (2, 4, 16, 3, Zeros (2));
          Pack_3_At_32 : aliased constant Bytes := Direct (4, 3, 32, 3, Zeros (4));
          Seven_Components : aliased constant Bytes := Direct (4, 1, 32, 7, Zeros (4));

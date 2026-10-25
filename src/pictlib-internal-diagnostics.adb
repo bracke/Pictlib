@@ -16,11 +16,11 @@ package body Pictlib.Internal.Diagnostics is
          Log.Dropped := Log.Dropped + 1;
       end if;
       if Max_Records > 0 and then Log.Dropped = 1 then
-         --  The displaced warning counts as suppressed too.
+         --  The displaced warning, the first suppressed, counts too, and the record keeps its context.
          Log.Dropped := 2;
          Log.Items.Replace_Element
            (Log.Items.Last_Index,
-            Errors.Make_Warning (Errors.Warnings_Suppressed, Errors.Data_Loss, Item.Context));
+            Errors.Make_Warning (Errors.Warnings_Suppressed, Errors.Data_Loss, Log.Items.Last_Element.Context));
       end if;
       --  The suppression record names the first warning suppressed and, as its Actual, how many have been.
       if Max_Records > 0 then

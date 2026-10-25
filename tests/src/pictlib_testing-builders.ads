@@ -53,6 +53,9 @@ package Pictlib_Testing.Builders is
       Mask : Bytes := [1 .. 0 => 0];
       Description_Size : Natural := 86) return Bytes
      with Pre => Codec'Length = 4;
+   --  A DirectBitsRect of one row Width wide, copied with srcCopy from and to (0, 0, 1, Width), Pixels its data.
+   function Direct_Row (Width, Row_Bytes, Pack, Depth, Components, Component_Size : Natural; Pixels : Bytes)
+     return Bytes;
    --  The 36 PixMap bytes after rowBytes and bounds.
    function Pixmap_Tail (Pack_Type, Pixel_Size, Component_Count, Component_Size : Natural) return Bytes;
 

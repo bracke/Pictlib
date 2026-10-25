@@ -243,13 +243,15 @@ package body Pictlib.Internal.Rendering is
       return Outcome;
    end Fill;
 
-   --  Paint the destination rows that sample source row Source_Y of Decoder.
+   --  Paint the destination rows that sample source row Source_Y of Decoder, Source mapped onto Destination;
+   --  only columns Painted.Left .. Painted.Right - 1, those sampling the bounds, are painted.
    function Put_Row
      (P : in out Painter;
       S : in out Sessions.Session;
       Header : Pixmaps.Bits_Header;
       Source : Geometry.Rect;
       Destination : Area;
+      Painted : Area;
       Kind : Transfer_Modes.Mode_Kind;
       Mask : in out Regions.Region;
       Decoder : Pixmaps.Row_Decoder;
@@ -289,7 +291,7 @@ package body Pictlib.Internal.Rendering is
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
-            Outcome := Begin_Masked_Row (P, S, Y, Destination.Left, Destination.Right, Mask, Header.Masked);
+            Outcome := Begin_Masked_Row (P, S, Y, Painted.Left, Painted.Right, Mask, Header.Masked);
             if Results.Succeeded (Outcome) then
                Outcome := Paint (P, S, Y);
             end if;
@@ -361,7 +363,9 @@ package body Pictlib.Internal.Rendering is
    is
       Decoder : Pixmaps.Row_Decoder;
       Source : Geometry.Rect;
-      Destination : Area := To_Picture (P, Header.Destination);
+      Destination : constant Area := To_Picture (P, Header.Destination);
+      --  The part of Destination painted: all of it, or what a clamped srcRect maps to.
+      Painted : Area := Destination;
       Kind : Transfer_Modes.Mode_Kind;
       Outcome : Results.Result;
    begin
@@ -381,10 +385,11 @@ package body Pictlib.Internal.Rendering is
       if Geometry.Is_Empty (Source) or else Regions.Is_Empty (Destination) then
          return Skip_Copy (S, Header);
       end if;
-      --  A clamped srcRect keeps its scale: only the destination it maps to is drawn.
+      --  A clamped srcRect keeps its mapping: the whole srcRect is sampled over the whole dstRect, and only the
+      --  destination the clamped part maps to is painted.
       if Source /= Header.Source then
-         Destination := Shrunk (Destination, Header.Source, Source);
-         if Regions.Is_Empty (Destination) then
+         Painted := Shrunk (Destination, Header.Source, Source);
+         if Regions.Is_Empty (Painted) then
             return Skip_Copy (S, Header);
          end if;
       end if;
@@ -401,7 +406,7 @@ package body Pictlib.Internal.Rendering is
             Outcome := Pixmaps.Read_Row (S, Decoder, Row);
          end if;
          if Results.Succeeded (Outcome) then
-            Outcome := Put_Row (P, S, Header, Source, Destination, Kind, Mask, Decoder,
+            Outcome := Put_Row (P, S, Header, Header.Source, Destination, Painted, Kind, Mask, Decoder,
                                 Integer (Header.Bounds.Top) + Row);
          end if;
       end loop;

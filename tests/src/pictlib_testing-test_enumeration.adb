@@ -318,6 +318,24 @@ package body Pictlib_Testing.Test_Enumeration is
                  "a payload past one buffer named" & Outcome.First_Error.Context.Expected'Image
                  & ", not the allocation budget");
       end;
+      --  A retained payload the picture byte limit cannot hold is refused as that, before anything is allocated
+      --  for it: an allocation budget below it is never reached.
+      declare
+         Long : aliased constant Bytes := V2_Body (W (16#8100#) & L (5_000) & Zeros (5_000));
+         Retain_Reserved : Decoding.Options;
+         Long_Events : Recorders.Recorder;
+         Long_Decoder : Decoding.Decoder;
+      begin
+         Retain_Reserved.Retention.Reserved_Payloads := True;
+         Recorders.Decode
+           (Long, Long_Decoder, Long_Events, Outcome, Retain_Reserved,
+            (Pictlib.Limits.Default_Limits with delta Max_Picture_Bytes => 1_000, Max_Allocation_Bytes => 100));
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
+                 and then Outcome.First_Error.Context.Limit = Pictlib.Picture_Byte_Limit
+                 and then Outcome.First_Error.Context.Expected = 1_000
+                 and then Outcome.First_Error.Context.Actual > 5_000,
+                 "a payload past the picture byte limit reported " & Outcome.First_Error.Context.Limit'Image);
+      end;
       Check_Events (Events, V2_Expected, "v2, dropped metadata");
 
       --  The session's allocation limit is never recovered, not even by dropping an item: at every total, a
@@ -382,8 +400,16 @@ package body Pictlib_Testing.Test_Enumeration is
               and then Decoding.Warning_At (Decoder, 1).Context.Source = 598,
               "the first reserved opcode warning is misplaced");
 
-      Recorders.Decode (V2_Picture, Decoder, Events, Outcome,
-                        Budget => (Pictlib.Limits.Default_Limits with delta Max_Warning_Records => 2));
+      declare
+         --  The second warning, which a cap of two displaces: the suppression record keeps its context.
+         Second : constant Pictlib.Errors.Warning := Decoding.Warning_At (Decoder, 2);
+      begin
+         Recorders.Decode (V2_Picture, Decoder, Events, Outcome,
+                           Budget => (Pictlib.Limits.Default_Limits with delta Max_Warning_Records => 2));
+         Assert (Decoding.Warning_At (Decoder, 2).Context.Op = Second.Context.Op
+                 and then Decoding.Warning_At (Decoder, 2).Context.Source = Second.Context.Source,
+                 "the suppression record lost the context of the first warning suppressed");
+      end;
       Assert (Pictlib.Results.Succeeded (Outcome), "the warning cap failed decoding");
       Assert (Decoding.Warning_Count (Decoder) = 2, "the warning cap was not honored");
       Assert (Decoding.Warning_At (Decoder, 1).Code = Pictlib.Errors.Reserved_Opcode_Skipped
