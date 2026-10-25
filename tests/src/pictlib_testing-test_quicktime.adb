@@ -1,3 +1,4 @@
+with Ada.Unchecked_Deallocation;
 with AUnit.Assertions;
 with Jpeglib;
 with Jpeglib.Decoding;
@@ -331,7 +332,11 @@ package body Pictlib_Testing.Test_QuickTime is
          Small_Data : constant Bytes := Encoded_JPEG (Progressive, 500, 500);
          Small : aliased constant Bytes := Image (QuickTime ("jpeg", 500, 500, Small_Data), 8, 6);
          --  jpeglib's own decoding of the small JPEG, whose top-left 8 x 6 pixels the frame must show.
-         Reference : constant Jpeglib.Streams.Byte_Array_Access := new Jpeglib.Streams.Byte_Array (1 .. 3 * 500 * 500);
+         procedure Free is new Ada.Unchecked_Deallocation
+           (Jpeglib.Streams.Byte_Array, Jpeglib.Streams.Byte_Array_Access);
+         Reference : Jpeglib.Streams.Byte_Array_Access := new Jpeglib.Streams.Byte_Array (1 .. 3 * 500 * 500);
+         Reference_Data : Jpeglib.Streams.Byte_Array_Access :=
+           new Jpeglib.Streams.Byte_Array'([for Item of Small_Data => Jpeglib.Byte (Item)]);
          Reference_Source : aliased Jpeglib.Streams.Memory_Source;
          Reference_Decoder : Jpeglib.Decoding.Decoder;
          Reference_View : Jpeglib.Images.Mutable_Image_View :=
@@ -349,8 +354,7 @@ package body Pictlib_Testing.Test_QuickTime is
          Canvases.Render (Small, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome);
          Assert (Pictlib.Results.Succeeded (Outcome),
                  "a small progressive JPEG failed with " & Outcome.First_Error.Code'Image);
-         Jpeglib.Streams.Open
-           (Reference_Source, new Jpeglib.Streams.Byte_Array'([for Item of Small_Data => Jpeglib.Byte (Item)]));
+         Jpeglib.Streams.Open (Reference_Source, Jpeglib.Streams.Const_Byte_Array_Access (Reference_Data));
          Jpeglib.Decoding.Initialize (Reference_Decoder, Reference_Source'Unchecked_Access);
          Reference_Outcome := Jpeglib.Decoding.Read_Header (Reference_Decoder);
          if Jpeglib.Results.Succeeded (Reference_Outcome) then
@@ -371,6 +375,9 @@ package body Pictlib_Testing.Test_QuickTime is
                end;
             end loop;
          end loop;
+         Jpeglib.Decoding.Finalize (Reference_Decoder);
+         Free (Reference);
+         Free (Reference_Data);
          Assert (Wrong = 0, "a small progressive JPEG was not drawn:" & Wrong'Image & " pixels differ");
       end;
       --  A hierarchical JPEG holds a continuation frame's coefficients beside the first frame's: a budget that

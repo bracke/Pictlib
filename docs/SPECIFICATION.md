@@ -31,7 +31,8 @@ are retained, never interpreted.
 ## 2. Normative behavior
 
 - Expected invalid input never raises: every public operation reports an `Errors.Error` inside a
-  `Results.Result`. An exception escaping the public API is a defect.
+  `Results.Result`. An exception escaping the public API is a defect, unless caller code raised it: a
+  visitor, a source or a destination, whose exceptions propagate (sections 6 and 7).
 - Default strictness is `Strict`. `Compatible` accepts documented deviations seen in real files
   (a missing end opcode at EOF). `Recover_When_Safe` additionally
   renders what was decoded before a recoverable failure and reports `Partial_Picture`. Each
@@ -59,7 +60,8 @@ are retained, never interpreted.
 - **Version 2:** `16#0011#` followed by `16#02FF#`, then `HeaderOp` `16#0C00#` with 24 data bytes.
   Header version `-1` (a long) carries fixed-point picture bounds stored left, top, right,
   bottom — the order Netpbm's `ppmtopict` writes — and four reserved bytes (version 2); `-2` carries `hRes`, `vRes`
-  (Fixed, 72 dpi default) and an integer source rectangle (extended version 2). Opcodes are two
+  (Fixed, 72 dpi default; a non-positive one fails with `Header_Invalid` in `Strict` and is read as
+  72 dpi with a warning otherwise) and an integer source rectangle (extended version 2). Opcodes are two
   bytes and every opcode starts on an even offset from the start of the opcode stream, so odd
   data lengths are followed by one pad byte, skipped whatever its value in every mode: a writer
   that leaves it out cannot be told from one that does not, so there is no lenient guess. End
@@ -81,11 +83,16 @@ are retained, never interpreted.
 ### 3.2 State and drawing opcodes
 
 - The renderer keeps a QuickDraw graphics port state: origin (`16#000C#`), clip region
-  (`16#0001#`), pen size/mode/pattern/location (`16#0007#`, `16#0008#`, `16#0009#`, `16#0015#`),
+  (`16#0001#`), pen size/mode/pattern/location (`16#0007#`, `16#0008#`, `16#0009#`),
   fill and background patterns (`16#000A#`, `16#0002#`) and pixel patterns (`16#0012#..16#0014#`),
   oval size (`16#000B#`), foreground/background/op/hilite colors (`16#000E#`, `16#000F#`,
   `16#001A#`, `16#001B#`, `16#001D#`, `16#001F#`), and text state (`16#0003#..16#0006#`,
-  `16#000D#`, `16#0010#`, `16#0016#`, `16#002C#..16#002E#`).
+  `16#000D#`, `16#0010#`, `16#0016#`, `16#002C#`). `PnLocHFrac` (`16#0015#`), a fraction of a pixel
+  added to the pen's horizontal position, and `glyphState` (`16#002E#`), the Font Manager's outline
+  and fractional-width preferences, are read and ignored: pen positions and text advances are
+  already kept to the pixel and below. `lineJustify` (`16#002D#`) spaces justified text: zero extra
+  space is the default and changes nothing; any other is unsupported (`Unsupported_Feature`
+  strictly, `Approximated_Rendering` otherwise, the text drawn unjustified).
 - Version 1 colors (`16#000E#`, `16#000F#`) map the eight QuickDraw planar colors to RGB as
   Color QuickDraw shows them (whiteColor 30, blackColor 33, yellowColor 69 `FC F3 05`,
   magentaColor 137 `F2 08 84`, redColor 205 `DD 08 06`, cyanColor 273 `02 AB EA`, greenColor
@@ -141,8 +148,10 @@ are retained, never interpreted.
   - A pattern opcode that fails, in reading or in its charge, leaves that pattern QuickDraw's
     default (white background, black pen and fill); since a failure ends rendering, nothing draws
     with it.
-  - Limits apply only to rendering, so enumeration accepts a picture a limit stops; format errors
-    are reported by both.
+  - The drawing-work budget, and the allocations only drawing makes (row buffers, pattern tiles,
+    fonts, embedded JPEG pixels), apply only to rendering, so enumeration accepts a picture they
+    stop; the picture, opcode, region, polygon, metadata and retained-payload limits, and format
+    errors, apply to both.
 - Transfer modes act on 8-bit components. For the boolean modes, each source component `s` (a
   copied pixel, or a pattern's black-or-white sample) says how near to black the source is:
   `copy = mix (fg, bk, s)`, `or = mix (fg, dst, s)`, `bic = mix (bk, dst, s)`,
@@ -207,7 +216,9 @@ are retained, never interpreted.
   coordinates), then composited with the transfer mode. Rows are decoded one at a time and never
   buffered whole.
 - A `srcRect` reaching outside the bounds fails with `Pixmap_Invalid` in `Strict`; otherwise it is
-  clamped to the bounds with a warning. An empty source or destination draws nothing.
+  clamped to the bounds with a warning and keeps its scale: only the part of `dstRect` whose pixels
+  sample the clamped source, by the mapping of the whole `srcRect` onto `dstRect`, is drawn, as
+  QuickTime images clamp theirs. An empty source or destination draws nothing.
 - Indexed pixmaps (`BitsRect`, `PackBitsRect`) have 1, 2, 4 or 8 bits per pixel; direct pixmaps 16
   or 32. Indexed pixels allow pack types 0 and 1; 16-bit pixels 0, 1, 3; 32-bit pixels 0, 1, 2, 4
   with `cmpCount` 3 or 4. Any other pack type is `Pixmap_Invalid`.
@@ -327,8 +338,10 @@ The internal ones, from the bottom up:
 ```text
 Pictlib.Internal                   -- PICT format constants
 Pictlib.Internal.Checked_Arithmetic -- checked and saturating counts (proved)
+Pictlib.Internal.Divisions          -- division rounded toward either infinity
 Pictlib.Internal.Bytes             -- checked big-endian readers, heap byte buffers
 Pictlib.Internal.Failures          -- the shared failures: limits, opcodes, rows, frame size
+Pictlib.Internal.Replies           -- the one judgement of a source's reply
 Pictlib.Internal.Picture_Stream    -- look-ahead source wrapper, picture byte budget
 Pictlib.Internal.Diagnostics       -- bounded warning log
 Pictlib.Internal.Metadata_Store    -- retained metadata under budgets
@@ -394,33 +407,36 @@ an extended header's native resolution is a later task.
   buffers, each checked against `Max_Allocation_Bytes` and all of a session against
   `Max_Total_Allocation_Bytes`, and released on `Reset`/`Finalize`, also after failure and
   cancellation. `Finalize` is idempotent.
-- Metadata is copied into bounded library-owned storage valid until `Reset`/`Finalize`, or
-  delivered through a caller callback during enumeration.
+- Metadata is copied into bounded library-owned storage valid until `Reset`/`Finalize`; a visitor
+  may read the items retained so far (`Metadata_Count`, `Metadata_Item`, `Copy_Metadata`).
 - Decoders and encoders keep no shared state and may be used from different tasks, one object per
   task. Calls into textrender, whose rasterizer shares scratch buffers between renderers, are
   serialized by one process-wide lock, and so are creating and destroying its renderers.
 
 ## 6. Decoder contract
 
-States: `Created`, `Ready`, `Header_Read`, `Finished`, `Stopped`, `Failed`, `Cancelled`; the
-renderer adds its state with M2. Operations: `Initialize (Object, Input, Options, Limits)`,
+States: `Created`, `Ready`, `Header_Read`, `Finished`, `Stopped`, `Failed`, `Cancelled`. Operations: `Initialize (Object, Input, Options, Limits)`,
 `Reset (Object, Input)` (keeps options and limits), `Read_Header` (container, version, frame,
 resolution), `Header`, `Enumerate (Visitor)` (one callback per opcode, the version opcode and
 `HeaderOp` included, with ordinal, source offset, opcode, data length excluding pad bytes and a
 reserved flag; the visitor may return `Stop`, which ends in `Stopped` unless the opcode was the end
 opcode), `Render (Output_View)` (from M2), `Metadata_Count`/`Metadata_Item`/`Copy_Metadata`,
 `Warning_Count`/`Warning_At`, `Last_Error`, `Cancel`, `Finalize`. Calls in the wrong state fail
-with `Invalid_State` (`Operation_Cancelled` after `Cancel`) and change neither the state nor the
+with `Invalid_State` (`Operation_Cancelled` after `Cancel`, which cancels a `Ready` or `Header_Read`
+decoder and leaves any other as it is) and change neither the state nor the
 last error. `Render` after `Enumerate` requires `Reset` (the stream is forward-only).
 
 While `Enumerate` calls the visitor, `Read_Header`, `Enumerate` and `Render` on the same decoder
 fail with `Invalid_State`. A visitor may `Cancel`, `Reset` or `Finalize` the decoder: the state it
 leaves stands, and `Enumerate` returns what a call in that state gets (`Operation_Cancelled` after
-`Cancel`, `Invalid_State` otherwise) without visiting another opcode. An exception raised by the
-visitor propagates out of `Enumerate`; a decoder the visit left in `Header_Read`, its stream partly
-read, is then `Stopped`, and is usable again after `Reset` or `Initialize`.
+`Cancel`, `Invalid_State` otherwise) without visiting another opcode. An exception raised by caller
+code (the visitor, or the source during `Read_Header`, `Enumerate` or `Render`) propagates; a decoder
+the call left in the state it began in, its stream partly read, is then `Stopped`, and is usable
+again after `Reset` or `Initialize`.
 
-`Render` rejects an invalid view or one whose size is not the frame's with `Invalid_Argument`,
+`Render` rejects an invalid view or one whose size is not the frame's with `Invalid_Argument`
+(expecting the frame's pixels against the view's, or, for an invalid view of the frame's size, the
+least bytes a valid one holds against its accessible bytes),
 and a view above `Max_Output_Bytes` with `Limit_Exceeded`, leaving the decoder in `Header_Read`
 so another view can be given. A frame above `Max_Canvas_Pixels` fails with `Limit_Exceeded` and
 leaves the decoder `Failed`: no view can render it. Drawing opcodes a release does not render yet
@@ -448,12 +464,15 @@ the number suppressed, the displaced entry included, as its actual count.
 States: `Created`, `Ready`, `Encoded`, `Finished`, `Failed`, `Cancelled`. `Initialize (Object,
 Output, Options, Limits)`, `Encode (Image_View)` (Ready → Encoded), `Finish` (flushes; Encoded →
 Finished), `Layout_Used`, `Bytes_Written`, `Last_Error`, `Cancel`, `Finalize` (idempotent). Calls
-in the wrong state fail with `Invalid_State` (`Operation_Cancelled` after `Cancel`). A failure
+in the wrong state fail with `Invalid_State` (`Operation_Cancelled` after `Cancel`, which cancels a
+`Ready` or `Encoded` encoder and leaves any other as it is). A failure
 found before the destination is written to (an invalid view or a non-positive resolution, an image
 too wide, too many colors, a frame, allocation or output limit) leaves the encoder `Ready`, so
 another image or encoder can be tried, and does not set `Last_Error`; a failure while writing
-leaves it `Failed`. An invalid view's `Invalid_Argument` reports the least a valid view of its size
-and format holds as expected and its accessible bytes as actual; `Too_Many_Colors` reports 256 as
+leaves it `Failed`, as does an exception the destination raises once writing began, which propagates
+with `Destination_Write_Failed` as the last error; `Bytes_Written` is then not known. An invalid view's `Invalid_Argument` reports the least a valid view of its size
+and format holds as expected and its accessible bytes as actual, and a non-positive resolution's
+expects 1 (the least positive Fixed) against 0, whatever the value; `Too_Many_Colors` reports 256 as
 expected and 257 as actual, as counting stops there.
 
 One image becomes one extended version 2 picture: the 512-byte zero file header (option, on by
@@ -489,8 +508,8 @@ byte count (a word count when `rowBytes > 250`). `rowBytes` above `16#3FFE#` can
 ## 8. Metadata policy
 
 Retained: file header bytes (optional), comments, font names, QuickTime payloads (optional),
-unknown/reserved opcode payloads (optional, off by default). Each kind has a count and a byte
-budget; overflow fails with `Limit_Exceeded` in `Strict` and drops with a `Data_Loss` warning
+unknown/reserved opcode payloads (optional, off by default). All retained items share one count
+(`Max_Metadata_Items`) and one byte budget (`Max_Retained_Metadata_Bytes`); overflow fails with `Limit_Exceeded` in `Strict` and drops with a `Data_Loss` warning
 otherwise.
 
 ## 9. Resource limits and security
@@ -517,7 +536,7 @@ before or as the work is done, whether or not anything is drawn, and nothing is 
 | a region walk | every inversion point and line passed |
 
 A unit is meant to be about one pixel's work; measured, it is 50–150 ns, so the default of 2^30
-bounds a picture to about a minute.
+bounds a picture to one to three minutes.
 
 `Max_Total_Allocation_Bytes`, when set, counts every allocation a session admits, never given back,
 and storage that is no single allocation at fixed rates:
@@ -559,7 +578,7 @@ the error named:
 
 | Warning | Severity | Recorded when |
 | --- | --- | --- |
-| `Compatibility_Issue` | `Compatibility` | a version 2 picture has no or an unknown `HeaderOp` (`Header_Invalid`), input ends between opcodes (`Missing_End_Opcode`), bytes follow the end opcode under `Require_End_Of_Input` (`Trailing_Data`) |
+| `Compatibility_Issue` | `Compatibility` | a version 2 picture has no or an unknown `HeaderOp`, or an extended one a non-positive resolution, read as 72 dpi (`Header_Invalid`), input ends between opcodes (`Missing_End_Opcode`), bytes follow the end opcode under `Require_End_Of_Input` (`Trailing_Data`) |
 | `Recovery_Applied` | `Recovery` | an unknown transfer mode is drawn as copy (`Transfer_Mode_Invalid`), a `srcRect` past the bounds is clamped (`Pixmap_Invalid`), a color table entry past 255 is dropped or an undefined pixel index drawn black, once an opcode (`Color_Table_Invalid`) |
 | `Reserved_Opcode_Skipped` | `Informational` | a reserved opcode's data is skipped, in every mode |
 | `Approximated_Rendering` | `Data_Loss` | drawing a release does not render is skipped or drawn plain (`Unsupported_Feature`), text has no font (`Font_Unavailable`) |
@@ -577,7 +596,8 @@ pictlib/
   CONTRIBUTING.md  SECURITY.md
   src/        pictlib.ads, pictlib-*.ads/.adb
   docs/       SPECIFICATION.md, IMPLEMENTATION_PLAN.md, PUBLIC_API.md,
-              invariants.md, limits_and_safety.md (from M1)
+              invariants.md, limits_and_safety.md, proof_profile.md
+  .github/    workflows/ci.yml, single-command steps
   proof/      pictlib_proof.gpr (from M7)
   tests/      alire.toml, tests.gpr, src/ (AUnit suites, runner, tools), fixtures/
 ```

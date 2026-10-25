@@ -17,7 +17,7 @@ package Pictlib.Decoding is
       Ready,        --  bound to a source
       Header_Read,  --  the container was read; the opcode stream is next
       Finished,     --  the end opcode was reached
-      Stopped,      --  the visitor stopped enumeration early
+      Stopped,      --  the visitor stopped enumeration early, or caller code raised mid-picture
       Failed,       --  a failure ended decoding; Last_Error reports it
       Cancelled);
 
@@ -64,7 +64,8 @@ package Pictlib.Decoding is
    --  @return Current state.
    function State (Object : Decoder) return Decoder_State;
    --  Read header.
-   --  @param Object Decoder in state Ready; Header_Read on success.
+   --  @param Object Decoder in state Ready; Header_Read on success; Stopped, until Reset or Initialize, when an
+   --  exception from the source propagates.
    --  @return Operation result.
    function Read_Header (Object : in out Decoder) return Results.Result;
    --  Header.
@@ -76,7 +77,7 @@ package Pictlib.Decoding is
    --  @param Visitor Receives every opcode in order, the version opcode and HeaderOp included. While it is called,
    --  Read_Header, Enumerate and Render on Object fail with Invalid_State; it may Cancel, Reset or Finalize
    --  Object, which ends the enumeration with what a call in the state it leaves gets. Its exceptions propagate
-   --  and leave Object Stopped, if the visit left it Header_Read, until Reset or Initialize.
+   --  and leave Object Stopped, if the visit left it Header_Read, until Reset or Initialize, as the source's do.
    --  @return Operation result.
    function Enumerate (Object : in out Decoder; Visitor : in out Opcode_Visitor'Class) return Results.Result;
    --  Render.
@@ -88,7 +89,8 @@ package Pictlib.Decoding is
    --  for a frame over Max_Canvas_Pixels, which no view can render, leaving it Failed; Unsupported_Feature
    --  (strictly) for drawing this release does not render; otherwise the first failure while drawing, a
    --  budget crossed among them.
-   --  Recover_When_Safe returns success with a Partial_Picture warning when malformed data ends the picture.
+   --  Recover_When_Safe returns success with a Partial_Picture warning when malformed data ends the picture. An
+   --  exception from the source propagates and leaves Object Stopped until Reset or Initialize.
    function Render (Object : in out Decoder; Output : Images.Mutable_Image_View) return Results.Result;
    --  Last error.
    --  @param Object Decoder.
@@ -119,7 +121,7 @@ package Pictlib.Decoding is
    --  Copy metadata.
    --  @param Object Decoder.
    --  @param Index 1-based item position.
-   --  @param Buffer Receives the item data from Buffer'First.
+   --  @param Buffer Cleared whole, then receives the item data from Buffer'First.
    --  @param Count Bytes copied; 0 on failure.
    --  @return Success, or Invalid_Argument for an index out of range or a Buffer shorter than the item (expecting
    --  Buffer's length, with the item's as actual).
@@ -130,7 +132,8 @@ package Pictlib.Decoding is
       Count : out Byte_Count) return Results.Result;
 
    --  Cancel.
-   --  @param Object Decoder; later operations fail with Operation_Cancelled until Reset or Initialize.
+   --  @param Object Decoder; in Ready or Header_Read it becomes Cancelled, and later operations fail with
+   --  Operation_Cancelled until Reset or Initialize; in any other state nothing changes.
    procedure Cancel (Object : in out Decoder);
    --  Finalize.
    --  @param Object Decoder; releases retained metadata and the source binding. Idempotent.

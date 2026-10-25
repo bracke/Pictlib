@@ -99,6 +99,53 @@ package body Pictlib.Internal.Typesetting is
       return Outcome;
    end Draw;
 
+   --  A glyph drawn from the pen paints its cell: the larger of its advance box and its ink.
+   type Cell is record
+      Code : Textrender.Codepoint := 0;
+      Metric : Textrender.Glyph_Metric;
+      Drawable : Boolean := False;
+      Glyph_Left, Glyph_Top : Integer := 0;
+      Left, Right, Top, Bottom : Integer := 0;
+   end record;
+
+   --  The cell of a glyph drawn at Pen, Advance wide, on Baseline, emboldened by Bold columns.
+   function Cell_At
+     (Code : Textrender.Codepoint;
+      Metric : Textrender.Glyph_Metric;
+      Drawable : Boolean;
+      Pen, Advance : Float;
+      Baseline, Ascent, Descent : Integer;
+      Bold : Natural) return Cell
+   is
+      Cell_Left : constant Integer := Integer (Float'Rounding (Pen));
+      Cell_Right : constant Integer := Integer (Float'Rounding (Pen + Advance));
+      Glyph_Left : constant Integer := Integer (Float'Rounding (Pen + Metric.Bearing_X));
+      Glyph_Top : constant Integer := Baseline - Integer (Metric.Bearing_Y);
+   begin
+      return
+        (Code => Code,
+         Metric => Metric,
+         Drawable => Drawable,
+         Glyph_Left => Glyph_Left,
+         Glyph_Top => Glyph_Top,
+         Left => (if Drawable then Integer'Min (Cell_Left, Glyph_Left) else Cell_Left),
+         Right => (if Drawable then Integer'Max (Cell_Right, Glyph_Left + Metric.W + Bold) else Cell_Right),
+         Top => (if Drawable then Integer'Min (Baseline - Ascent, Glyph_Top) else Baseline - Ascent),
+         Bottom => (if Drawable then Integer'Max (Baseline + Descent, Glyph_Top + Metric.H) else Baseline + Descent));
+   end Cell_At;
+
+   --  How far the pen moves past Item, whose glyph advances Glyph_Advance: the face's width change, and ChExtra
+   --  for every character but the space, which SpExtra widens instead.
+   function Advance_Of
+     (Item : Byte;
+      Glyph_Advance : Float;
+      Width_Change : Integer;
+      State : Text.Text_State) return Float
+   is
+     (Glyph_Advance + Float (Width_Change)
+      + (if Item = Space then Float (State.Space_Extra) / Float (Geometry.Fixed_One)
+         else Float (State.Char_Extra) / Char_Extra_Unit));
+
    function Draw_Characters
      (P : in out Rendering.Painter;
       S : in out Sessions.Session;
@@ -129,15 +176,6 @@ package body Pictlib.Internal.Typesetting is
         (Transfer_Modes.Compose
            (Kind, (if Ink then Images.Black else Images.White), Under, P.Port.Colors, Bit_Source => True));
 
-      --  A glyph drawn from the pen paints its cell: the larger of its advance box and its ink.
-      type Cell is record
-         Code : Textrender.Codepoint := 0;
-         Metric : Textrender.Glyph_Metric;
-         Drawable : Boolean := False;
-         Glyph_Left, Glyph_Top : Integer := 0;
-         Left, Right, Top, Bottom : Integer := 0;
-      end record;
-
       --  A text opcode holds at most 255 characters, so the cells fit the stack.
       Cells : array (1 .. Characters'Length) of Cell;
       Cell_Count : Natural := 0;
@@ -149,28 +187,6 @@ package body Pictlib.Internal.Typesetting is
       --  generation: Cells (Run_First .. Cell_Count) were all taken in the generation Run_Generation.
       Run_First : Positive := 1;
       Run_Generation : Natural := Font.Atlas_Generation;
-
-      procedure Add_Cell
-        (Code : Textrender.Codepoint; Metric : Textrender.Glyph_Metric; Drawable : Boolean; Advance : Float)
-      is
-         Cell_Left : constant Integer := Integer (Float'Rounding (Pen));
-         Cell_Right : constant Integer := Integer (Float'Rounding (Pen + Advance));
-         Glyph_Left : constant Integer := Integer (Float'Rounding (Pen + Metric.Bearing_X));
-         Glyph_Top : constant Integer := Baseline - Integer (Metric.Bearing_Y);
-      begin
-         Cell_Count := Cell_Count + 1;
-         Cells (Cell_Count) :=
-           (Code => Code,
-            Metric => Metric,
-            Drawable => Drawable,
-            Glyph_Left => Glyph_Left,
-            Glyph_Top => Glyph_Top,
-            Left => (if Drawable then Integer'Min (Cell_Left, Glyph_Left) else Cell_Left),
-            Right => (if Drawable then Integer'Max (Cell_Right, Glyph_Left + Metric.W + Bold) else Cell_Right),
-            Top => (if Drawable then Integer'Min (Baseline - Ascent, Glyph_Top) else Baseline - Ascent),
-            Bottom =>
-              (if Drawable then Integer'Max (Baseline + Descent, Glyph_Top + Metric.H) else Baseline + Descent));
-      end Add_Cell;
 
       function Covered (X, Y : Integer) return Boolean is
         (Cells (Current).Drawable
@@ -273,22 +289,20 @@ package body Pictlib.Internal.Typesetting is
                Metric : Textrender.Glyph_Metric :=
                  (X | Y | W | H => 0, U0 | V0 | U1 | V1 | Advance_X | Bearing_X | Bearing_Y => 0.0);
                Status : constant Textrender.Status_Code := Font.Get_Glyph (Text.To_Unicode (Item), Metric, Style);
-               --  ChExtra widens every character but the space, which SpExtra widens instead.
-               Advance : Float :=
-                 (if Status = Textrender.Success then Metric.Advance_X else Float (Size) / 2.0)
-                 + Float (Width_Change)
-                 + (if Item = Space then 0.0 else Float (State.Char_Extra) / Char_Extra_Unit);
+               Advance : constant Float :=
+                 Advance_Of (Item, (if Status = Textrender.Success then Metric.Advance_X else Float (Size) / 2.0),
+                             Width_Change, State);
             begin
                if Status /= Textrender.Success and then not Missing_Reported then
                   Sessions.Warn (S, Errors.Data_Loss, Errors.Data_Loss,
                                  (Sessions.Context_Of (Event) with delta Actual => Byte_Count (Item)));
                   Missing_Reported := True;
                end if;
-               if Item = Space then
-                  Advance := Advance + Float (State.Space_Extra) / Float (Geometry.Fixed_One);
-               end if;
-               Add_Cell (Text.To_Unicode (Item), Metric,
-                         Status = Textrender.Success and then Metric.W > 0 and then Metric.H > 0, Advance);
+               Cell_Count := Cell_Count + 1;
+               Cells (Cell_Count) :=
+                 Cell_At (Text.To_Unicode (Item), Metric,
+                          Status = Textrender.Success and then Metric.W > 0 and then Metric.H > 0,
+                          Pen, Advance, Baseline, Ascent, Descent, Bold);
                Pen := Pen + Advance;
                if Font.Atlas_Generation /= Run_Generation then
                   Outcome := Restart_Run (Cell_Count);

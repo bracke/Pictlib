@@ -183,6 +183,11 @@ package body Pictlib_Testing.Test_Rendering is
    Unknown_Planar : aliased constant Bytes := V2_Picture (0, 0, 2, 8, W (16#0E#) & L (1234) & Bitmap_2x8);
    Unknown_Mode : aliased constant Bytes := V2_Picture (0, 0, 2, 8, Bitmap_2x8 (Mode => 20));
    Wide_Source : aliased constant Bytes := V2_Picture (0, 0, 2, 8, Bitmap_2x8 (Source => Rect (0, 0, 2, 9)));
+   --  srcRect twice the bounds' width at one to one: the clamped half is drawn where it maps, the rest left alone.
+   Right_Clamped : aliased constant Bytes :=
+     V2_Picture (0, 0, 2, 16, Bitmap_2x8 (Source => Rect (0, 0, 2, 16), Destination => Rect (0, 0, 2, 16)));
+   Left_Clamped : aliased constant Bytes :=
+     V2_Picture (0, 0, 2, 16, Bitmap_2x8 (Source => Rect (0, -8, 2, 8), Destination => Rect (0, 0, 2, 16)));
    Empty_Destination : aliased constant Bytes :=
      V2_Picture (0, 0, 2, 8, Copy (16#98#, 2, Rect (0, 0, 2, 8), Rect (0, 0, 2, 8), Rect (0, 0, 0, 8))
                  & B (16#A5#) & B (0) & B (16#0F#) & B (0));
@@ -348,12 +353,32 @@ package body Pictlib_Testing.Test_Rendering is
       Canvases.Expect_Lenient (Undefined_Index, 4, 2, "RGBR/UUGR", Errors.Recovery_Applied, "undefined index");
       Canvases.Expect_Failure (Entry_Past_255, 4, 2, Errors.Color_Table_Invalid, "color table entry 300", 16#98#);
       Canvases.Expect_Lenient (Entry_Past_255, 4, 2, "RGGR/RRGR", Errors.Recovery_Applied, "color table entry 300");
+      --  Two entries past 255 warn once, as the table's.
+      declare
+         Twice_Past : aliased constant Bytes :=
+           V2_Picture (0, 0, 2, 4, W (16#98#) & W (16#8000# + 4) & Rect (0, 0, 2, 4) & Pixmap_Tail (0, 8, 1, 8)
+                       & Table_Header (0, 3) & W (0) & W (16#FFFF#) & W (0) & W (0) & W (300) & W (0) & W (16#FFFF#)
+                       & W (0) & W (301) & W (0) & W (0) & W (16#FFFF#)
+                       & Rect (0, 0, 2, 4) & Rect (0, 0, 2, 4) & W (0) & [0, 0, 0, 0, 0, 0, 0, 0]);
+         Lenient : Decoding.Decoder;
+      begin
+         Canvases.Render (Twice_Past, Lenient, Canvases.View (Storage'Access, 4, 2), Outcome,
+                          (Strictness => Pictlib.Compatible, others => <>));
+         Assert (Pictlib.Results.Succeeded (Outcome)
+                 and then Recorders.Count_Warnings (Lenient, Errors.Recovery_Applied) = 1,
+                 "a table's entries past 255 warned" & Recorders.Count_Warnings (Lenient, Errors.Recovery_Applied)'Image
+                 & " times");
+      end;
       --  Both recoveries name the opcode whose data they were in.
       Expect_Named (Undefined_Index);
       Expect_Named (Entry_Past_255);
 
       Canvases.Expect_Failure (Wide_Source, 8, 2, Errors.Pixmap_Invalid, "srcRect outside bounds", 16#98#);
       Canvases.Expect_Lenient (Wide_Source, 8, 2, Bitmap_2x8_Raster, Errors.Recovery_Applied, "srcRect clamped");
+      Canvases.Expect_Lenient (Right_Clamped, 16, 2, "BWBWWBWBWWWWWWWW/WWWWBBBBWWWWWWWW", Errors.Recovery_Applied,
+                               "srcRect clamped on the right keeps its scale");
+      Canvases.Expect_Lenient (Left_Clamped, 16, 2, "WWWWWWWWBWBWWBWB/WWWWWWWWWWWWBBBB", Errors.Recovery_Applied,
+                               "srcRect clamped on the left keeps its scale");
 
       Canvases.Expect_Failure (Truncated_Pixels, 8, 2, Errors.Source_Unexpected_End, "truncated pixels", 16#98#);
       Canvases.Expect_Failure (Truncated_Pixels, 8, 2, Errors.Source_Unexpected_End, "truncated pixels",
@@ -383,6 +408,8 @@ package body Pictlib_Testing.Test_Rendering is
    begin
       Canvases.Render (Unpacked_Bitmap, Decoder, Canvases.View (Storage'Access, 8, 1), Outcome);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_Argument, "a view of the wrong size was accepted");
+      Assert (Outcome.First_Error.Context.Expected = 16 and then Outcome.First_Error.Context.Actual = 8,
+              "a view of the wrong size did not report the frame's pixels against its own");
       Assert (Decoding.State (Decoder) = Decoding.Header_Read, "a rejected view changed the decoder state");
       Outcome := Decoding.Render (Decoder, Canvases.View (Storage'Access, 8, 2));
       Assert (Pictlib.Results.Succeeded (Outcome)
@@ -392,6 +419,16 @@ package body Pictlib_Testing.Test_Rendering is
       Canvases.Render (Unpacked_Bitmap, Decoder, (Canvases.View (Storage'Access, 8, 2) with delta Storage => null),
                        Outcome);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_Argument, "a view without storage was accepted");
+      --  It has the frame's size: the bytes a valid view holds, 3 x 8 x 2, against its own 48.
+      Assert (Outcome.First_Error.Context.Expected = 48 and then Outcome.First_Error.Context.Actual = 48,
+              "an invalid view of the frame's size did not report bytes");
+      Canvases.Render (Unpacked_Bitmap, Decoder,
+                       (Canvases.View (Storage'Access, 8, 2) with delta
+                          Descriptor => (Canvases.View (Storage'Access, 8, 2).Descriptor with delta Stride => 4)),
+                       Outcome);
+      Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_Argument
+              and then Outcome.First_Error.Context.Expected = 48 and then Outcome.First_Error.Context.Actual = 48,
+              "a view whose stride cannot hold a row did not report the bytes a valid one holds");
 
       Canvases.Expect_Failure (Unpacked_Bitmap, 8, 2, Errors.Limit_Exceeded, "canvas pixels",
                                Budget => (Defaults with delta Max_Canvas_Pixels => 15),

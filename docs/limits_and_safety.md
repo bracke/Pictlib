@@ -35,7 +35,7 @@ is no canvas byte limit: `Max_Output_Bytes` bounds the view.
 
 A unit is meant to be about one pixel's work; measured, it is between about
 50 and 150 ns. The default `Max_Drawing_Work` of 2^30 is about four paints of
-the largest default canvas and bounds a hostile picture to a minute or two of
+the largest default canvas and bounds a hostile picture to one to three minutes of
 work. Callers that render very large pictures raise it; callers that need a
 tighter bound lower it.
 

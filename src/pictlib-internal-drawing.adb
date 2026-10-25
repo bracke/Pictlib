@@ -368,22 +368,27 @@ package body Pictlib.Internal.Drawing is
             P.Port.Text_State.Origin_V := Origin.V;
          end;
       else
-         --  Unsigned offsets from the previous text origin.
+         --  Unsigned offsets from the previous text origin, which moves only once both are read and in reach.
          declare
             Offset : Byte := 0;
+            H : Integer := P.Port.Text_State.Origin_H;
+            V : Integer := P.Port.Text_State.Origin_V;
          begin
             if Event.Op in Opcodes.DH_Text | Opcodes.DHDV_Text then
                Outcome := Sessions.Read_Count_Byte (S, Offset);
-               P.Port.Text_State.Origin_H := P.Port.Text_State.Origin_H + Natural (Offset);
+               H := H + Natural (Offset);
             end if;
             if Results.Succeeded (Outcome) and then Event.Op in Opcodes.DV_Text | Opcodes.DHDV_Text then
                Outcome := Sessions.Read_Count_Byte (S, Offset);
-               P.Port.Text_State.Origin_V := P.Port.Text_State.Origin_V + Natural (Offset);
+               V := V + Natural (Offset);
             end if;
-            if Results.Succeeded (Outcome) and then not Rendering.Within_Reach (P.Port.Text_State.Origin_H) then
-               return Out_Of_Reach (Event, P.Port.Text_State.Origin_H);
-            elsif Results.Succeeded (Outcome) and then not Rendering.Within_Reach (P.Port.Text_State.Origin_V) then
-               return Out_Of_Reach (Event, P.Port.Text_State.Origin_V);
+            if Results.Succeeded (Outcome) and then not Rendering.Within_Reach (H) then
+               return Out_Of_Reach (Event, H);
+            elsif Results.Succeeded (Outcome) and then not Rendering.Within_Reach (V) then
+               return Out_Of_Reach (Event, V);
+            elsif Results.Succeeded (Outcome) then
+               P.Port.Text_State.Origin_H := H;
+               P.Port.Text_State.Origin_V := V;
             end if;
          end;
       end if;
@@ -514,6 +519,35 @@ package body Pictlib.Internal.Drawing is
       return Outcome;
    end Consume_Color;
 
+   --  lineJustify: a length word, the extra space between characters and the extra space of the line, both
+   --  Fixed, and any further bytes of the length. Zero extra space changes nothing; any other is unsupported.
+   function Consume_Line_Justify
+     (S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event) return Results.Result
+   is
+      Length : Interfaces.Unsigned_16 := 0;
+      Between, Line : Interfaces.Unsigned_32 := 0;
+      Outcome : Results.Result := Sessions.Read_Word (S, Length);
+      Fields : constant := 8;
+      use type Interfaces.Unsigned_32;
+   begin
+      if Results.Succeeded (Outcome) and then Natural (Length) >= Fields then
+         Outcome := Sessions.Read_Long (S, Between);
+         if Results.Succeeded (Outcome) then
+            Outcome := Sessions.Read_Long (S, Line);
+         end if;
+         if Results.Succeeded (Outcome) then
+            Outcome := Sessions.Skip_Data (S, Byte_Count (Length) - Fields);
+         end if;
+      elsif Results.Succeeded (Outcome) then
+         Outcome := Sessions.Skip_Data (S, Byte_Count (Length));
+      end if;
+      if Results.Succeeded (Outcome) and then (Between /= 0 or else Line /= 0) then
+         return Rendering.Unsupported (S, Event);
+      end if;
+      return Outcome;
+   end Consume_Line_Justify;
+
    --  The text state the text opcodes draw with.
    function Consume_Text_State
      (P : in out Rendering.Painter;
@@ -627,6 +661,8 @@ package body Pictlib.Internal.Drawing is
             Outcome := Consume_Line (P, S, Event);
          when Opcodes.Long_Text .. Opcodes.DHDV_Text =>
             Outcome := Consume_Text (P, S, Event);
+         when Opcodes.Line_Justify =>
+            Outcome := Consume_Line_Justify (S, Event);
          when Opcodes.First_Shape .. Opcodes.Last_Shape =>
             --  A reserved verb is never drawn, whatever the opcode table says of it.
             if Event.Reserved or else not Has_Verb (Event.Op) then

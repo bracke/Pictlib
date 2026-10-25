@@ -332,6 +332,30 @@ package body Pictlib_Testing.Test_Text is
                                With_Fonts);
       Canvases.Expect_Failure (Too_Large, Width, Height, Pictlib.Errors.Unsupported_Feature, "TxSize 600", 16#28#,
                                With_Fonts);
+      --  lineJustify without extra space changes nothing; with any it is unsupported.
+      declare
+         Plain : constant String := Expected (Sans, 12, 2, 15, "Hi");
+         No_Extra : aliased constant Bytes :=
+           Pic (W (16#2D#) & W (8) & L (0) & L (0) & Size_Op (12) & Long_Text (15, 2, "Hi"));
+         Extra : aliased constant Bytes :=
+           Pic (W (16#2D#) & W (8) & L (16#1_0000#) & L (0) & Size_Op (12) & Long_Text (15, 2, "Hi"));
+      begin
+         Canvases.Expect_Raster (No_Extra, Width, Height, Plain, "lineJustify without extra space", With_Fonts);
+         Canvases.Expect_Failure (Extra, Width, Height, Pictlib.Errors.Unsupported_Feature, "lineJustify", 16#2D#,
+                                  With_Fonts);
+         declare
+            Storage : aliased Bytes := [1 .. 3 * Width * Height => 0];
+            Output : constant Pictlib.Images.Mutable_Image_View := Canvases.View (Storage'Access, Width, Height);
+            Decoder : Pictlib.Decoding.Decoder;
+            Outcome : Pictlib.Results.Result;
+         begin
+            Canvases.Render (Extra, Decoder, Output, Outcome, With_Fonts (Strictness => Pictlib.Compatible));
+            Assert (Pictlib.Results.Succeeded (Outcome)
+                    and then Recorders.Has_Warning (Decoder, Pictlib.Errors.Approximated_Rendering)
+                    and then Canvases.Picture_Of (Output) = Plain,
+                    "lineJustify was not drawn unjustified with a warning, leniently");
+         end;
+      end;
       --  The failure names the largest size against the one asked for.
       declare
          Storage : aliased Bytes := [1 .. 3 * Width * Height => 0];

@@ -34,6 +34,11 @@ package Pictlib.Internal.Coverage is
    --  @return The row's spans, sorted and disjoint; none once the shape is exhausted, so an incomplete shape
    --  never paints.
    function Row (Item : Shape; Y : Integer) return Span_List;
+   --  Copy row: Row (Item, Y), assigned to Into without an intermediate copy.
+   --  @param Item Shape.
+   --  @param Y Row within the window.
+   --  @param Into Receives the row's spans.
+   procedure Copy_Row (Item : Shape; Y : Integer; Into : in out Span_List);
    --  First row.
    --  @param Item Shape.
    --  @return The first row it holds; above Last_Row when it holds none.
@@ -103,20 +108,6 @@ package Pictlib.Internal.Coverage is
    --  @param Other Pixels to remove.
    procedure Subtract (Item : in out Shape; Other : Shape);
 
-   --  Floor divide.
-   --  @param Left Dividend, of either sign.
-   --  @param Right Divisor.
-   --  @return Left / Right rounded toward minus infinity.
-   function Floor_Divide (Left, Right : Long_Long_Integer) return Long_Long_Integer is
-     (if Left >= 0 then Left / Right else -((-Left + Right - 1) / Right))
-     with Pre => Right > 0;
-   --  Ceiling divide.
-   --  @param Left Dividend, of either sign.
-   --  @param Right Divisor.
-   --  @return Left / Right rounded toward plus infinity.
-   function Ceiling_Divide (Left, Right : Long_Long_Integer) return Long_Long_Integer is
-     (-Floor_Divide (-Left, Right))
-     with Pre => Right > 0;
 
 private
    package Row_Vectors is new Ada.Containers.Vectors (Natural, Span_List, Regions.Span_Vectors."=");

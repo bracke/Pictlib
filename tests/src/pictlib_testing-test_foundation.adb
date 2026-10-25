@@ -89,15 +89,17 @@ package body Pictlib_Testing.Test_Foundation is
       use type Pictlib.PICT_Version;
       use type Pictlib.Streams.Byte_Array;
 
-      --  Render Input, Width x Height, strictly with the test fonts; Output receives its letters.
+      --  One canvas, as large as the largest probe, which every probe renders into.
+      Storage : aliased Bytes := [1 .. 3 * 24 * 20 => 0];
+
+      --  Render Input, Width x Height, strictly with the test fonts; Output is the view it rendered into.
       function Renders (Input : aliased Bytes; Width, Height : Positive; Output : out Pictlib.Images.Mutable_Image_View)
         return Boolean
       is
-         Storage : constant Pictlib.Streams.Byte_Array_Access := new Bytes'[1 .. 3 * Width * Height => 0];
          Decoder : Pictlib.Decoding.Decoder;
          Outcome : Pictlib.Results.Result;
       begin
-         Output := Canvases.View (Storage, Width, Height);
+         Output := Canvases.View (Storage'Access, Width, Height);
          Canvases.Render (Input, Decoder, Output, Outcome, (Fonts => Fonts.Test_Table, others => <>));
          return Pictlib.Results.Succeeded (Outcome);
       end Renders;
@@ -148,11 +150,13 @@ package body Pictlib_Testing.Test_Foundation is
 
       function JPEG_Works return Boolean is
       begin
-         --  The fixture is not one color, so a drawn image leaves no white canvas behind.
+         --  The fixture is not one color: a drawn image differs between its top and bottom rows.
          return Renders (Compressed, 8, 6, Output)
            and then (for some X in 0 .. 7 => Canvases.Pixel (Output, X, 0) /= Canvases.Pixel (Output, 0, 5));
       end JPEG_Works;
 
+      --  Read back by pictlib's own decoder: enough to show the feature works, while the independent evidence that
+      --  it writes correct pictures is pictlib_conformance's.
       function Encoding_Works return Boolean is
          Picture : constant Samples.Encoded := Samples.Encode (Samples.Three_Colors, 4, 4);
       begin

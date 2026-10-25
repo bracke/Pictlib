@@ -73,7 +73,7 @@ covered by hand-built fixtures and by four PICTs from two independent writers
 resolution rendering moved to task 19a.
 
 13. `Images` views and validators (descriptor arithmetic SPARK-ready).
-14. `Internal.Canvas` (heap, budgeted), `Internal.Regions` (parse + scanline mask), clip region.
+14. `Internal.Canvas` (the caller's view as a drawing surface; the renderer allocates no canvas), `Internal.Regions` (parse + scanline mask), clip region.
 15. `Internal.PackBits` (byte and word variants) and `Internal.Pixmaps`: BitMap/PixMap headers,
     color tables, rows for 1/2/4/8/16/32 bpp and pack types 1–4.
 16. `BitsRect/Rgn`, `PackBitsRect/Rgn`, `DirectBitsRect/Rgn`: scaling, clip, mask, `srcCopy`;

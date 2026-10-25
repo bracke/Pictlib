@@ -303,7 +303,48 @@ package body Pictlib_Testing.Test_Shapes is
 
    procedure Region_Shapes (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
+      Side : constant := 12;
+      --  A Side x Side square coded as scanlines, so framing it erodes rows rather than taking the rect path.
+      Square : constant Bytes :=
+        W (28) & Rect (0, 0, Side, Side) & W (0) & W (0) & W (Side) & W (16#7FFF#) & W (Side) & W (0) & W (Side)
+        & W (16#7FFF#) & W (16#7FFF#);
+      --  The square framed with a V x H pen: V rows at the top and bottom, H columns at either side.
+      function Frame (V, H : Positive) return String is
+         Result : String (1 .. Side * (Side + 1) - 1) := [others => '/'];
+      begin
+         for Y in 0 .. Side - 1 loop
+            for X in 0 .. Side - 1 loop
+               Result (1 + Y * (Side + 1) + X) :=
+                 (if Y < V or else Y >= Side - V or else X < H or else X >= Side - H then 'B' else 'W');
+            end loop;
+         end loop;
+         return Result;
+      end Frame;
+      L_Frame : constant String :=
+        "BBBBBBWWWWWW/BBBBBBWWWWWW/BBBBBBWWWWWW/BBWWBBWWWWWW/BBWWBBWWWWWW/BBWWBBWWWWWW/BBWWBBBBBBBB/BBWWBBBBBBBB/"
+        & "BBWWBBBBBBBB/BBBBBBBBBBBB/BBBBBBBBBBBB/BBBBBBBBBBBB";
    begin
+      --  An L, rows 0 .. 5 columns 0 .. 5 and rows 6 .. 11 columns 0 .. 11, framed with a 3 x 2 pen: its inner
+      --  corner is eroded from both arms.
+      declare
+         Big_L : constant Bytes :=
+           W (36) & Rect (0, 0, Side, Side) & W (0) & W (0) & W (6) & W (16#7FFF#) & W (6) & W (6) & W (Side)
+           & W (16#7FFF#) & W (Side) & W (0) & W (Side) & W (16#7FFF#) & W (16#7FFF#);
+         Framed_L : aliased constant Bytes := Pic (Side, Side, Pen_Size (3, 2) & W (16#80#) & Big_L);
+      begin
+         Canvases.Expect_Raster (Framed_L, Side, Side, L_Frame, "frameRgn of an L with a 3 x 2 pen");
+      end;
+      --  Pens 1 to 4 high: windows of 3, 5, 7 and 9 rows, eroded in one, two and three doublings.
+      for V in 1 .. 4 loop
+         for H in 1 .. 3 loop
+            declare
+               Framed : aliased constant Bytes := Pic (Side, Side, Pen_Size (V, H) & W (16#80#) & Square);
+            begin
+               Canvases.Expect_Raster
+                 (Framed, Side, Side, Frame (V, H), "frameRgn with a" & V'Image & " x" & H'Image & " pen");
+            end;
+         end loop;
+      end loop;
       Canvases.Expect_Raster (Painted_L, 4, 4, "BBWW/BBWW/BBBB/BBBB", "paintRgn");
       Canvases.Expect_Raster (Framed_Rect_Region, 4, 4, "BBBB/BWWB/BWWB/BBBB", "frameRgn, rectangular");
       Canvases.Expect_Raster

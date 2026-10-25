@@ -5,9 +5,9 @@ package body Pictlib.Errors is
          when No_Error                  => return "pict.ok";
          when Source_Read_Failed        => return "pict.source.read_failed";
          when Source_Unexpected_End     => return "pict.source.unexpected_end";
-         when Source_Zero_Progress      => return "pict.stream.zero_progress";
+         when Source_Zero_Progress      => return "pict.source.zero_progress";
          when Destination_Write_Failed  => return "pict.destination.write_failed";
-         when Destination_Zero_Progress => return "pict.stream.destination_zero_progress";
+         when Destination_Zero_Progress => return "pict.destination.zero_progress";
          when Header_Invalid            => return "pict.header.invalid";
          when Version_Invalid           => return "pict.version.invalid";
          when Opcode_Invalid            => return "pict.opcode.invalid";

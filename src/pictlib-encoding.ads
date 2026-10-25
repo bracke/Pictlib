@@ -48,8 +48,9 @@ package Pictlib.Encoding is
    --  @return Current state.
    function State (Object : Encoder) return Encoder_State;
    --  Encode.
-   --  @param Object Encoder in state Ready; Encoded on success, Failed on a failure while writing, and still
-   --  Ready, Last_Error unchanged, on one found before the destination was written to.
+   --  @param Object Encoder in state Ready; Encoded on success, Failed on a failure while writing or an exception
+   --  from the destination once writing began (which propagates), and still Ready, Last_Error unchanged, on a
+   --  failure found before the destination was written to.
    --  @param Image A valid caller view.
    --  @return Success; Invalid_Argument for an invalid view, a non-positive resolution or an image too wide for
    --  the layout's rowBytes; Too_Many_Colors for Indexed_8 above 256 colors (counted up to 257);
@@ -72,7 +73,8 @@ package Pictlib.Encoding is
    --  @return The failure that put the encoder in state Failed, or No_Error.
    function Last_Error (Object : Encoder) return Errors.Error;
    --  Cancel.
-   --  @param Object Encoder; later operations fail with Operation_Cancelled until Initialize.
+   --  @param Object Encoder; in Ready or Encoded it becomes Cancelled, and later operations fail with
+   --  Operation_Cancelled until Initialize; in any other state nothing changes.
    procedure Cancel (Object : in out Encoder);
    --  Finalize.
    --  @param Object Encoder; releases the destination binding. Idempotent.
@@ -82,12 +84,12 @@ private
    type Destination_Access is access all Streams.Destination'Class;
 
    type Encoder is limited record
-      Current_State : Encoder_State := Created;
+      Current_State : aliased Encoder_State := Created;
       Output : Destination_Access := null;
       Encode_Options : Options;
       Encode_Limits : Limits.Limit_Set := Limits.Default_Limits;
       Layout : Layout_Kind := Auto;
       Written : Byte_Count := 0;
-      First_Error : Errors.Error := Errors.Make (Errors.No_Error);
+      First_Error : aliased Errors.Error := Errors.Make (Errors.No_Error);
    end record;
 end Pictlib.Encoding;

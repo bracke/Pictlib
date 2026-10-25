@@ -1,3 +1,4 @@
+with Pictlib.Internal.Divisions;
 with Pictlib.Internal.Checked_Arithmetic;
 with Pictlib.Errors;
 
@@ -228,7 +229,7 @@ package body Pictlib.Internal.Rendering is
          --  Only the rows the shape holds.
          for Y in Coverage.First_Row (Shape) .. Coverage.Last_Row (Shape) loop
             exit when not Results.Succeeded (Outcome);
-            P.Machine.Row_Spans := Coverage.Row (Shape, Y);
+            Coverage.Copy_Row (Shape, Y, P.Machine.Row_Spans);
             if not P.Machine.Row_Spans.Is_Empty then
                Outcome := Clip_Row (P, S, Y);
                if Results.Succeeded (Outcome) then
@@ -261,9 +262,9 @@ package body Pictlib.Internal.Rendering is
       Relative : constant Long_Long_Integer := Long_Long_Integer (Source_Y) - Long_Long_Integer (Source.Top);
       --  Destination rows k sample source row Sampled (k, Source_Height, Destination_Height): these.
       First_Row : constant Long_Long_Integer :=
-        Coverage.Ceiling_Divide (Relative * Destination_Height, Source_Height);
+        Divisions.Ceiling_Divide (Relative * Destination_Height, Source_Height);
       Last_Row : constant Long_Long_Integer :=
-        Coverage.Ceiling_Divide ((Relative + 1) * Destination_Height, Source_Height) - 1;
+        Divisions.Ceiling_Divide ((Relative + 1) * Destination_Height, Source_Height) - 1;
       Outcome : Results.Result;
 
       function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
@@ -317,6 +318,28 @@ package body Pictlib.Internal.Rendering is
       return Results.Success;
    end Source_Rect;
 
+   --  The part of Destination whose pixels sample Clamped, a part of Wanted, by the mapping of Wanted onto
+   --  Destination: destination column k samples Wanted.Left + floor (k * Wanted's width / Destination's width),
+   --  so the columns from ceil ((Clamped.Left - Wanted.Left) * width ratio) on, up to the one for Clamped.Right,
+   --  sample Clamped, and rows likewise. Drawing Clamped there keeps the scale srcRect and dstRect set.
+   function Shrunk (Destination : Area; Wanted, Clamped : Geometry.Rect) return Area is
+      function Edge (First, Extent, Wanted_First, Wanted_Extent, Clamped_Edge : Integer) return Integer is
+        (First + Integer
+           (Divisions.Ceiling_Divide
+              (Long_Long_Integer (Clamped_Edge - Wanted_First) * Long_Long_Integer (Extent),
+               Long_Long_Integer (Wanted_Extent))));
+      Width : constant Integer := Destination.Right - Destination.Left;
+      Height : constant Integer := Destination.Bottom - Destination.Top;
+      Wanted_Width : constant Integer := Geometry.Width (Wanted);
+      Wanted_Height : constant Integer := Geometry.Height (Wanted);
+   begin
+      return
+        (Top => Edge (Destination.Top, Height, Integer (Wanted.Top), Wanted_Height, Integer (Clamped.Top)),
+         Left => Edge (Destination.Left, Width, Integer (Wanted.Left), Wanted_Width, Integer (Clamped.Left)),
+         Bottom => Edge (Destination.Top, Height, Integer (Wanted.Top), Wanted_Height, Integer (Clamped.Bottom)),
+         Right => Edge (Destination.Left, Width, Integer (Wanted.Left), Wanted_Width, Integer (Clamped.Right)));
+   end Shrunk;
+
    --  Rows a copy skips undrawn cost a unit each, as their framing is still read.
    function Skip_Copy (S : in out Sessions.Session; Header : Pixmaps.Bits_Header)
      return Results.Result
@@ -338,7 +361,7 @@ package body Pictlib.Internal.Rendering is
    is
       Decoder : Pixmaps.Row_Decoder;
       Source : Geometry.Rect;
-      Destination : constant Area := To_Picture (P, Header.Destination);
+      Destination : Area := To_Picture (P, Header.Destination);
       Kind : Transfer_Modes.Mode_Kind;
       Outcome : Results.Result;
    begin
@@ -357,6 +380,13 @@ package body Pictlib.Internal.Rendering is
       end if;
       if Geometry.Is_Empty (Source) or else Regions.Is_Empty (Destination) then
          return Skip_Copy (S, Header);
+      end if;
+      --  A clamped srcRect keeps its scale: only the destination it maps to is drawn.
+      if Source /= Header.Source then
+         Destination := Shrunk (Destination, Header.Source, Source);
+         if Regions.Is_Empty (Destination) then
+            return Skip_Copy (S, Header);
+         end if;
       end if;
       if Header.Masked then
          Regions.Translate (Mask, -P.Port.Origin_H, -P.Port.Origin_V);

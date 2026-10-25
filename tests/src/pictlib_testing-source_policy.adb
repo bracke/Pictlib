@@ -369,7 +369,10 @@ package body Pictlib_Testing.Source_Policy is
                Cell : Natural := 0;
             begin
                for Index in Line'Range loop
-                  if Line (Index) = '|' and then Count < Bars'Last then
+                  --  An escaped bar is a cell's text, not its edge.
+                  if Line (Index) = '|' and then Count < Bars'Last
+                    and then (Index = Line'First or else Line (Index - 1) /= '\')
+                  then
                      Count := Count + 1;
                      Bars (Count) := Index;
                   end if;
@@ -381,7 +384,7 @@ package body Pictlib_Testing.Source_Policy is
                     and then Ada.Strings.Fixed.Index (Line (Bars (1) .. Bars (2)), "-0") > 0
                   then
                      Cell := 4;
-                  elsif Count = 3 and then Line (Line'First + 2) = '`' then
+                  elsif Count >= 3 and then Line (Line'First + 2) = '`' then
                      Cell := 2;
                   end if;
                end if;
@@ -462,8 +465,16 @@ package body Pictlib_Testing.Source_Policy is
                Fail (Suite_Path & ": the test package " & Unit & " is never made a test case");
                return;
             end if;
-            --  The variable it is made for: the name before the " : constant" that precedes it.
-            Before := Ada.Strings.Fixed.Index (Lower (Lower'First .. Made), " : constant", Ada.Strings.Backward);
+            --  The variable it is made for: the name before the " : " of the declaration whose ":=" precedes it,
+            --  constant or not.
+            declare
+               Assigned : constant Natural :=
+                 Ada.Strings.Fixed.Index (Lower (Lower'First .. Made), ":=", Ada.Strings.Backward);
+            begin
+               Before :=
+                 (if Assigned = 0 then 0
+                  else Ada.Strings.Fixed.Index (Lower (Lower'First .. Assigned), " : ", Ada.Strings.Backward));
+            end;
             declare
                Start : Natural := Before;
             begin
@@ -506,6 +517,16 @@ package body Pictlib_Testing.Source_Policy is
       end Walk;
 
       Workflow : constant String := Root & "/.github/workflows/ci.yml";
+
+      function Leading_Blanks (Item : String) return Natural is
+         Count : Natural := 0;
+      begin
+         for C of Item loop
+            exit when C /= ' ';
+            Count := Count + 1;
+         end loop;
+         return Count;
+      end Leading_Blanks;
    begin
       Walk (Root);
       if not Ada.Directories.Exists (Workflow) then
@@ -520,10 +541,37 @@ package body Pictlib_Testing.Source_Policy is
                Line_End : constant Natural :=
                  (if Ada.Strings.Fixed.Index (Text (Line_Start .. Text'Last), [1 => ASCII.LF]) = 0 then Text'Last
                   else Ada.Strings.Fixed.Index (Text (Line_Start .. Text'Last), [1 => ASCII.LF]) - 1);
-               Line : constant String := Ada.Strings.Fixed.Trim (Text (Line_Start .. Line_End), Ada.Strings.Both);
+               Raw : constant String := Text (Line_Start .. Line_End);
+               Trimmed : constant String := Ada.Strings.Fixed.Trim (Raw, Ada.Strings.Both);
+               --  A step's first key may follow the list dash.
+               Line : constant String :=
+                 (if Trimmed'Length >= 2 and then Trimmed (Trimmed'First .. Trimmed'First + 1) = "- "
+                  then Ada.Strings.Fixed.Trim (Trimmed (Trimmed'First + 2 .. Trimmed'Last), Ada.Strings.Both)
+                  else Trimmed);
                Key : constant String := "run:";
+               Indent : constant Natural := Leading_Blanks (Raw);
+               --  The next line, when it continues the command: indented further and starting no key or item.
+               Next_End : constant Natural :=
+                 (if Line_End + 2 > Text'Last then 0
+                  elsif Ada.Strings.Fixed.Index (Text (Line_End + 2 .. Text'Last), [1 => ASCII.LF]) = 0
+                  then Text'Last
+                  else Ada.Strings.Fixed.Index (Text (Line_End + 2 .. Text'Last), [1 => ASCII.LF]) - 1);
+               Next : constant String := (if Next_End = 0 then "" else Text (Line_End + 2 .. Next_End));
+               Next_Trimmed : constant String := Ada.Strings.Fixed.Trim (Next, Ada.Strings.Both);
+               Continues : constant Boolean :=
+                 Next_Trimmed'Length > 0
+                 and then Leading_Blanks (Next) > Indent
+                 and then Next_Trimmed (Next_Trimmed'First) /= '#'
+                 and then not (Next_Trimmed'Length >= 2
+                               and then Next_Trimmed (Next_Trimmed'First .. Next_Trimmed'First + 1) = "- ")
+                 and then Ada.Strings.Fixed.Index (Next_Trimmed, ": ") = 0
+                 and then Next_Trimmed (Next_Trimmed'Last) /= ':';
             begin
-               if Line'Length >= Key'Length and then Line (Line'First .. Line'First + Key'Length - 1) = Key then
+               if Line'Length >= Key'Length and then Line (Line'First .. Line'First + Key'Length - 1) = Key
+                 and then Continues
+               then
+                  Fail (Workflow & ": a CI step continues on its next line: " & Trimmed);
+               elsif Line'Length >= Key'Length and then Line (Line'First .. Line'First + Key'Length - 1) = Key then
                   declare
                      Command : constant String :=
                        Ada.Strings.Fixed.Trim (Line (Line'First + Key'Length .. Line'Last), Ada.Strings.Both);

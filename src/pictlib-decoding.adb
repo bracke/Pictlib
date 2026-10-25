@@ -59,6 +59,33 @@ package body Pictlib.Decoding is
       return Outcome;
    end Finish;
 
+   --  Guards a call that reads the picture: caller code it runs (a visitor, the source) may raise, or the task be
+   --  aborted. However the call ends, Visiting, when given, is cleared; a call that leaves the decoder in From,
+   --  the state it began in, did not return, since every return moves it on, and leaves it Stopped, its stream
+   --  partly read, until Reset or Initialize.
+   type Call_Guard (From : Decoder_State; State : not null access Decoder_State; Visiting : access Boolean) is
+     new Ada.Finalization.Limited_Controlled with null record;
+
+   overriding procedure Initialize (Guard : in out Call_Guard);
+   overriding procedure Finalize (Guard : in out Call_Guard);
+
+   overriding procedure Initialize (Guard : in out Call_Guard) is
+   begin
+      if Guard.Visiting /= null then
+         Guard.Visiting.all := True;
+      end if;
+   end Initialize;
+
+   overriding procedure Finalize (Guard : in out Call_Guard) is
+   begin
+      if Guard.Visiting /= null then
+         Guard.Visiting.all := False;
+      end if;
+      if Guard.State.all = Guard.From then
+         Guard.State.all := Stopped;
+      end if;
+   end Finalize;
+
    function Read_Header (Object : in out Decoder) return Results.Result is
    begin
       if Object.Visiting then
@@ -67,6 +94,8 @@ package body Pictlib.Decoding is
          return Wrong_State (Object);
       end if;
       declare
+         Guard : Call_Guard (Ready, Object.Current_State'Access, null);
+         pragma Unreferenced (Guard);
          Outcome : constant Results.Result :=
            Internal.Container.Read_Header
              (Object.Inner.Session, Object.Decode_Options.File_Header, Object.Inner.Info, Object.Inner.Header_Events,
@@ -183,37 +212,6 @@ package body Pictlib.Decoding is
       end loop;
    end Enumerate_Opcodes;
 
-   --  Holds Visiting for one enumeration. However the enumeration ends, by an exception or an abort included,
-   --  Visiting is cleared, and one that did not return turns a decoder it left Header_Read, its stream partly
-   --  read, Stopped.
-   type Visit_Guard (Visiting : not null access Boolean; State : not null access Decoder_State) is
-     new Ada.Finalization.Limited_Controlled with record
-      Returned : Boolean := False;
-   end record;
-
-   overriding procedure Initialize (Guard : in out Visit_Guard);
-   overriding procedure Finalize (Guard : in out Visit_Guard);
-
-   --  The enumeration returned: the state it left stands.
-   procedure Complete (Guard : in out Visit_Guard'Class);
-   procedure Complete (Guard : in out Visit_Guard'Class) is
-   begin
-      Guard.Returned := True;
-   end Complete;
-
-   overriding procedure Initialize (Guard : in out Visit_Guard) is
-   begin
-      Guard.Visiting.all := True;
-   end Initialize;
-
-   overriding procedure Finalize (Guard : in out Visit_Guard) is
-   begin
-      Guard.Visiting.all := False;
-      if not Guard.Returned and then Guard.State.all = Header_Read then
-         Guard.State.all := Stopped;
-      end if;
-   end Finalize;
-
    function Enumerate (Object : in out Decoder; Visitor : in out Opcode_Visitor'Class) return Results.Result is
    begin
       if Object.Visiting then
@@ -222,11 +220,10 @@ package body Pictlib.Decoding is
          return Wrong_State (Object);
       end if;
       declare
-         Guard : Visit_Guard (Object.Visiting'Access, Object.Current_State'Access);
-         Outcome : constant Results.Result := Enumerate_Opcodes (Object, Visitor);
+         Guard : Call_Guard (Header_Read, Object.Current_State'Access, Object.Visiting'Access);
+         pragma Unreferenced (Guard);
       begin
-         Complete (Guard);
-         return Outcome;
+         return Enumerate_Opcodes (Object, Visitor);
       end;
    end Enumerate;
 
@@ -258,7 +255,21 @@ package body Pictlib.Decoding is
       Budget : Limits.Limit_Set renames Object.Inner.Session.Budget;
       Pixels : constant Pixel_Count := Frame_Pixels (Object);
    begin
-      if not Images.Is_Valid (Output)
+      if Integer (Output.Descriptor.Width) = Geometry.Width (Frame)
+        and then Integer (Output.Descriptor.Height) = Geometry.Height (Frame)
+        and then not Images.Is_Valid (Output)
+      then
+         --  The frame's size, but not a valid view: the least a valid view of its size and format holds, against
+         --  what it holds.
+         return Results.Failure
+           (Errors.Make
+              (Errors.Invalid_Argument,
+               (Expected =>
+                  Images.Minimum_Row_Bytes (Output.Descriptor.Width, Output.Descriptor.Format)
+                  * Byte_Count (Output.Descriptor.Height),
+                Actual => Output.Descriptor.Accessible_Bytes,
+                others => <>)));
+      elsif not Images.Is_Valid (Output)
         or else Integer (Output.Descriptor.Width) /= Geometry.Width (Frame)
         or else Integer (Output.Descriptor.Height) /= Geometry.Height (Frame)
       then
@@ -297,6 +308,9 @@ package body Pictlib.Decoding is
       end;
 
       declare
+         --  Before the painter, so the painter is finalized first.
+         Guard : Call_Guard (Header_Read, Object.Current_State'Access, null);
+         pragma Unreferenced (Guard);
          Paint : aliased Internal.Rendering.Painter;
          Outcome : Results.Result := Results.Success;
       begin

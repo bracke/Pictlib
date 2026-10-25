@@ -42,8 +42,12 @@ package body Pictlib_Testing.Test_Encoding is
       Inner : Pictlib.Streams.Fixed_Buffer_Destination;
       Calls : Natural := 0;
       Fail_At : Positive := 1;
+      --  Raise at Fail_At instead of failing.
+      Raises : Boolean := False;
       Writes_After : Natural := 0;
    end record;
+
+   Destination_Raised : exception;
    overriding function Write (Object : in out Flaky; Buffer : Pictlib.Streams.Byte_Array)
      return Pictlib.Streams.Destination_Result;
    overriding function Offset (Object : Flaky) return Pictlib.Destination_Offset is (Object.Inner.Offset);
@@ -53,7 +57,9 @@ package body Pictlib_Testing.Test_Encoding is
      return Pictlib.Streams.Destination_Result is
    begin
       Object.Calls := Object.Calls + 1;
-      if Object.Calls = Object.Fail_At then
+      if Object.Calls = Object.Fail_At and then Object.Raises then
+         raise Destination_Raised;
+      elsif Object.Calls = Object.Fail_At then
          return (Error => Pictlib.Errors.Make (Pictlib.Errors.Destination_Write_Failed), Count => 0);
       elsif Object.Calls > Object.Fail_At then
          Object.Writes_After := Object.Writes_After + 1;
@@ -449,6 +455,33 @@ package body Pictlib_Testing.Test_Encoding is
          Assert (Encoding.State (Encoder) = Encoding.Failed
                  and then Encoding.Last_Error (Encoder).Code = Pictlib.Errors.Destination_Write_Failed,
                  "a wrong-state call changed a failed encoder");
+      end;
+      --  A destination that raises part-way propagates its exception and fails the encoder, so no second picture
+      --  can follow the part of the first it took.
+      declare
+         Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
+         Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
+         Output : aliased Flaky;
+         Encoder : Encoding.Encoder;
+         Outcome : Pictlib.Results.Result;
+         Raised : Boolean := False;
+      begin
+         Pictlib.Streams.Open (Output.Inner, Storage);
+         Output.Fail_At := 40;
+         Output.Raises := True;
+         Encoding.Initialize (Encoder, Output'Access);
+         begin
+            Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 37, 23));
+         exception
+            when Destination_Raised => Raised := True;
+         end;
+         Assert (Raised, "the destination's exception did not propagate");
+         Assert (Encoding.State (Encoder) = Encoding.Failed
+                 and then Encoding.Last_Error (Encoder).Code = Pictlib.Errors.Destination_Write_Failed,
+                 "an encoder whose destination raised was left " & Encoding.State (Encoder)'Image);
+         Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 37, 23));
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State,
+                 "an encoder whose destination raised encoded again");
       end;
    end Destinations;
 

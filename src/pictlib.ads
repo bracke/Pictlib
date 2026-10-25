@@ -19,7 +19,6 @@ package Pictlib is
    type Opcode_Ordinal is range 0 .. 2 ** 63 - 1;
    type Pixel_Depth is range 1 .. 32
      with Static_Predicate => Pixel_Depth in 1 | 2 | 4 | 8 | 16 | 32;
-   type Pack_Type is range 0 .. 4;
    type Row_Index is range 0 .. 2 ** 31 - 1;
 
    type Strictness_Mode is (Strict, Compatible, Recover_When_Safe);

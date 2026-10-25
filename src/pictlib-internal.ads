@@ -51,6 +51,9 @@ package Pictlib.Internal is
    --  An RGBColor: three 16-bit components.
    RGB_Color_Bytes : constant := 6;
    --  A PixPat's patType: a color tile, or an RGB color to dither.
+   --  The largest PixMap packType: 0 default, 1 unpacked, 2 pad byte dropped, 3 word runs, 4 component planes.
+   Largest_Pack_Type : constant := 4;
+
    Color_Pattern_Type : constant := 1;
    Dither_Pattern_Type : constant := 2;
 end Pictlib.Internal;

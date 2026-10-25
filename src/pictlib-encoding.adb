@@ -1,3 +1,4 @@
+with Ada.Finalization;
 with Pictlib.Internal.Canvas;
 with Ada.Containers.Hashed_Maps;
 with Pictlib.Internal.Bytes;
@@ -398,7 +399,8 @@ package body Pictlib.Encoding is
       Settings : Options;
       Item : Plan;
       Colors : Palette;
-      Started : out Boolean) return Results.Result
+      --  Set as the first byte is written; by reference, so an exception from the destination leaves it set.
+      Started : not null access Boolean) return Results.Result
    is
       Budget : Limits.Limit_Set renames Object.Encode_Limits;
       File_Header : constant Streams.Byte_Array (1 .. Internal.File_Header_Bytes) := [others => 0];
@@ -406,7 +408,7 @@ package body Pictlib.Encoding is
       Output : Writers.Writer;
       Outcome : Results.Result := Results.Success;
    begin
-      Started := False;
+      Started.all := False;
       --  The dry run counts what the output will hold, the file header included, against the limit as it was
       --  set, so a picture that does not fit is reported in the caller's terms.
       Writers.Start (Measure, null, Budget.Max_Output_Bytes);
@@ -419,7 +421,7 @@ package body Pictlib.Encoding is
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
-      Started := True;
+      Started.all := True;
       Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes);
       if Settings.File_Header then
          Outcome := Writers.Put (Output, File_Header);
@@ -431,6 +433,23 @@ package body Pictlib.Encoding is
       return Outcome;
    end Write;
 
+   --  Guards an encoding that may write: the destination is caller code, which may raise, or the task be aborted.
+   --  An encoding that wrote and left the encoder Ready did not return, since every return moves it on, and
+   --  leaves it Failed with Destination_Write_Failed, so no second picture follows a part of the first.
+   type Write_Guard
+     (State : not null access Encoder_State;
+      Error : not null access Errors.Error;
+      Started : not null access Boolean) is new Ada.Finalization.Limited_Controlled with null record;
+
+   overriding procedure Finalize (Guard : in out Write_Guard);
+   overriding procedure Finalize (Guard : in out Write_Guard) is
+   begin
+      if Guard.Started.all and then Guard.State.all = Ready then
+         Guard.State.all := Failed;
+         Guard.Error.all := Errors.Make (Errors.Destination_Write_Failed);
+      end if;
+   end Finalize;
+
    function Encode (Object : in out Encoder; Image : Images.Image_View) return Results.Result is
       --  The settings the picture is written with.
       Settings : Options := Object.Encode_Options;
@@ -438,7 +457,9 @@ package body Pictlib.Encoding is
       Layout : Layout_Kind;
       Outcome : Results.Result;
       --  Whether the destination was written to: a failure before leaves the encoder Ready.
-      Started : Boolean := False;
+      Started : aliased Boolean := False;
+      Guard : Write_Guard (Object.Current_State'Access, Object.First_Error'Access, Started'Access);
+      pragma Unreferenced (Guard);
    begin
       if Object.Current_State /= Ready then
          return Wrong_State (Object);
@@ -465,7 +486,7 @@ package body Pictlib.Encoding is
          begin
             Outcome := Check_Plan (Item, Colors, Object.Encode_Limits);
             if Results.Succeeded (Outcome) then
-               Outcome := Write (Object, Image, Settings, Item, Colors, Started);
+               Outcome := Write (Object, Image, Settings, Item, Colors, Started'Access);
             end if;
          end;
       end if;
@@ -511,6 +532,7 @@ package body Pictlib.Encoding is
    begin
       Object.Output := null;
       Object.Written := 0;
+      Object.Layout := Auto;
       Object.First_Error := Errors.Make (Errors.No_Error);
       Object.Current_State := Created;
    end Finalize;

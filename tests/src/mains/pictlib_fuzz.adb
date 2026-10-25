@@ -51,7 +51,7 @@ procedure Pictlib_Fuzz is
    Fail_Stuck : constant Boolean :=
      (for some Index in 1 .. Ada.Command_Line.Argument_Count => Ada.Command_Line.Argument (Index) = "--fail-stuck");
    Replay : constant Boolean :=
-     Ada.Command_Line.Argument_Count >= 1 and then Ada.Command_Line.Argument (1) = "--replay";
+     (for some Index in 1 .. Ada.Command_Line.Argument_Count => Ada.Command_Line.Argument (Index) = "--replay");
 
    package Name_Vectors is new Ada.Containers.Indefinite_Vectors (Positive, String);
    package Name_Sorting is new Name_Vectors.Generic_Sorting;
@@ -339,11 +339,18 @@ procedure Pictlib_Fuzz is
             Data : Pictlib_Testing.Files.Bytes_Access;
             Started : Ada.Calendar.Time;
          begin
-            --  Loaded here, so a file that cannot be read is reported, not raised past the handler.
-            Data := Pictlib_Testing.Files.Load_Path (Name);
-            Started := Ada.Calendar.Clock;
-            Exercise (Data.all);
-            Ada.Text_IO.Put_Line (Name & Duration'Image (Ada.Calendar.Clock - Started) & " s");
+            --  Loaded apart, so a file that cannot be read is reported as such, not as a defect.
+            begin
+               Data := Pictlib_Testing.Files.Load_Path (Name);
+            exception
+               when Error : others =>
+                  Fail ("cannot read " & Name & ": " & Ada.Exceptions.Exception_Message (Error));
+            end;
+            if Pictlib.Streams."/=" (Data, null) then
+               Started := Ada.Calendar.Clock;
+               Exercise (Data.all);
+               Ada.Text_IO.Put_Line (Name & Duration'Image (Ada.Calendar.Clock - Started) & " s");
+            end if;
          exception
             when Error : others =>
                Defects := Defects + 1;
@@ -375,7 +382,11 @@ begin
          return;
       end if;
    end if;
-   if Replay then
+   if Replay and then Arguments.Is_Empty then
+      Fail ("usage: pictlib_fuzz --replay FILE...: no file to replay");
+      Pictlib_Testing.Tools.Finish_Report;
+      return;
+   elsif Replay then
       Replay_Inputs;
       Pictlib_Testing.Tools.Finish_Report;
       return;
@@ -408,8 +419,15 @@ begin
          exception
             when Error : others =>
                Defects := Defects + 1;
-               Save ("defect-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
                Fail ("DEFECT at iteration" & Iteration'Image & ": " & Ada.Exceptions.Exception_Information (Error));
+               --  Reported first, so a failure to save the input cannot hide the defect.
+               begin
+                  Save ("defect-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
+               exception
+                  when Save_Error : others =>
+                     Fail ("could not save the input of iteration" & Iteration'Image & ": "
+                           & Ada.Exceptions.Exception_Message (Save_Error));
+               end;
          end;
       exception
          --  Mutation itself failed: a fault of this tool, with no input to save.

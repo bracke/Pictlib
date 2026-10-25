@@ -142,14 +142,21 @@ package body Pictlib.Internal.Regions is
       end if;
       Item.Cursor_Y := Y;
       while Item.Next_Line <= Natural (Item.Lines.Length) and then Item.Lines (Item.Next_Line).Y <= Y loop
-         Invert (Item, Item.Lines (Item.Next_Line));
-         Work := Checked_Arithmetic.Saturating_Add (Work, Pixel_Count (Item.Active.Length) + 1);
+         --  Inverting merges the active set with the line's points: both are charged, and the line, before it
+         --  is inverted.
+         declare
+            Line : constant Scanline := Item.Lines (Item.Next_Line);
+         begin
+            Work := Checked_Arithmetic.Saturating_Add
+              (Work, Pixel_Count (Item.Active.Length) + Pixel_Count (Line.Last - Line.First + 1) + 1);
+            --  The walk resumes from this line at the next call; this one is over budget.
+            if Work > Allowance then
+               Spans.Clear;
+               return;
+            end if;
+            Invert (Item, Line);
+         end;
          Item.Next_Line := Item.Next_Line + 1;
-         --  The walk resumes from here at the next call; this one is over budget.
-         if Work > Allowance then
-            Spans.Clear;
-            return;
-         end if;
       end loop;
 
       declare

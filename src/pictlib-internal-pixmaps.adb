@@ -109,8 +109,8 @@ package body Pictlib.Internal.Pixmaps is
          return Outcome;
       elsif Pixel_Size not in 1 | 2 | 4 | 8 | 16 | 32 then
          return Sessions.Fail (S, Errors.Pixmap_Invalid, 32, Byte_Count (Pixel_Size));
-      elsif Pack > Interfaces.Unsigned_16 (Pack_Type'Last) then
-         return Sessions.Fail (S, Errors.Pixmap_Invalid, Byte_Count (Pack_Type'Last), Byte_Count (Pack));
+      elsif Pack > Largest_Pack_Type then
+         return Sessions.Fail (S, Errors.Pixmap_Invalid, Largest_Pack_Type, Byte_Count (Pack));
       end if;
       Fields :=
         (Pack => Natural (Pack), Pixel_Size => Natural (Pixel_Size), Component_Count => Natural (Component_Count));
@@ -162,6 +162,8 @@ package body Pictlib.Internal.Pixmaps is
       Flags : Interfaces.Unsigned_16;
       Entries : Natural;
       Outcome : Results.Result := Read_Table_Header (S, Flags, Entries);
+      --  Leniently a table's entries past 255 are reported once, as an opcode's undefined indexes are.
+      Reported : Boolean := False;
    begin
       Table := (others => <>);
       if not Results.Succeeded (Outcome) then
@@ -179,8 +181,11 @@ package body Pictlib.Internal.Pixmaps is
             end if;
             Value := Bytes.Word_At (Item, 1);
             Index := (if (Flags and Device) /= 0 then Position else Natural (Value));
-            if Index > 255 then
+            if Index > 255 and then Reported then
+               null;
+            elsif Index > 255 then
                --  Leniently the entry is dropped.
+               Reported := True;
                declare
                   Outcome : constant Results.Result :=
                     Sessions.Reject_Or_Warn

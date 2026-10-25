@@ -67,6 +67,20 @@ package body Pictlib_Testing.Test_Decoder is
    overriding function Skip
      (Object : in out Overreporting; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result;
 
+   --  A source that raises once it has delivered After bytes.
+   type Raising is limited new Pictlib.Streams.Source with record
+      Inner : Pictlib.Streams.Memory_Source;
+      After : Pictlib.Byte_Count := 0;
+   end record;
+   overriding function Read
+     (Object : in out Raising; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result;
+   overriding function Offset (Object : Raising) return Pictlib.Source_Offset is (Object.Inner.Offset);
+   overriding function Skip
+     (Object : in out Raising; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result
+   is (Object.Inner.Skip (Count));
+
+   Source_Raised : exception;
+
    --  What a meddling visitor does to its decoder at its first opcode.
    type Meddle is (Cancels, Enumerates, Reads_Header, Renders, Resets, Resets_And_Reads_Header, Finalizes, Raises);
 
@@ -121,6 +135,17 @@ package body Pictlib_Testing.Test_Decoder is
    begin
       return (Step with delta Count => Step.Count + (if Object.On_Read then 0 else 1));
    end Skip;
+
+   overriding function Read
+     (Object : in out Raising; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result
+   is
+      use type Pictlib.Byte_Count;
+   begin
+      if Pictlib.Byte_Count (Object.Inner.Offset) >= Object.After then
+         raise Source_Raised;
+      end if;
+      return Object.Inner.Read (Buffer);
+   end Read;
 
    overriding function Read
      (Object : in out Overreporting; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result
@@ -397,6 +422,41 @@ package body Pictlib_Testing.Test_Decoder is
                Assert (Pictlib.Results.Succeeded (Outcome) and then Events.Count > 0,
                        "a decoder whose visitor raised did not enumerate after Reset" & Where);
             end;
+         end;
+      end loop;
+
+      --  A source that raises: in Read_Header, and in Render once the header is read. The exception propagates
+      --  and leaves the decoder Stopped, refusing the rest of a stream it read part of, until Reset.
+      for In_Render in Boolean loop
+         declare
+            Inside : aliased Decoding.Decoder;
+            Faulty : aliased Raising;
+            Raised : Boolean := False;
+            Storage : aliased Bytes := [1 .. 3 * 8 * 4 => 0];
+         begin
+            Pictlib.Streams.Open (Faulty.Inner, Skipped'Access);
+            --  In Render: past the header, which the look-ahead reads at once, so Render's next read raises.
+            Faulty.After := (if In_Render then 528 else 0);
+            Decoding.Initialize (Inside, Faulty'Access);
+            begin
+               Outcome := Decoding.Read_Header (Inside);
+               if In_Render then
+                  Assert (Pictlib.Results.Succeeded (Outcome), "the header was not read");
+                  Outcome := Decoding.Render (Inside, Canvases.View (Storage'Access, 8, 4));
+               end if;
+            exception
+               when Source_Raised => Raised := True;
+            end;
+            Assert (Raised, "a source's exception did not propagate, in Render: " & In_Render'Image);
+            Assert (Decoding.State (Inside) = Decoding.Stopped,
+                    "a decoder whose source raised was left " & Decoding.State (Inside)'Image);
+            Outcome := Decoding.Render (Inside, Canvases.View (Storage'Access, 8, 4));
+            Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State,
+                    "a decoder whose source raised rendered the rest of its stream");
+            Pictlib.Streams.Open (Source, Picture'Access);
+            Decoding.Reset (Inside, Source'Access);
+            Outcome := Decoding.Read_Header (Inside);
+            Assert (Pictlib.Results.Succeeded (Outcome), "a decoder whose source raised read no header after Reset");
          end;
       end loop;
    end Meddling_Visitors;

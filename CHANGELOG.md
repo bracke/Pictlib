@@ -46,7 +46,7 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
     warning and embedded-image limits;
   - `Max_Allocation_Bytes` for each allocation and an optional monotonic
     `Max_Total_Allocation_Bytes` for a whole session;
-  - `Max_Drawing_Work` (default 2^30, about a minute of work) for all
+  - `Max_Drawing_Work` (default 2^30, one to three minutes of work) for all
     rendering work, drawn or not: see the specification, section 9.
 - Coordinates stay within ±2^24, so no coordinate arithmetic overflows.
 - Constructs a release cannot render (other QuickTime codecs, mattes,
@@ -58,6 +58,33 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Fixed
 
+- `Limits.Max_Canvas_Bytes` and `Canvas_Byte_Limit` are gone: they were
+  never enforced, the renderer allocating no canvas.
+- An exception from a source in `Read_Header` or `Render`, as from a
+  visitor in `Enumerate`, propagates and leaves the decoder `Stopped`, its
+  stream partly read: a second `Render` could draw the rest of a picture
+  without its first opcodes. One from a destination once writing began
+  leaves the encoder `Failed` with `Destination_Write_Failed`, so a retried
+  `Encode` cannot append a second picture to part of the first.
+- A `srcRect` clamped to a bits opcode's bounds keeps its scale, drawing
+  only the part of `dstRect` that samples it, as QuickTime images do; the
+  clamped source used to be stretched over the whole destination.
+- `lineJustify` with extra space is unsupported (strictly a failure,
+  leniently drawn unjustified with a warning); it was skipped silently.
+- Shape building charges a line's row buffers, a polygon's edges and an
+  arc's spans before it makes or tests them, and the region walk charges
+  the active inversion set and the line's points before it inverts.
+- Framing a region erodes its rows by doubling, in log2 of the pen height
+  passes instead of one row a pass, so a tall pen no longer spends the
+  whole default budget on one opcode.
+- A color table's entries past 255 warn once, as the specification says,
+  not once each, which could fill the warning log.
+- DHText and DVText move the text origin only once it is in reach.
+- An invalid view of the frame's size reports the bytes a valid one holds
+  against its own; `Encoding.Finalize` forgets the last layout.
+- The zero-progress identifiers are `pict.source.zero_progress` and
+  `pict.destination.zero_progress`, like the other stream codes.
+- `Pack_Type` is internal: no public subprogram used it.
 - Text after `HiliteMode` draws in the hilite mode, and the flag no longer
   carries over to the drawing after the text.
 - An encoder frame taller than `Max_Frame_Height` reports the height limit
@@ -130,18 +157,7 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - Malformed JPEG metadata, a broken ICC chain among it, is
   `Embedded_Image_Failed` again, and a frame of more components than
   jpeglib decodes is `Unsupported_Feature`; jpeglib's buffers outgrowing
-  their share name the share they had. That share is sized over the image's
-  extent rounded up to whole MCUs, so narrow subsampled JPEGs decode:
-  `quicktime.narrow_image` renders a 1 × 16000 progressive 4:2:0 JPEG
-  written by jpeglib's encoder, which the unpadded share refused.
-- `text.eviction_over_budget` requires a budget of its sweep to lie in the
-  window the bug lived in, computed from the glyph, font-load and clip
-  costs, so a drift in them cannot leave it testing nothing; both eviction
-  tests check pictlib's own atlas geometry.
-- `text.font_cache` tells least-recently-used eviction from first-in,
-  first-out; `text.faces` covers the shadow face; `text.work` searches its
-  least budgets below a ceiling worked out from its fonts and glyphs; the
-  JPEG decoders' tolerance and the jpeglib encoding helper are shared.
+  their share name the share they had.
 - The picture reader no longer clears the rest of a caller's buffer on
   every short read, which made long payloads from a source that delivers in
   small pieces quadratic in work no budget counted; nor does the source
@@ -174,10 +190,13 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - Clearing a decoder releases the storage its metadata and warnings held,
   as the specification says, rather than keeping the emptied vectors'
   capacity.
-- jpeglib's share is sized over 32-pixel MCUs, the largest jpeglib's
-  sampling factors make, and its coefficient and output limits are that
-  share and the image's pixels, so none of jpeglib's own defaults is
-  reported as pictlib's allocation limit.
+- jpeglib's share is sized over the image's extent rounded up to 32-pixel
+  MCUs, the largest jpeglib's sampling factors make, so narrow subsampled
+  JPEGs decode: `quicktime.narrow_image` renders a 1 × 16000 progressive
+  4:2:0 JPEG written by jpeglib's encoder, which the unpadded share refused.
+  Its coefficient and output limits are that share and the image's pixels,
+  so none of jpeglib's own defaults is reported as pictlib's allocation
+  limit.
 - A filled polygon's edges count against `Max_Total_Allocation_Bytes`
   besides its points, 104 bytes an edge, so a filled polygon can now cross
   that limit where it did not.
@@ -270,6 +289,16 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   BYTES-001 names `Sessions` for attribution; `docs/proof_profile.md` says
   where `gnatprove` comes from.
 
+- The specification says which limits enumeration enforces, that all
+  retained metadata shares one count and one byte budget, what `Cancel`
+  does in each state, that visitors may read the metadata retained so far
+  (the promised callback does not exist), that `PnLocHFrac` and
+  `glyphState` are read and ignored, how a non-positive resolution is
+  read, how the counts of a bad view and resolution read, and lists
+  `Internal.Replies`, `Internal.Divisions`, `proof_profile.md` and the CI
+  workflow; the drawing budget's time is one to three minutes everywhere;
+  `SECURITY.md` says where to report.
+
 ### Internal structure
 
 No behaviour changes; what each part of the library does now lives in one
@@ -301,9 +330,8 @@ place:
   reserved verbs are those its verb list leaves out, not a second table.
 - `PackBits.Pack` packs bytes, the only rows the encoder writes, and states
   its output size in its precondition.
-- `Picture_Stream` judges every reply of a source in one place; a clip and a
-  mask cut a row through one helper, which charges the region walk before
-  cutting.
+- A clip and a mask cut a row through one helper, which charges the region
+  walk before cutting.
 - `Pictlib.Fonts` keys font IDs by `Font_ID`.
 - The byte readers carry no opcode of their own: the session attributes
   every failure to its opcode in one place. The container uses the one
@@ -320,12 +348,17 @@ place:
 - `Encode` reads as its steps: check the frame, choose the layout, check
   the plan, write; `Decide_Layout` keeps one check per pack type and
   component count.
-
 - One judgement of a source's reply (`Internal.Replies`) serves the exact
   transfers and the picture stream; `Over_Limit` takes a destination offset,
   so the writer builds no limit failure of its own; enumeration and
   rendering classify a PixPat's type in one place; `Render` checks the frame
   and the view separately instead of telling them apart by limit kind.
+
+- QuickTime's jpeglib failure mapping, header checks and admission are
+  functions of their own, and the text cell geometry and advance rule are
+  package-level; `Floor_Divide` and `Ceiling_Divide` live in
+  `Internal.Divisions`; a shape's row is copied into place without a
+  temporary.
 
 ### Tooling
 
@@ -398,3 +431,22 @@ All tooling is Ada, in the `tests` crate:
 - The small progressive JPEG test checks the frame shows jpeglib's own
   decoding of the image's corner, not only that rendering succeeded.
 - The task-safe render the stress tests use is `Canvases.Rendered`.
+- `text.eviction_over_budget` requires a budget of its sweep to lie in the
+  window the bug lived in, computed from the glyph, font-load and clip
+  costs, so a drift in them cannot leave it testing nothing; both eviction
+  tests check pictlib's own atlas geometry.
+- `text.font_cache` tells least-recently-used eviction from first-in,
+  first-out; `text.faces` covers the shadow face; `text.work` searches its
+  least budgets below a ceiling worked out from its fonts and glyphs; the
+  JPEG decoders' tolerance and the jpeglib encoding helper are shared.
+- `pictlib_fuzz` takes `--replay` anywhere, refuses it with no file, tells
+  an unreadable file from a defect, and reports a defect before saving its
+  input.
+- `pictlib_check` skips escaped bars in registry cells, finds a suite's test
+  case declared without `constant`, and checks CI steps written `- run:`
+  and steps continued on the next line.
+- The capability probes render into one canvas and the progressive JPEG
+  check frees its buffers; new tests cover raising sources and
+  destinations, clamped srcRects on either side, lineJustify, region frames
+  with pens up to 4 x 3 against a rectangle and an L, one warning for a
+  table's bad entries, and the counts of bad views.

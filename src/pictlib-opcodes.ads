@@ -60,6 +60,7 @@ is
    DV_Text : constant Opcode := 16#002A#;
    DHDV_Text : constant Opcode := 16#002B#;
    Font_Name : constant Opcode := 16#002C#;
+   Line_Justify : constant Opcode := 16#002D#;
    --  The shape opcodes, 16#0030# .. 16#008F#: frameRect .. fillSameRgn, a group of 16 for each shape kind.
    First_Shape : constant Opcode := 16#0030#;
    Last_Shape : constant Opcode := 16#008F#;

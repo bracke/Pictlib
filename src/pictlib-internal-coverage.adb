@@ -1,5 +1,7 @@
+with Pictlib.Internal.Divisions;
 with Pictlib.Internal.Checked_Arithmetic;
 package body Pictlib.Internal.Coverage is
+   use Pictlib.Internal.Divisions;
    type Wide is range -2 ** 126 .. 2 ** 126;
 
    --  sin (k degrees) * 2 ** 30, k = 0 .. 90, rounded.
@@ -69,6 +71,15 @@ package body Pictlib.Internal.Coverage is
    function Row (Item : Shape; Y : Integer) return Span_List is
      (if not Item.Spent and then Y in First_Row (Item) .. Last_Row (Item) then Item.Rows (Y - Item.Top)
       else Regions.Span_Vectors.Empty_Vector);
+
+   procedure Copy_Row (Item : Shape; Y : Integer; Into : in out Span_List) is
+   begin
+      if not Item.Spent and then Y in First_Row (Item) .. Last_Row (Item) then
+         Into.Assign (Item.Rows.Constant_Reference (Y - Item.Top));
+      else
+         Into.Clear;
+      end if;
+   end Copy_Row;
 
    function Work (Item : Shape) return Pixel_Count is (Item.Units);
 
@@ -307,6 +318,9 @@ package body Pictlib.Internal.Coverage is
                Kept : Span_List;
             begin
                for S of Old loop
+                  --  The span is charged before it is tested, so a spent shape tests no more of it.
+                  Charge (Item, S.Right - S.Left);
+                  exit when Item.Spent;
                   declare
                      Run_Start : Integer := S.Left;
                   begin
@@ -321,7 +335,6 @@ package body Pictlib.Internal.Coverage is
                      if Run_Start < S.Right then
                         Kept.Append (Regions.Span'(Run_Start, S.Right));
                      end if;
-                     Charge (Item, S.Right - S.Left);
                   end;
                end loop;
                Item.Rows.Replace_Element (Index, Kept);
@@ -351,6 +364,11 @@ package body Pictlib.Internal.Coverage is
       if Count < 3 then
          return;
       end if;
+      --  The edges are charged before they are built and sorted.
+      Charge (Item, Count);
+      if Item.Spent then
+         return;
+      end if;
       for Index in 1 .. Count loop
          declare
             P : constant Point := Points (Index);
@@ -367,7 +385,6 @@ package body Pictlib.Internal.Coverage is
             end if;
          end;
       end loop;
-      Charge (Item, Count);
       Edge_Sorting.Sort (Edges);
       if Edges.Is_Empty then
          return;
@@ -433,6 +450,11 @@ package body Pictlib.Internal.Coverage is
    begin
       --  A spent shape takes no more work, not even this line's row buffers.
       if Item.Spent or else Pen_Width <= 0 or else Pen_Height <= 0 or else Kept_Top > Kept_Bottom then
+         return;
+      end if;
+      --  The row buffers are charged before they are made, a unit a row.
+      Charge (Item, Kept_Bottom - Kept_Top + 1);
+      if Item.Spent then
          return;
       end if;
       Low_X.Set_Length (Ada.Containers.Count_Type (Kept_Bottom - Kept_Top + 1));
@@ -535,36 +557,58 @@ package body Pictlib.Internal.Coverage is
                Narrowed.Append (Inset);
             end;
          end loop;
-         for Y in First .. Last loop
-            exit when Item.Spent;
-            declare
-               Eroded : Span_List;
-               Scratch : Span_List;
-            begin
-               if Y - Pen_Height >= Box.Top and then Y + Pen_Height <= Box.Bottom - 1 then
-                  Eroded := Narrowed (Y - Pen_Height - Low);
-                  for R in Y - Pen_Height + 1 .. Y + Pen_Height loop
-                     Regions.Intersect (Eroded, Narrowed (R - Low), Scratch);
-                     Eroded := Scratch;
-                     Charge (Item, Natural (Eroded.Length) + 1);
-                     --  A part-eroded row is never used.
+         --  A row's eroded part is the intersection of the 2 x Pen_Height + 1 narrowed rows around it. By doubling,
+         --  Narrowed's row r becomes the intersection of rows r .. r + Reach - 1, Reach the largest power of two
+         --  within that window, in log2 (Reach) passes, each row of each pass charged; any window is then the
+         --  intersection of two of its rows.
+         declare
+            Window : constant Positive := 2 * Pen_Height + 1;
+            Reach : Positive := 1;
+         begin
+            while Reach <= Window / 2 loop
+               declare
+                  Next : Row_Vectors.Vector;
+                  Scratch : Span_List;
+               begin
+                  for R in 0 .. Natural (Narrowed.Length) - Reach - 1 loop
+                     Regions.Intersect (Narrowed (R), Narrowed (R + Reach), Scratch);
+                     Charge (Item, Natural (Scratch.Length) + 1);
+                     --  A part-eroded shape is never used.
                      if Item.Spent then
                         return;
                      end if;
+                     Next.Append (Scratch);
                   end loop;
-               end if;
-               --  The frame is the row less its eroded part.
-               declare
-                  Kept : Span_List;
-               begin
-                  Regions.Subtract (Whole (Y - Low), Eroded, Kept);
-                  Charge (Item, Natural (Kept.Length) + 1);
-                  for S of Kept loop
-                     Add (Item, Y, S.Left, S.Right);
-                  end loop;
+                  Narrowed := Next;
                end;
-            end;
-         end loop;
+               Reach := 2 * Reach;
+            end loop;
+            for Y in First .. Last loop
+               exit when Item.Spent;
+               declare
+                  Eroded : Span_List;
+               begin
+                  if Y - Pen_Height >= Box.Top and then Y + Pen_Height <= Box.Bottom - 1 then
+                     Regions.Intersect
+                       (Narrowed (Y - Pen_Height - Low), Narrowed (Y + Pen_Height - Reach + 1 - Low), Eroded);
+                     Charge (Item, Natural (Eroded.Length) + 1);
+                     if Item.Spent then
+                        return;
+                     end if;
+                  end if;
+                  --  The frame is the row less its eroded part.
+                  declare
+                     Kept : Span_List;
+                  begin
+                     Regions.Subtract (Whole (Y - Low), Eroded, Kept);
+                     Charge (Item, Natural (Kept.Length) + 1);
+                     for S of Kept loop
+                        Add (Item, Y, S.Left, S.Right);
+                     end loop;
+                  end;
+               end;
+            end loop;
+         end;
       end;
    end Region_Frame;
 
