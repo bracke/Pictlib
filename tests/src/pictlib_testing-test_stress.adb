@@ -45,24 +45,9 @@ package body Pictlib_Testing.Test_Stress is
          & QuickTime ("jpeg", 8, 6, Files.Load ("external/small.jpg").all, Move_H => 36 * 16#1_0000#,
                       Move_V => 16#1_0000#)));
 
-   --  Render Input with a fresh decoder and source of its own, so tasks can render at once, returning the RGB
-   --  pixels. Canvases.Render binds the one shared source of Recorders.Start, so concurrent tasks cannot use it.
+   --  Render Input with the test fonts, task-safely.
    function Render (Input : Bytes; Width, Height : Positive) return Bytes is
-      Data : aliased constant Bytes := Input;
-      Source : aliased Pictlib.Streams.Memory_Source;
-      Decoder : Decoding.Decoder;
-      Storage : aliased Bytes := [1 .. 3 * Width * Height => 0];
-      Outcome : Pictlib.Results.Result;
-   begin
-      Pictlib.Streams.Open (Source, Data'Unchecked_Access);
-      Decoding.Initialize (Decoder, Source'Access, (Fonts => Fonts, others => <>));
-      Outcome := Decoding.Read_Header (Decoder);
-      if Pictlib.Results.Succeeded (Outcome) then
-         Outcome := Decoding.Render (Decoder, Canvases.View (Storage'Access, Width, Height));
-      end if;
-      Assert (Pictlib.Results.Succeeded (Outcome), "render failed with " & Outcome.First_Error.Code'Image);
-      return Storage;
-   end Render;
+     (Canvases.Rendered (Input, Width, Height, (Fonts => Fonts, others => <>)));
 
    procedure Reuse (T : in out AUnit.Test_Cases.Test_Case'Class);
    procedure Concurrency (T : in out AUnit.Test_Cases.Test_Case'Class);

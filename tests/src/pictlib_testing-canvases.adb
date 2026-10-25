@@ -45,6 +45,28 @@ package body Pictlib_Testing.Canvases is
       return View (Storage, Pictlib.Geometry.Width (Frame), Pictlib.Geometry.Height (Frame), Format);
    end Frame_View;
 
+   function Rendered
+     (Input : Pictlib.Streams.Byte_Array;
+      Width, Height : Positive;
+      Options : Pictlib.Decoding.Options := (others => <>)) return Pictlib.Streams.Byte_Array
+   is
+      Data : aliased constant Pictlib.Streams.Byte_Array := Input;
+      Source : aliased Pictlib.Streams.Memory_Source;
+      Decoder : Pictlib.Decoding.Decoder;
+      Storage : aliased Pictlib.Streams.Byte_Array := [1 .. 3 * Width * Height => 0];
+      Outcome : Pictlib.Results.Result;
+   begin
+      Pictlib.Streams.Open (Source, Data'Unchecked_Access);
+      Pictlib.Decoding.Initialize (Decoder, Source'Access, Options);
+      Outcome := Pictlib.Decoding.Read_Header (Decoder);
+      if Pictlib.Results.Succeeded (Outcome) then
+         Outcome := Pictlib.Decoding.Render (Decoder, View (Storage'Access, Width, Height));
+      end if;
+      AUnit.Assertions.Assert
+        (Pictlib.Results.Succeeded (Outcome), "render failed with " & Outcome.First_Error.Code'Image);
+      return Storage;
+   end Rendered;
+
    procedure Render
      (Input : aliased Pictlib.Streams.Byte_Array;
       Decoder : in out Pictlib.Decoding.Decoder;

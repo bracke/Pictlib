@@ -5,8 +5,17 @@ with Pictlib.Capabilities;
 with Pictlib.Errors;
 with Pictlib.Limits;
 with Pictlib.Results;
+with Pictlib.Decoding;
+with Pictlib.Images;
+with Pictlib.Streams;
 with Pictlib.Version;
 with Pictlib_API_Consumer;
+with Pictlib_Testing.Builders;
+with Pictlib_Testing.Canvases;
+with Pictlib_Testing.Files;
+with Pictlib_Testing.Fonts;
+with Pictlib_Testing.Recorders;
+with Pictlib_Testing.Samples;
 
 package body Pictlib_Testing.Test_Foundation is
    use AUnit.Assertions;
@@ -71,20 +80,104 @@ package body Pictlib_Testing.Test_Foundation is
               "consumer sees different default limits");
    end Root_And_Consumer_Compile;
 
+   --  Each capability is advertised exactly when a probe of its feature, through the public API, works: an
+   --  advertised feature that fails, or a working one left unadvertised, is a mismatch.
    procedure Capabilities_Match_Implementation (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
+      use Pictlib_Testing.Builders;
+      use type Pictlib.Images.RGB_Color;
+      use type Pictlib.PICT_Version;
+      use type Pictlib.Streams.Byte_Array;
+
+      --  Render Input, Width x Height, strictly with the test fonts; Output receives its letters.
+      function Renders (Input : aliased Bytes; Width, Height : Positive; Output : out Pictlib.Images.Mutable_Image_View)
+        return Boolean
+      is
+         Storage : constant Pictlib.Streams.Byte_Array_Access := new Bytes'[1 .. 3 * Width * Height => 0];
+         Decoder : Pictlib.Decoding.Decoder;
+         Outcome : Pictlib.Results.Result;
+      begin
+         Output := Canvases.View (Storage, Width, Height);
+         Canvases.Render (Input, Decoder, Output, Outcome, (Fonts => Fonts.Test_Table, others => <>));
+         return Pictlib.Results.Succeeded (Outcome);
+      end Renders;
+
+      Painted : aliased constant Bytes := Pic (4, 1, Op_Rect (16#31#, 0, 0, 1, 2));
+      Copied : aliased constant Bytes := Pic (8, 2, Bitmap_2x8);
+      --  LongText "Hi" at (15, 2), padded to an even length.
+      Written : aliased constant Bytes :=
+        Pic (24, 20, W (16#28#) & W (15) & W (2) & B (2) & Text ("Hi") & B (0));
+      Compressed : aliased constant Bytes :=
+        Pic (8, 6, QuickTime ("jpeg", 8, 6, Files.Load ("external/small.jpg").all));
+      Commented : aliased constant Bytes := Pic (4, 1, W (16#A0#) & W (200));
+      Output : Pictlib.Images.Mutable_Image_View;
+
+      function Container_Works return Boolean is
+         Decoder : Pictlib.Decoding.Decoder;
+      begin
+         Recorders.Start (Painted, Decoder);
+         return Pictlib.Results.Succeeded (Pictlib.Decoding.Read_Header (Decoder))
+           and then Pictlib.Decoding.Header (Decoder).Version = Pictlib.Extended_Version_2;
+      end Container_Works;
+
+      function Enumeration_Works return Boolean is
+         Decoder : Pictlib.Decoding.Decoder;
+         Events : Recorders.Recorder;
+         Outcome : Pictlib.Results.Result;
+      begin
+         Recorders.Decode (Painted, Decoder, Events, Outcome);
+         return Pictlib.Results.Succeeded (Outcome)
+           and then (for some Item of Events.Events => Item.Op = 16#31#);
+      end Enumeration_Works;
+
+      function Metadata_Works return Boolean is
+         Decoder : Pictlib.Decoding.Decoder;
+         Events : Recorders.Recorder;
+         Outcome : Pictlib.Results.Result;
+      begin
+         Recorders.Decode (Commented, Decoder, Events, Outcome);
+         return Pictlib.Results.Succeeded (Outcome) and then Pictlib.Decoding.Metadata_Count (Decoder) = 1;
+      end Metadata_Works;
+
+      function Text_Works return Boolean is
+      begin
+         return Renders (Written, 24, 20, Output)
+           and then (for some Y in 0 .. 19 =>
+                       (for some X in 0 .. 23 => Canvases.Pixel (Output, X, Y) /= Pictlib.Images.White));
+      end Text_Works;
+
+      function JPEG_Works return Boolean is
+      begin
+         --  The fixture is not one color, so a drawn image leaves no white canvas behind.
+         return Renders (Compressed, 8, 6, Output)
+           and then (for some X in 0 .. 7 => Canvases.Pixel (Output, X, 0) /= Canvases.Pixel (Output, 0, 5));
+      end JPEG_Works;
+
+      function Encoding_Works return Boolean is
+         Picture : constant Samples.Encoded := Samples.Encode (Samples.Three_Colors, 4, 4);
+      begin
+         return Pictlib.Results.Succeeded (Picture.Outcome)
+           and then Renders (Picture.Data.all, 4, 4, Output)
+           and then (for all Y in 0 .. 3 =>
+                       (for all X in 0 .. 3 =>
+                          Canvases.Pixel (Output, X, Y) = Samples.Color (Samples.Three_Colors, X, Y)));
+      end Encoding_Works;
    begin
       Assert (Pictlib.Capabilities.Foundation_API, "foundation capability must be advertised");
       Assert (Pictlib.Capabilities.Memory_Streams and then Pictlib_API_Consumer.Streams_Available,
               "memory streams must be advertised, to a consumer too");
-      Assert (Pictlib.Capabilities.Container_Decoding, "container decoding is implemented");
-      Assert (Pictlib.Capabilities.Opcode_Enumeration, "opcode enumeration is implemented");
-      Assert (Pictlib.Capabilities.Raster_Decoding, "raster decoding is implemented");
-      Assert (Pictlib.Capabilities.Vector_Rendering, "vector rendering is implemented");
-      Assert (Pictlib.Capabilities.Text_Rendering, "text rendering is implemented");
-      Assert (Pictlib.Capabilities.QuickTime_JPEG_Decoding, "QuickTime JPEG is implemented");
-      Assert (Pictlib.Capabilities.Metadata_Retention, "metadata retention is implemented");
-      Assert (Pictlib.Capabilities.Raster_Encoding, "raster encoding is implemented");
+      Assert (Pictlib.Capabilities.Container_Decoding = Container_Works, "container decoding is misadvertised");
+      Assert (Pictlib.Capabilities.Opcode_Enumeration = Enumeration_Works, "opcode enumeration is misadvertised");
+      Assert (Pictlib.Capabilities.Raster_Decoding
+              = (Renders (Copied, 8, 2, Output) and then Canvases.Picture_Of (Output) = "BWBWWBWB/WWWWBBBB"),
+              "raster decoding is misadvertised");
+      Assert (Pictlib.Capabilities.Vector_Rendering
+              = (Renders (Painted, 4, 1, Output) and then Canvases.Picture_Of (Output) = "BBWW"),
+              "vector rendering is misadvertised");
+      Assert (Pictlib.Capabilities.Text_Rendering = Text_Works, "text rendering is misadvertised");
+      Assert (Pictlib.Capabilities.QuickTime_JPEG_Decoding = JPEG_Works, "QuickTime JPEG is misadvertised");
+      Assert (Pictlib.Capabilities.Metadata_Retention = Metadata_Works, "metadata retention is misadvertised");
+      Assert (Pictlib.Capabilities.Raster_Encoding = Encoding_Works, "raster encoding is misadvertised");
    end Capabilities_Match_Implementation;
 
    procedure Results_Preserve_First_Error (T : in out AUnit.Test_Cases.Test_Case'Class) is

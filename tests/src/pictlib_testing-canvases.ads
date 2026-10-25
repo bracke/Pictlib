@@ -39,6 +39,14 @@ package Pictlib_Testing.Canvases is
       Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
       Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last);
 
+   --  Rendered: Input rendered with a fresh decoder and a source of its own, so tasks can render at once, which
+   --  Render, binding the one shared source of Recorders.Start, does not allow; rendering must succeed.
+   --  @return The Width x Height RGB_24 pixels.
+   function Rendered
+     (Input : Pictlib.Streams.Byte_Array;
+      Width, Height : Positive;
+      Options : Pictlib.Decoding.Options := (others => <>)) return Pictlib.Streams.Byte_Array;
+
    --  Expect raster: Input renders successfully to Expected in a Width x Height RGB_24 view.
    procedure Expect_Raster
      (Input : aliased Pictlib.Streams.Byte_Array;

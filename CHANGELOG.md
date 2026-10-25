@@ -390,3 +390,11 @@ All tooling is Ada, in the `tests` crate:
   `Files.Save_Path`; the recorder keeps every event; `Any_Opcode`, not 0,
   means a failure's opcode is not checked; `pictlib_benchmark` no longer
   leaks a buffer each round.
+- `foundation.capabilities` probes each advertised feature through the
+  public API (a header, an enumeration, a copied bitmap, a painted rect,
+  text, an embedded JPEG, a retained comment, an encode read back) and
+  requires each capability to be advertised exactly when its probe works;
+  it used to check only that the constants were `True`.
+- The small progressive JPEG test checks the frame shows jpeglib's own
+  decoding of the image's corner, not only that rendering succeeded.
+- The task-safe render the stress tests use is `Canvases.Rendered`.
