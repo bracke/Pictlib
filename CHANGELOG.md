@@ -546,3 +546,7 @@ All tooling is Ada, in the `tests` crate:
 - `Samples.Encode` and the benchmark free their buffers, the benchmark
   reports a rate it cannot time instead of raising, and conformance reads
   SVGs on the heap; `direct_large` is past 64 KiB, and checked to be.
+- `pictlib_prove` prints what gnatprove said whenever a unit is not proved
+  cleanly, so a failure can be read in CI's log; CI passes its fuzz seed in
+  `PICTLIB_FUZZ_SEED`, which `pictlib_complete` reads when `--fuzz-seed` is
+  not given, rather than in an argument holding a space.

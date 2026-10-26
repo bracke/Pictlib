@@ -63,6 +63,13 @@ procedure Pictlib_Prove is
 
    procedure Check (Unit : String; Text : String; Status : Integer) is
    begin
+      --  What gnatprove said, whenever it is not a clean proof, so a failure can be read where it happened.
+      if Status /= 0 or else Project_Tools.Text.Contains (Text, "might fail")
+        or else Project_Tools.Text.Contains (Text, "medium:") or else Project_Tools.Text.Contains (Text, "high:")
+        or else Project_Tools.Text.Contains (Text, "skipped; body is SPARK_Mode => Off")
+      then
+         Ada.Text_IO.Put_Line (Text);
+      end if;
       if Status /= 0 then
          Fail (Unit & ": gnatprove exited with status" & Status'Image & ", unproved checks or an error");
       elsif Project_Tools.Text.Contains (Text, "might fail") then

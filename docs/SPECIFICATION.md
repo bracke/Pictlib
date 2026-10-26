@@ -627,8 +627,8 @@ Root `alire.toml`: `name = "pictlib"`, `0.1.0-dev`, MIT, `gnat_native = "^15"`, 
 (the real-world corpus against its recorded outcomes), `pictlib_fuzz` (mutation fuzzing),
 `pictlib_prove` (the SPARK proof profile), `pictlib_conformance` (encoder output read by ImageMagick
 and by LibreOffice's own PICT import, exact), `pictlib_benchmark` (throughput, informational) and
-`pictlib_complete` (every gate in turn; `--fuzz-seed N` fuzzes from seed N, as CI does with its
-run number), and `pictlib_generate` (the external fixtures, from ImageMagick and Netpbm; `--check`
+`pictlib_complete` (every gate in turn; `--fuzz-seed N`, or `PICTLIB_FUZZ_SEED`, fuzzes from seed
+N, as CI does with its run number), and `pictlib_generate` (the external fixtures, from ImageMagick and Netpbm; `--check`
 compares a regeneration with the committed files byte for byte). All tooling is Ada; there are no
 shell, Python or other scripts. The tools that run an external program print its version.
 ImageMagick (7's `magick`, or 6's `convert`, which CI's Ubuntu provides) reads only pictures with

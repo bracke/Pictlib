@@ -4,6 +4,7 @@
 --  without those readers; --fuzz-seed N fuzzes from seed N instead of the default, so each CI run explores new
 --  inputs. Runs from anywhere below the pictlib tree after `alr --chdir tests build`.
 with Ada.Command_Line;
+with Ada.Environment_Variables;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Pictlib_Testing.Tools;
@@ -21,7 +22,8 @@ procedure Pictlib_Complete is
    function Step_Of (Program : String; Arguments : Processes.Argument_Items := [1 .. 0 => Null_Unbounded_String])
      return Step is ((To_Unbounded_String (Program), Processes.Arguments (Arguments)));
 
-   --  The seed after --fuzz-seed, or "" for the fuzzer's default.
+   --  The seed after --fuzz-seed, else PICTLIB_FUZZ_SEED's, which CI sets (an argument with a space is passed
+   --  differently by each platform's shell), else "" for the fuzzer's default.
    function Fuzz_Seed return String is
    begin
       for Index in 1 .. Ada.Command_Line.Argument_Count - 1 loop
@@ -29,7 +31,8 @@ procedure Pictlib_Complete is
             return Ada.Command_Line.Argument (Index + 1);
          end if;
       end loop;
-      return "";
+      return (if Ada.Environment_Variables.Exists ("PICTLIB_FUZZ_SEED")
+              then Ada.Environment_Variables.Value ("PICTLIB_FUZZ_SEED") else "");
    end Fuzz_Seed;
 
    Seed : constant String := Fuzz_Seed;

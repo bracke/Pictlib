@@ -56,7 +56,9 @@ jobs:
 
       - name: Library-complete gate without the external readers
         working-directory: pictlib/tests
-        run: alr --non-interactive run --skip-build pictlib_complete "--args=--without-conformance --fuzz-seed ${{ github.run_number }}"
+        env:
+          PICTLIB_FUZZ_SEED: ${{ github.run_number }}
+        run: alr --non-interactive run --skip-build pictlib_complete --args=--without-conformance
 
       - name: Keep the fuzzer's defect, slow and stuck inputs
         if: failure()
