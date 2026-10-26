@@ -252,9 +252,16 @@ package body Pictlib.Internal.JPEG_Bridge is
          Free (Pixels);
          return Rejected (S, Event, Item, Share, Decoded, Input.Failure);
       end if;
-      --  What jpeglib left of the image data.
+      --  What jpeglib left of the image data; the pixels are no one's if it cannot be skipped.
       if Input.Remaining > 0 then
-         return Sessions.Skip_Data (S, Input.Remaining);
+         declare
+            Skipped : constant Results.Result := Sessions.Skip_Data (S, Input.Remaining);
+         begin
+            if not Results.Succeeded (Skipped) then
+               Free (Pixels);
+            end if;
+            return Skipped;
+         end;
       end if;
       return Results.Success;
    exception

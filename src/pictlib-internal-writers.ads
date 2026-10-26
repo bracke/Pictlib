@@ -13,6 +13,11 @@ package Pictlib.Internal.Writers is
    --  @param Output Destination, or null for a dry run that only counts.
    --  @param Max_Bytes Most bytes the writer may produce.
    procedure Start (Object : out Writer; Output : access Streams.Destination'Class; Max_Bytes : Byte_Count);
+   --  Watch: once Counter moves from its value now, every later Put fails with Invalid_State and writes nothing,
+   --  so a destination that rebinds or cancels what it writes for does not receive the rest of the picture.
+   --  @param Object Writer.
+   --  @param Counter The generation of what the writer writes for.
+   procedure Watch (Object : in out Writer; Counter : not null access constant Generation);
    --  Count.
    --  @param Object Writer.
    --  @return Bytes produced so far: after a destination failure, what the destination took.
@@ -59,6 +64,7 @@ package Pictlib.Internal.Writers is
 
 private
    type Destination_Access is access all Streams.Destination'Class;
+   type Generation_Access is access constant Generation;
 
    type Writer is limited record
       Output : Destination_Access := null;
@@ -68,5 +74,7 @@ private
       --  The destination's offset at Start, to count a transfer a failure cut short.
       Base : Destination_Offset := 0;
       Failure : Results.Result := Results.Success;
+      Watched : Generation_Access := null;
+      Watched_At : Generation := 0;
    end record;
 end Pictlib.Internal.Writers;

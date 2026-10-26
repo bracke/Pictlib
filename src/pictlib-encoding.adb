@@ -12,6 +12,7 @@ with Pictlib.Opcodes;
 package body Pictlib.Encoding is
    use type Images.RGB_Color;
    use type Geometry.Fixed;
+   use type Internal.Generation;
 
    package Writers renames Internal.Writers;
 
@@ -421,6 +422,7 @@ package body Pictlib.Encoding is
       Started : not null access Boolean) return Results.Result
    is
       Budget : Limits.Limit_Set renames Object.Encode_Limits;
+      Binds_At_Start : constant Internal.Generation := Object.Binds;
       Measure : Writers.Writer;
       Output : Writers.Writer;
       Outcome : Results.Result;
@@ -450,8 +452,12 @@ package body Pictlib.Encoding is
       end if;
       Started.all := True;
       Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes);
+      Writers.Watch (Output, Object.Binds'Access);
       Outcome := Emit (Output, Writers.Picture_Count (Measure));
-      Object.Written := Writers.Count (Output);
+      --  A destination that rebound the encoder set its count; one that cancelled it took what it took.
+      if Object.Binds = Binds_At_Start or else Object.Current_State = Cancelled then
+         Object.Written := Writers.Count (Output);
+      end if;
       return Outcome;
    end Write;
 
@@ -465,8 +471,8 @@ package body Pictlib.Encoding is
       Error : not null access Errors.Error;
       Started : not null access constant Boolean;
       Busy : not null access Boolean;
-      Binds : not null access constant Bind_Count) is new Ada.Finalization.Limited_Controlled with record
-      Binds_At_Start : Bind_Count := 0;
+      Binds : not null access constant Internal.Generation) is new Ada.Finalization.Limited_Controlled with record
+      Binds_At_Start : Internal.Generation := 0;
    end record;
 
    overriding procedure Initialize (Guard : in out Write_Guard);
@@ -499,7 +505,7 @@ package body Pictlib.Encoding is
       Guard : Write_Guard
         (Ready, Object.Current_State'Access, Object.First_Error'Access, Started'Access, Object.Busy'Access,
          Object.Binds'Access);
-      Binds : constant Bind_Count := Object.Binds;
+      Binds : constant Internal.Generation := Object.Binds;
       pragma Unreferenced (Guard);
    begin
       if Object.Current_State /= Ready then
@@ -556,7 +562,7 @@ package body Pictlib.Encoding is
            (Encoded, Object.Current_State'Access, Object.First_Error'Access, Flushing'Access, Object.Busy'Access,
             Object.Binds'Access);
          pragma Unreferenced (Guard);
-         Binds : constant Bind_Count := Object.Binds;
+         Binds : constant Internal.Generation := Object.Binds;
          Flushed : constant Errors.Error := Object.Output.Flush;
       begin
          if Object.Current_State /= Encoded or else Object.Binds /= Binds then
@@ -580,6 +586,7 @@ package body Pictlib.Encoding is
    begin
       if Object.Current_State in Ready | Encoded then
          Object.Current_State := Cancelled;
+         Object.Binds := Object.Binds + 1;
       end if;
    end Cancel;
 

@@ -5,12 +5,14 @@ with Pictlib.Internal.Replies;
 
 package body Pictlib.Internal.Picture_Stream is
    procedure Bind (Object : in out Reader; Input : not null access Streams.Source'Class; Max_Bytes : Byte_Count) is
+      --  Caller code, which may raise: asked before anything changes.
+      Base : constant Source_Offset := Input.Offset;
    begin
       Object.Input := Input.all'Unchecked_Access;
       Object.First := 1;
       Object.Last := 0;
       Object.Input_Ended := False;
-      Object.Base := Input.Offset;
+      Object.Base := Base;
       Object.Consumed := 0;
       Object.Picture_Origin := 0;
       Object.Max_Bytes := Max_Bytes;

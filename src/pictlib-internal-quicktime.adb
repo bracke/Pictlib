@@ -304,6 +304,7 @@ package body Pictlib.Internal.QuickTime is
         and then Errors."=" (Outcome.First_Error.Code, Errors.Unsupported_Feature)
         and then Sessions.Is_Lenient (S)
       then
+         JPEG_Bridge.Free (Pixels);
          return Finish
            (Rendering.Unsupported (S, Event, Outcome.First_Error.Context.Expected, Outcome.First_Error.Context.Actual));
       end if;

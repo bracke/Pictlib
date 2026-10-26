@@ -1,14 +1,19 @@
---  Mutation fuzzing: seeds are the external and real-world fixtures and fresh encoder output; each iteration
---  mutates one seed and has pictlib enumerate it strictly and render it compatibly and recoverably under tight
---  limits. An exception escaping pictlib is a defect and fails the run. What an input may cost is bounded by the
---  limits, not the clock, so time only reports: an input taking longer than Slow_Seconds is slow, one taking
---  longer than Stuck_Seconds stuck, and both are saved under artifacts/fuzz for replay; a stuck input fails the
---  run only with --fail-stuck, for a machine whose speed is known. A failure must carry a fatal code and leave
+--  Mutation fuzzing: seeds are the external and real-world fixtures, hand-assembled version 1 and version 2
+--  pictures of shapes and text, and fresh encoder output; each iteration mutates one seed and has pictlib
+--  enumerate it strictly and recoverably and render it in every strictness under tight limits. How each input is
+--  read is drawn from its own bytes, so a replay repeats it: the header policy, metadata retention, whether input
+--  must end at the end opcode, the view's format, short reads, a smaller total allocation budget, and a visitor
+--  that stops, raises or rebinds its decoder at some opcode. An exception escaping pictlib is a defect and fails
+--  the run. What an input may cost is bounded by the limits, not the clock, so time only reports: an input taking
+--  longer than Slow_Seconds is slow, one taking longer than Stuck_Seconds stuck, and both are saved under
+--  artifacts/fuzz for replay; a stuck input fails the run only with --fail-stuck, for a machine whose speed is
+--  known. A failure must carry a fatal code and leave
 --  the decoder Failed with it as its last error; a success must leave it in the state the call promises.
 --  Arguments: [iterations] [seed], with --fail-stuck anywhere; seeds are taken in file-name order, so a pair is
 --  deterministic everywhere. With --replay FILE..., each saved input is run through the same checks instead,
 --  and its time printed.
 --  Runs from anywhere below the pictlib tree.
+with Pictlib_Testing.Builders;
 with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Files;
 with Pictlib_Testing.Fonts;
@@ -29,7 +34,10 @@ with Pictlib.Decoding;
 with Pictlib.Encoding;
 with Pictlib.Errors;
 with Pictlib.Fonts;
+with Pictlib.Images;
 with Pictlib.Limits;
+with Pictlib.Opcodes;
+with Pictlib.Pictures;
 with Pictlib.Results;
 with Pictlib.Streams;
 with Pictlib_Testing.Samples;
@@ -145,6 +153,67 @@ procedure Pictlib_Fuzz is
       end if;
    end Add_Encoded;
 
+   procedure Save (Name : String; Input : Bytes) is
+   begin
+      Ada.Directories.Create_Path (Artifacts);
+      Pictlib_Testing.Files.Save_Path (Artifacts & "/" & Name, Input);
+   end Save;
+
+   --  Pictures of the shapes, pen, pattern and text opcodes, assembled by hand from Inside Macintosh's layouts:
+   --  one in version 1, one in version 2. Each must render compatibly, or it seeds nothing it claims to;
+   --  LineJustify, which pictlib does not draw, is skipped with a warning.
+   procedure Add_Hand_Seeds is
+      use Pictlib_Testing.Builders;
+      Triangle : constant Bytes := W (22) & Rect (0, 0, 20, 20) & W (0) & W (0) & W (20) & W (10) & W (0) & W (20);
+      Version_1 : constant Bytes :=
+        V1_Prefix (0, 0, 30, 40)
+        & B (16#07#) & W (2) & W (2) & B (16#09#) & Checker & B (16#30#) & Rect (2, 2, 20, 30)
+        & B (16#0B#) & W (4) & W (4) & B (16#40#) & Rect (3, 3, 25, 35) & B (16#51#) & Rect (5, 5, 15, 25)
+        & B (16#60#) & Rect (0, 0, 30, 40) & W (0) & W (90) & B (16#71#) & Triangle
+        & B (16#22#) & W (1) & W (1) & B (5) & B (5) & B (16#03#) & W (3) & B (16#0D#) & W (12)
+        & B (16#28#) & W (20) & W (5) & B (2) & Text ("Hi") & B (16#FF#);
+      Version_2 : constant Bytes :=
+        Pic (40, 30,
+             Pen_Size (2, 3) & W (16#0B#) & W (6) & W (6) & W (16#09#) & Checker & RGB (16#1A#, 16#FFFF#, 0, 0)
+             & Op_Rect (16#30#, 2, 2, 20, 30) & Op_Rect (16#41#, 4, 4, 18, 28) & Op_Rect (16#51#, 5, 5, 15, 25)
+             & Op_Rect (16#60#, 0, 0, 30, 40) & W (0) & W (135) & W (16#70#) & Triangle
+             & W (16#81#) & L_Region & W (16#20#) & W (1) & W (1) & W (25) & W (35)
+             & W (16#22#) & W (3) & W (3) & B (5) & B (7)
+             & W (16#2C#) & W (8) & W (3) & B (5) & Text ("Hello") & W (16#03#) & W (3) & W (16#0D#) & W (12)
+             & W (16#2D#) & W (8) & L (16#0001_0000#) & L (0)
+             & W (16#28#) & W (20) & W (5) & B (2) & Text ("Hi") & B (0));
+      Table : constant Pictlib.Fonts.Font_Table := Pictlib_Testing.Fonts.Test_Table;
+   begin
+      for Picture of Byte_Vectors.Vector'[Version_1, Version_2] loop
+         declare
+            Input : aliased constant Bytes := Picture;
+            Source : aliased Pictlib.Streams.Memory_Source;
+            Decoder : Pictlib.Decoding.Decoder;
+            Outcome : Pictlib.Results.Result;
+         begin
+            Pictlib.Streams.Open (Source, Input'Unchecked_Access);
+            Pictlib.Decoding.Initialize
+              (Decoder, Source'Access, (Strictness => Pictlib.Compatible, Fonts => Table, others => <>), Budget);
+            Outcome := Pictlib.Decoding.Read_Header (Decoder);
+            if Pictlib.Results.Succeeded (Outcome) then
+               Outcome := Pictlib.Decoding.Render
+                 (Decoder, Pictlib_Testing.Canvases.Frame_View (Decoder, Canvas, Pictlib.RGBA_32));
+            end if;
+            if Pictlib.Results.Succeeded (Outcome) then
+               Seeds.Append (Picture);
+            else
+               Fail ("a hand-assembled seed does not render: "
+                     & Pictlib.Errors.Identifiers.To_String (Outcome.First_Error.Identifier) & " at opcode"
+                     & Outcome.First_Error.Context.Op'Image & " " & Outcome.First_Error.Context.Limit'Image
+                     & ", expected"
+                     & Outcome.First_Error.Context.Expected'Image & ", actual"
+                     & Outcome.First_Error.Context.Actual'Image & "; saved as hand-seed.pict");
+               Save ("hand-seed.pict", Picture);
+            end if;
+         end;
+      end loop;
+   end Add_Hand_Seeds;
+
    function Mutate (Seed : Bytes) return Bytes is
       Data : Byte_Vectors.Vector;
    begin
@@ -245,20 +314,29 @@ procedure Pictlib_Fuzz is
                         Data.Append
                           (Bytes'(Current (Current'First .. Last) & Repeated & Current (Last + 1 .. Current'Last)));
                      end;
-                  when others =>  --  plant an opcode
-                     if At_Byte < Current'Last then
-                        declare
-                           Changed : Bytes := Current;
-                           Ops : constant array (1 .. 15) of Natural :=
-                             [16#0001#, 16#000C#, 16#0012#, 16#0023#, 16#0028#, 16#0029#, 16#0070#, 16#0081#,
-                              16#0090#, 16#0098#, 16#009A#, 16#00A1#, 16#00FF#, 16#0C00#, 16#8200#];
-                           Value : constant Natural := Ops (1 + Random (15));
-                        begin
-                           Changed (At_Byte) := Pictlib.Byte (Value / 256);
-                           Changed (At_Byte + 1) := Pictlib.Byte (Value mod 256);
-                           Data.Append (Changed);
-                        end;
-                     end if;
+                  when others =>  --  plant an opcode, half the time where a version 2 opcode may begin
+                     declare
+                        Ops : constant array (1 .. 28) of Natural :=
+                          [16#0001#, 16#0007#, 16#000B#, 16#000C#, 16#0012#, 16#0020#, 16#0022#, 16#0023#,
+                           16#0028#, 16#0029#, 16#002C#, 16#002D#, 16#0030#, 16#0041#, 16#0051#, 16#0060#,
+                           16#0070#, 16#0081#, 16#0090#, 16#0098#, 16#009A#, 16#00A1#, 16#00FF#, 16#0C00#,
+                           16#8200#, 16#0031#, 16#0044#, 16#0084#];
+                        Value : constant Natural := Ops (1 + Random (Ops'Length));
+                        --  The picture begins at 0 or 512, so an even offset is a word boundary in both.
+                        Aligned : constant Boolean := Random (2) = 0;
+                        Place : constant Positive :=
+                          (if Aligned and then (At_Byte - Current'First) mod 2 = 1 then At_Byte - 1 else At_Byte);
+                     begin
+                        if Place >= Current'First and then Place < Current'Last then
+                           declare
+                              Changed : Bytes := Current;
+                           begin
+                              Changed (Place) := Pictlib.Byte (Value / 256);
+                              Changed (Place + 1) := Pictlib.Byte (Value mod 256);
+                              Data.Append (Changed);
+                           end;
+                        end if;
+                     end;
                end case;
             end;
          end;
@@ -266,57 +344,170 @@ procedure Pictlib_Fuzz is
       return Data.Last_Element;
    end Mutate;
 
+   --  What a visitor does at its At-th opcode: nothing, return Stop, raise, or rebind its decoder to Again.
+   type Visitor_Move is (Continues, Stops, Raises, Rebinds);
+
+   Visitor_Raised : exception;
+
+   type Fuzz_Visitor is new Pictlib.Decoding.Opcode_Visitor with record
+      Move : Visitor_Move := Continues;
+      At_Visit : Positive := 1;
+      Visits : Natural := 0;
+      Target : access Pictlib.Decoding.Decoder;
+      Again : access Pictlib.Streams.Source'Class;
+      --  Whether it made its move, and at which opcode.
+      Moved : Boolean := False;
+      Moved_At : Pictlib.Opcode := 0;
+   end record;
+
+   overriding function Visit (Object : in out Fuzz_Visitor; Event : Pictlib.Pictures.Opcode_Event)
+     return Pictlib.Decoding.Visit_Action;
+   overriding function Visit (Object : in out Fuzz_Visitor; Event : Pictlib.Pictures.Opcode_Event)
+     return Pictlib.Decoding.Visit_Action is
+   begin
+      Object.Visits := Object.Visits + 1;
+      if Object.Move = Continues or else Object.Visits /= Object.At_Visit then
+         return Pictlib.Decoding.Continue;
+      end if;
+      Object.Moved := True;
+      Object.Moved_At := Event.Op;
+      case Object.Move is
+         when Continues | Stops => return Pictlib.Decoding.Stop;
+         when Raises => raise Visitor_Raised;
+         when Rebinds =>
+            Pictlib.Decoding.Reset (Object.Target.all, Object.Again);
+            return Pictlib.Decoding.Continue;
+      end case;
+   end Visit;
+
+   --  FNV-1a over Input: what the variant of an input is drawn from, never 0.
+   function Hash (Input : Bytes) return Interfaces.Unsigned_64 is
+      use type Interfaces.Unsigned_64;
+      Value : Interfaces.Unsigned_64 := 16#CBF2_9CE4_8422_2325#;
+   begin
+      for Item of Input loop
+         Value := (Value xor Interfaces.Unsigned_64 (Item)) * 16#0000_0100_0000_01B3#;
+      end loop;
+      return (if Value = 0 then 1 else Value);
+   end Hash;
+
    procedure Exercise (Input : aliased Bytes) is
-      Source : aliased Pictlib.Streams.Memory_Source;
-      Decoder : Pictlib.Decoding.Decoder;
+      use type Pictlib.Decoding.Decoder_State;
+      use type Pictlib.Errors.Error_Code;
+      Variant : Pictlib_Testing.Random.Generator := Pictlib_Testing.Random.Seeded (Hash (Input));
+      function Pick (Bound : Positive) return Natural is (Pictlib_Testing.Random.Next (Variant, Bound));
+
+      --  How this input is read: mostly as most callers would, otherwise in one of the ways it may be.
+      Transfer : constant Pictlib.Byte_Count :=
+        (if Pick (4) = 0 then Pictlib.Byte_Count (1 + Pick (7)) else Pictlib.Byte_Count'Last);
+      Format : constant Pictlib.Pixel_Format := Pictlib.Pixel_Format'Val (Pick (5));
+      Policy : constant Pictlib.Header_Policy :=
+        (if Pick (4) = 0 then Pictlib.Header_Policy'Val (1 + Pick (2)) else Pictlib.Auto);
+      Keep_All : constant Boolean := Pick (2) = 0;
+      Require_End : constant Boolean := Pick (3) = 0;
+      Background : constant Pictlib.Images.RGB_Color :=
+        (Pictlib.Byte (Pick (256)), Pictlib.Byte (Pick (256)), Pictlib.Byte (Pick (256)));
+      Limits : constant Pictlib.Limits.Limit_Set :=
+        (if Pick (4) = 0
+         then (Budget with delta Max_Total_Allocation_Bytes => Pictlib.Byte_Count (1 + Pick (2 ** 20)))
+         else Budget);
+      Move : constant Visitor_Move := Visitor_Move'Val (Pick (4));
+      At_Visit : constant Positive := 1 + Pick (40);
+      Table : constant Pictlib.Fonts.Font_Table := Pictlib_Testing.Fonts.Test_Table;
+
+      function Settings (Strictness : Pictlib.Strictness_Mode) return Pictlib.Decoding.Options is
+        (Strictness => Strictness, File_Header => Policy,
+         Retention => (if Keep_All then (others => True) else (others => <>)),
+         Require_End_Of_Input => Require_End, Background => Background, Fonts => Table);
+
       Visitor : Null_Visitor;
       Outcome : Pictlib.Results.Result;
-      Table : constant Pictlib.Fonts.Font_Table := Pictlib_Testing.Fonts.Test_Table;
+
+      --  Enumerate with a visitor that makes Move at its At_Visit-th opcode, and check what that left.
+      procedure Enumerate (Strictness : Pictlib.Strictness_Mode) is
+         Source, Again : aliased Pictlib.Streams.Memory_Source;
+         Decoder : aliased Pictlib.Decoding.Decoder;
+         Mover : Fuzz_Visitor :=
+           (Move => Move, At_Visit => At_Visit, Target => Decoder'Unchecked_Access,
+            Again => Again'Unchecked_Access, others => <>);
+         Raised : Boolean := False;
+      begin
+         Pictlib.Streams.Open (Source, Input'Unchecked_Access, Transfer);
+         Pictlib.Streams.Open (Again, Input'Unchecked_Access, Transfer);
+         Pictlib.Decoding.Initialize (Decoder, Source'Access, Settings (Strictness), Limits);
+         Outcome := Pictlib.Decoding.Read_Header (Decoder);
+         Check (Decoder, Outcome, Pictlib.Decoding.Header_Read, "Read_Header");
+         if not Pictlib.Results.Succeeded (Outcome) then
+            return;
+         end if;
+         begin
+            Outcome := Pictlib.Decoding.Enumerate (Decoder, Mover);
+         exception
+            when Visitor_Raised => Raised := True;
+         end;
+         if Raised then
+            if Pictlib.Decoding.State (Decoder) /= Pictlib.Decoding.Stopped then
+               raise Contract_Broken with
+                 "a visitor's exception left " & Pictlib.Decoding.State (Decoder)'Image & ", not STOPPED";
+            end if;
+         elsif Mover.Moved and then Move = Rebinds then
+            --  The rebinding stands: the call ends refused, and the decoder reads its new source from the start.
+            if Outcome.First_Error.Code /= Pictlib.Errors.Invalid_State
+              or else Pictlib.Decoding.State (Decoder) /= Pictlib.Decoding.Ready
+            then
+               raise Contract_Broken with
+                 "a visitor's Reset ended Enumerate with " & Outcome.First_Error.Code'Image & " and left "
+                 & Pictlib.Decoding.State (Decoder)'Image;
+            end if;
+            Outcome := Pictlib.Decoding.Read_Header (Decoder);
+            Check (Decoder, Outcome, Pictlib.Decoding.Header_Read, "Read_Header after a visitor's Reset");
+            if Pictlib.Results.Succeeded (Outcome) then
+               Outcome := Pictlib.Decoding.Enumerate (Decoder, Visitor);
+               Check (Decoder, Outcome, Pictlib.Decoding.Finished, "Enumerate after a visitor's Reset");
+            end if;
+         elsif Mover.Moved and then Move = Stops and then Pictlib.Results.Succeeded (Outcome) then
+            --  Stop at the end opcode is a finished picture.
+            Check (Decoder, Outcome,
+                   (if Pictlib."=" (Mover.Moved_At, Pictlib.Opcodes.End_Picture) then Pictlib.Decoding.Finished
+                    else Pictlib.Decoding.Stopped),
+                   "Enumerate stopped");
+         else
+            Check (Decoder, Outcome, Pictlib.Decoding.Finished, "Enumerate");
+         end if;
+      end Enumerate;
+
+      Source : aliased Pictlib.Streams.Memory_Source;
+      Decoder : Pictlib.Decoding.Decoder;
    begin
-      Pictlib.Streams.Open (Source, Input'Unchecked_Access);
-      Pictlib.Decoding.Initialize (Decoder, Source'Access, Decode_Limits => Budget);
-      Outcome := Pictlib.Decoding.Read_Header (Decoder);
-      Check (Decoder, Outcome, Pictlib.Decoding.Header_Read, "Read_Header");
-      if Pictlib.Results.Succeeded (Outcome) then
-         Outcome := Pictlib.Decoding.Enumerate (Decoder, Visitor);
-         Check (Decoder, Outcome, Pictlib.Decoding.Finished, "Enumerate");
-      end if;
-      for Strictness in Pictlib.Compatible .. Pictlib.Recover_When_Safe loop
-         Pictlib.Streams.Open (Source, Input'Unchecked_Access);
-         Pictlib.Decoding.Initialize
-           (Decoder, Source'Access, (Strictness => Strictness, Fonts => Table, others => <>), Budget);
+      Enumerate (Pictlib.Strict);
+      Enumerate (Pictlib.Recover_When_Safe);
+      for Strictness in Pictlib.Strictness_Mode loop
+         Pictlib.Streams.Open (Source, Input'Unchecked_Access, Transfer);
+         Pictlib.Decoding.Initialize (Decoder, Source'Access, Settings (Strictness), Limits);
          Outcome := Pictlib.Decoding.Read_Header (Decoder);
          Check (Decoder, Outcome, Pictlib.Decoding.Header_Read, "Read_Header");
          if Pictlib.Results.Succeeded (Outcome) then
             if Strictness = Pictlib.Recover_When_Safe then
                Headers_Read := Headers_Read + 1;
             end if;
-            begin
-               --  The budget's frame limits keep every frame within Canvas.
-               Outcome := Pictlib.Decoding.Render
-                 (Decoder, Pictlib_Testing.Canvases.Frame_View (Decoder, Canvas, Pictlib.RGBA_32));
-               Check (Decoder, Outcome, Pictlib.Decoding.Finished, "Render");
-               if Pictlib.Results.Succeeded (Outcome) and then Strictness = Pictlib.Recover_When_Safe then
-                  if Pictlib.Decoding.Warning_Count (Decoder) > 0
-                    and then Pictlib.Errors."="
-                      (Pictlib.Decoding.Warning_At (Decoder, Pictlib.Decoding.Warning_Count (Decoder)).Code,
-                       Pictlib.Errors.Partial_Picture)
-                  then
-                     Partial := Partial + 1;
-                  else
-                     Rendered := Rendered + 1;
-                  end if;
+            --  The budget's frame limits keep every frame within Canvas, in any format.
+            Outcome := Pictlib.Decoding.Render
+              (Decoder, Pictlib_Testing.Canvases.Frame_View (Decoder, Canvas, Format));
+            Check (Decoder, Outcome, Pictlib.Decoding.Finished, "Render");
+            if Pictlib.Results.Succeeded (Outcome) and then Strictness = Pictlib.Recover_When_Safe then
+               if Pictlib.Decoding.Warning_Count (Decoder) > 0
+                 and then Pictlib.Errors."="
+                   (Pictlib.Decoding.Warning_At (Decoder, Pictlib.Decoding.Warning_Count (Decoder)).Code,
+                    Pictlib.Errors.Partial_Picture)
+               then
+                  Partial := Partial + 1;
+               else
+                  Rendered := Rendered + 1;
                end if;
-            end;
+            end if;
          end if;
       end loop;
    end Exercise;
-
-   procedure Save (Name : String; Input : Bytes) is
-   begin
-      Ada.Directories.Create_Path (Artifacts);
-      Pictlib_Testing.Files.Save_Path (Artifacts & "/" & Name, Input);
-   end Save;
 
    Defects, Slow, Stuck : Natural := 0;
 
@@ -399,6 +590,7 @@ begin
       Pictlib_Testing.Tools.Finish_Report;
       return;
    end if;
+   Add_Hand_Seeds;
    Add_Encoded (Pictlib_Testing.Samples.Gradient, Pictlib.Encoding.Direct_32);
    Add_Encoded (Pictlib_Testing.Samples.Three_Colors, Pictlib.Encoding.Indexed_8);
    Add_Encoded (Pictlib_Testing.Samples.Black_And_White, Pictlib.Encoding.Mono_1);

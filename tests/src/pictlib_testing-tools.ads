@@ -47,7 +47,8 @@ package Pictlib_Testing.Tools is
    type Option_List is array (Positive range <>) of Option;
 
    --  Arguments known: every command-line argument is one of Flags, or one of Valued followed by its value; an
-   --  unknown one is reported as a usage failure, so a misspelt option is not silently ignored.
+   --  unknown one, or a valued one without a value (at the end, or followed by an option), is reported as a usage
+   --  failure, so a misspelt option is not silently ignored.
    --  @param Flags Options that stand alone.
    --  @param Valued Options that take the argument after them.
    --  @return True when every argument is known.

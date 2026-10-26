@@ -152,6 +152,10 @@ are retained, never interpreted.
     fonts, embedded JPEG pixels), apply only to rendering, so enumeration accepts a picture they
     stop; the picture, opcode, region, polygon, metadata and retained-payload limits, and format
     errors, apply to both.
+  - Enumeration checks an opcode's framing: the fields that say where it ends and how long its
+    parts are. The content only drawing decodes (a region's scanlines, PackBits rows, color-table
+    entries, embedded QuickTime data) is skipped by its stated length and checked only by `Render`,
+    so a picture enumeration accepts may still fail to render.
 - Transfer modes act on 8-bit components. For the boolean modes, each source component `s` (a
   copied pixel, or a pattern's black-or-white sample) says how near to black the source is:
   `copy = mix (fg, bk, s)`, `or = mix (fg, dst, s)`, `bic = mix (bk, dst, s)`,
@@ -380,7 +384,8 @@ rules, region bounds), not indiscriminately.
 
 `Byte` from `Interfaces.Unsigned_8`; 64-bit-capacity offsets and counts; QuickDraw `Coordinate`
 (−32_768 .. 32_767); positive `Image_Width`/`Image_Height` bounded by QuickDraw's 16-bit space;
-`Opcode` (0 .. 16#FFFF#); `Pixel_Depth`; `Strictness_Mode`; `PICT_Version`. Transfer modes are
+`Opcode` (0 .. 16#FFFF#); `Pixel_Depth`; `Strictness_Mode`; `PICT_Version`; `Font_ID`
+(0 .. 16#FFFF#), which `Pictlib.Fonts` keys fonts by and font-name metadata reports. Transfer modes are
 internal: a picture's mode words are read as they are recorded.
 All conversions from file values to Ada subtypes are checked before use; no huge stack arrays.
 
@@ -441,6 +446,9 @@ again after `Reset` or `Initialize`. The same holds for the source: while `Read_
 `Cancel`, `Reset`, `Initialize` or `Finalize` it makes stands: the call returns what one in the
 state it left gets (`Operation_Cancelled` after `Cancel`), and what the source delivered for the
 binding it replaced is dropped, so a reset decoder reads its new source from the start.
+`Initialize` and `Reset` ask the source's `Offset` where the picture begins; an exception from it
+propagates and leaves the decoder `Stopped`, its earlier picture discarded and bound to nothing,
+until `Reset` or `Initialize`.
 
 `Render` rejects an invalid view or one whose size is not the frame's with `Invalid_Argument`
 (expecting the frame's pixels against the view's, or, for an invalid view of the frame's size, the
@@ -481,8 +489,11 @@ leaves it `Failed`, as does an exception the destination raises once writing beg
 `Flush` in `Finish`, which propagates with `Destination_Write_Failed` as the last error;
 `Bytes_Written` is then not known. While `Encode` or `Finish` runs the destination, a nested
 `Encode` or `Finish` fails with `Invalid_State`, and a `Cancel`, `Reset`, `Initialize` or
-`Finalize` it makes stands, the call returning what one in that state gets. `Reset (Object,
-Output)` binds another destination and keeps the options and limits, as the decoder's does. An invalid view's `Invalid_Argument` reports the least a valid view of its size
+`Finalize` it makes stands, the call returning what one in that state gets: the destination
+receives none of the rest of the picture, and `Bytes_Written` is what the call left it (0 after a
+rebinding, what was written after `Cancel`). `Reset (Object, Output)` binds another destination,
+keeps the options and limits, as the decoder's does, and makes any encoder `Ready`; `Finished`,
+`Failed` and `Cancelled` last until `Reset` or `Initialize`. An invalid view's `Invalid_Argument` reports the least a valid view of its size
 and format holds as expected and its accessible bytes as actual, and a non-positive resolution's
 expects 1 (the least positive Fixed) against 0, whatever the value; `Too_Many_Colors` reports 256 as
 expected and 257 as actual, as counting stops there.
@@ -645,13 +656,13 @@ judged by LibreOffice alone.
 | PackBits | literal/run boundaries, 128 runs, byte vs word counts at `rowBytes` 250/251, `rowBytes < 8`, over/under-run |
 | Pixmaps | 1/2/4/8 indexed, 16 and 32 direct, pack types 1–4, `cmpCount` 3/4, device color tables, index out of range |
 | Copy | scaling up/down, clipping, mask regions, every transfer mode |
-| Shapes | each verb × shape, "same" variants, pen sizes, patterns, oval size, arcs at all quadrants |
+| Shapes | each verb × shape, "same" variants, pen sizes, patterns, oval size, arcs at all quadrants, lines along an axis, at 45 degrees, shallow and steep |
 | Text | each text opcode, origins, font resolution by name, ID, classic name and default, Mac Roman, face bits, sizes, modes, spacing, clipping, missing fonts |
 | QuickTime | JPEG with identity/translated/scaled matrix, srcRect, origin, matte, mask, clip, modes, placeholder bitmap, non-JPEG codec, skewing matrix, truncated/garbage/mis-sized JPEG, description and data sizes, embedded limits; independent QuickTime PICTs within decoder tolerance of libjpeg |
 | I/O | fragmented reads/writes, EOF, zero progress, destination failure |
 | Encoder | each layout and pixel format, alpha, thresholds, unpacked rows, byte and word counts, widest rows, >256 colors, header on/off, resolution, picSize, limits, short and full destinations, states; decode by independent decoders (`pictlib_conformance`) |
 | Stress | huge frames with tight limits, many opcodes, repeated large fills, cancellation, reset reuse, independent decoders in concurrent tasks, every limit kind |
-| Robustness | the real-world corpus (LibreOffice's PICT filter test files, CVE reproductions among them) to recorded outcomes; mutation fuzzing without defects (slow and stuck inputs are saved and reported) |
+| Robustness | the real-world corpus (LibreOffice's PICT filter test files, CVE reproductions among them) to recorded outcomes; mutation fuzzing without defects (slow and stuck inputs are saved and reported), from the fixtures, hand-assembled version 1 and version 2 pictures of shapes and text, and encoder output, each input enumerated strictly and recoverably and rendered in every strictness, read as drawn from its bytes: header policy, retention, required end of input, view format, short reads, a smaller total allocation budget and a visitor that stops, raises or rebinds |
 
 Fixtures are independent: hand-assembled byte literals with documented provenance, real-world
 PICT files with recorded origin and license, and expected rasters produced by an external

@@ -33,6 +33,11 @@ package body Pictlib.Internal.Sessions is
       Picture_Stream.Bind (S.Stream, Input, S.Budget.Max_Picture_Bytes);
       S.Strictness := Strictness;
       S.Retention := Retention;
+   exception
+      --  The source's exception, from its Offset: the session is cleared, so the stream reads nothing either.
+      when others =>
+         Picture_Stream.Unbind (S.Stream);
+         raise;
    end Start;
 
    procedure Warn

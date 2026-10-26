@@ -39,6 +39,9 @@ Available since Gate M2:
 
 Available since Gate M4:
 
+- `Pictlib.Font_ID` (0 .. 16#FFFF#), the one font ID type: `Pictlib.Fonts.Font_ID` is a subtype
+  of it and `Metadata.Item_Info.Font_ID` has it. Code that named `Fonts.Font_ID` as a type of its
+  own still compiles; code that converted between it and the metadata's ID no longer needs to.
 - `Pictlib.Fonts` — `Font_ID`, `Font_Table` (`Add` by family or ID,
   `Set_Default`, `Resolve`), `Classic_Name`; `Decoding.Options.Fonts`.
 - `Errors.Font_Unavailable`.

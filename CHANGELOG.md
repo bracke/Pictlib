@@ -58,6 +58,20 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Fixed
 
+- A line neither along an axis nor at 45 degrees ended: its walk decided its
+  second step on the error the first had changed, overshot a shallow line's
+  end and ran on until the drawing budget stopped the picture. The fuzzer's
+  new hand-assembled seeds found it.
+- A destination that resets, cancels or finalizes its encoder mid-write
+  receives none of the rest of the picture, and a reset keeps its
+  `Bytes_Written` of 0; `Cancel` steps the encoder's binding so the write in
+  progress sees it.
+- A source whose `Offset` raises as `Initialize` or `Reset` binds the
+  decoder leaves it `Stopped` and bound to nothing, instead of claiming the
+  earlier picture over a cleared session.
+- The JPEG bridge frees the decoded pixels when skipping what jpeglib left of
+  the data fails, as its contract says, and QuickTime frees them before
+  skipping an image it cannot decode.
 - A copied pixmap or pattern is charged work for each row's unpacked bytes
   as well as its pixels: a row whose rowBytes is far wider than the picture
   drew a thousand bytes of PackBits for one unit.
@@ -344,8 +358,8 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   `tests/fixtures/README.md` says where provenance is actually kept.
 
 - The specification names the new units and the rules for rebinding from
-  caller code; the fixture READMEs record the Netpbm version and the check
-  that reproduces them.
+  caller code; the external fixtures' README records the ImageMagick and
+  Netpbm versions and the check that reproduces them.
 
 ### Internal structure
 
@@ -545,7 +559,8 @@ All tooling is Ada, in the `tests` crate:
   every policy step and the suite whatever one of them raises, requires the
   CI workflow, and bans PowerShell, batch and Perl scripts and Makefiles;
   `pictlib_real_world` and `pictlib_complete` refuse unknown arguments, and
-  the tools walk directories through one sorted walker.
+  `pictlib_check`, `pictlib_real_world` and `pictlib_fuzz` walk directories
+  through one sorted walker.
 - `Samples.Encode` and the benchmark free their buffers, the benchmark
   reports a rate it cannot time instead of raising, and conformance reads
   SVGs on the heap; `direct_large` is past 64 KiB, and checked to be.
@@ -553,6 +568,19 @@ All tooling is Ada, in the `tests` crate:
   cleanly, so a failure can be read in CI's log; CI passes its fuzz seed in
   `PICTLIB_FUZZ_SEED`, which `pictlib_complete` reads when `--fuzz-seed` is
   not given, rather than in an argument holding a space.
+- `pictlib_fuzz` enumerates strictly and recoverably and renders in every
+  strictness, Strict included, and draws from each input's own bytes how it
+  is read: header policy, retention of every metadata kind, required end of
+  input, any view format, short reads, a smaller total allocation budget and
+  a visitor that stops, raises or rebinds its decoder, so a replay repeats
+  it. Hand-assembled version 1 and version 2 pictures of shapes, pens,
+  patterns and text seed it, and planted opcodes, shapes, PnSize, OvSize,
+  FontName and LineJustify among them, land on word boundaries half the time.
+- A valued tool option given no value, or followed by another option, is
+  refused as needing one.
+- The specification says enumeration checks framing only, the invariant
+  registry covers rebinding a source or destination, the encoder's `Cancel`
+  documents `Reset`, and `Pictlib.Font_ID` is in the public API list.
 - Every `alr --chdir` names its directory attached (`--chdir=tests`): alr
   2.1.1, which CI installs, refuses the directory as a separate argument, and
   so failed every proof. CI runs `pictlib_complete` through `alr exec`, as

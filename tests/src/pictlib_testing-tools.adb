@@ -125,9 +125,14 @@ package body Pictlib_Testing.Tools is
          begin
             if (for some Flag of Flags => Flag.all = Item) then
                Index := Index + 1;
-            elsif (for some Option of Valued => Option.all = Item)
-              and then Index < Ada.Command_Line.Argument_Count
-            then
+            elsif (for some Option of Valued => Option.all = Item) then
+               --  A value that is another option means the value was left out.
+               if Index = Ada.Command_Line.Argument_Count
+                 or else Ada.Strings.Fixed.Index (Ada.Command_Line.Argument (Index + 1), "--") = 1
+               then
+                  Fail (Item & " needs a value");
+                  return False;
+               end if;
                Index := Index + 2;
             else
                Fail ("unknown argument " & Item);

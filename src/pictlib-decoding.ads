@@ -50,6 +50,8 @@ package Pictlib.Decoding is
    --  @param Decode_Options Strictness, file header policy, metadata retention, whether input must end at the
    --  end opcode, the background a render starts from, and the fonts text is drawn with.
    --  @param Decode_Limits Resource budgets.
+   --  Input's Offset is asked for where the picture begins: an exception from it propagates and leaves Object
+   --  Stopped, bound to nothing, until Reset or Initialize.
    procedure Initialize
      (Object : in out Decoder;
       Input : not null access Streams.Source'Class;
@@ -57,7 +59,8 @@ package Pictlib.Decoding is
       Decode_Limits : Limits.Limit_Set := Limits.Default_Limits);
    --  Reset.
    --  @param Object Decoder; options and limits are kept, the earlier picture is discarded.
-   --  @param Input Borrowed source for the next picture.
+   --  @param Input Borrowed source for the next picture. An exception from its Offset propagates, as for
+   --  Initialize.
    procedure Reset (Object : in out Decoder; Input : not null access Streams.Source'Class);
    --  State.
    --  @param Object Decoder.

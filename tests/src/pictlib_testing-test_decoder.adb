@@ -67,6 +67,25 @@ package body Pictlib_Testing.Test_Decoder is
    overriding function Skip
      (Object : in out Overreporting; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result;
 
+   Offset_Raised : exception;
+
+   --  A source whose Offset raises.
+   type Offset_Raising is limited new Pictlib.Streams.Source with null record;
+   overriding function Read
+     (Object : in out Offset_Raising; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result;
+   overriding function Offset (Object : Offset_Raising) return Pictlib.Source_Offset is (raise Offset_Raised);
+   overriding function Skip
+     (Object : in out Offset_Raising; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result
+   is (Error => Pictlib.Errors.Make (Pictlib.Errors.No_Error), Count => 0, End_Of_Input => True);
+   overriding function Read
+     (Object : in out Offset_Raising; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result
+   is
+      pragma Unreferenced (Object);
+   begin
+      Buffer := [others => 0];
+      return (Error => Pictlib.Errors.Make (Pictlib.Errors.No_Error), Count => 0, End_Of_Input => True);
+   end Read;
+
    --  What a meddling source does once it has delivered After bytes.
    type Source_Move is (Raises, Reenters, Cancels, Resets, Finalizes);
 
@@ -695,6 +714,35 @@ package body Pictlib_Testing.Test_Decoder is
          Step := Reader.Read (Buffer);
          Assert (Step.Count = 2 and then Buffer (3 .. 10) = [3 .. 10 => 16#EE#],
                  "a short read cleared the bytes it did not deliver");
+      end;
+
+      --  A source whose Offset raises, asked as the decoder is bound to it: the exception propagates, and the
+      --  decoder, its earlier picture gone, is Stopped and reads nothing until bound again.
+      declare
+         Good : aliased Pictlib.Streams.Memory_Source;
+         Bad : aliased Offset_Raising;
+         Other : Decoding.Decoder;
+         Raised : Boolean := False;
+      begin
+         Pictlib.Streams.Open (Good, Picture'Access);
+         Decoding.Initialize (Other, Good'Access);
+         Outcome := Decoding.Read_Header (Other);
+         Assert (Pictlib.Results.Succeeded (Outcome), "the picture's header was not read");
+         begin
+            Decoding.Reset (Other, Bad'Access);
+         exception
+            when Offset_Raised => Raised := True;
+         end;
+         Assert (Raised, "an exception from the source's Offset did not propagate");
+         Assert (Decoding.State (Other) = Decoding.Stopped,
+                 "a Reset whose source raised left the decoder " & Decoding.State (Other)'Image);
+         Outcome := Decoding.Enumerate (Other, Visitor);
+         Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State,
+                 "a decoder whose binding raised enumerated: " & Outcome.First_Error.Code'Image);
+         Pictlib.Streams.Open (Good, Picture'Access);
+         Decoding.Reset (Other, Good'Access);
+         Outcome := Decoding.Read_Header (Other);
+         Assert (Pictlib.Results.Succeeded (Outcome), "a Reset after a raising one did not bind the decoder");
       end;
    end Source_Offsets;
 end Pictlib_Testing.Test_Decoder;

@@ -57,4 +57,7 @@ package Pictlib.Internal is
    --  A PixPat's patType: a color tile, or an RGB color to dither.
    Color_Pattern_Type : constant := 1;
    Dither_Pattern_Type : constant := 2;
+
+   --  Steps whenever an object is rebound to other caller code, so a call into that code can tell it happened.
+   type Generation is mod 2 ** 32;
 end Pictlib.Internal;

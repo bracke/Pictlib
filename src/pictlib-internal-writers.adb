@@ -1,3 +1,4 @@
+with Pictlib.Errors;
 with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Failures;
 
@@ -12,7 +13,15 @@ package body Pictlib.Internal.Writers is
       Object.Max_Bytes := Max_Bytes;
       Object.Base := (if Output = null then 0 else Output.Offset);
       Object.Failure := Results.Success;
+      Object.Watched := null;
+      Object.Watched_At := 0;
    end Start;
+
+   procedure Watch (Object : in out Writer; Counter : not null access constant Generation) is
+   begin
+      Object.Watched := Counter.all'Unchecked_Access;
+      Object.Watched_At := Counter.all;
+   end Watch;
 
    function Count (Object : Writer) return Byte_Count is (Object.Total);
 
@@ -26,6 +35,9 @@ package body Pictlib.Internal.Writers is
    function Put (Object : in out Writer; Data : Streams.Byte_Array) return Results.Result is
    begin
       if not Results.Succeeded (Object.Failure) then
+         return Object.Failure;
+      elsif Object.Watched /= null and then Object.Watched.all /= Object.Watched_At then
+         Object.Failure := Results.Failure (Errors.Invalid_State);
          return Object.Failure;
       elsif Byte_Count (Data'Length) > Object.Max_Bytes - Object.Total then
          Object.Failure :=

@@ -4,6 +4,7 @@ with Pictlib.Images;
 with Pictlib.Limits;
 with Pictlib.Results;
 with Pictlib.Streams;
+private with Pictlib.Internal;
 
 --  Forward-only raster PICT encoder. One image becomes one extended version 2 picture: the optional 512-byte
 --  file header, picSize, picFrame, VersionOp, HeaderOp, DefHilite, a clip of the frame, one bits opcode and
@@ -80,7 +81,8 @@ package Pictlib.Encoding is
    function Last_Error (Object : Encoder) return Errors.Error;
    --  Cancel.
    --  @param Object Encoder; in Ready or Encoded it becomes Cancelled, and later operations fail with
-   --  Operation_Cancelled until Initialize; in any other state nothing changes.
+   --  Operation_Cancelled until Reset or Initialize; in any other state nothing changes. A destination that
+   --  cancels the encoder writing to it receives none of the rest of the picture.
    procedure Cancel (Object : in out Encoder);
    --  Finalize.
    --  @param Object Encoder; releases the destination binding. Idempotent.
@@ -88,8 +90,6 @@ package Pictlib.Encoding is
 
 private
    type Destination_Access is access all Streams.Destination'Class;
-
-   type Bind_Count is mod 2 ** 32;
 
    type Encoder is limited record
       Current_State : aliased Encoder_State := Created;
@@ -101,7 +101,8 @@ private
       First_Error : aliased Errors.Error := Errors.Make (Errors.No_Error);
       --  True while Encode or Finish runs the destination, which may not call into the encoder under it.
       Busy : aliased Boolean := False;
-      --  Steps on every Initialize, Reset and Finalize, so a call can tell the destination rebound the encoder.
-      Binds : aliased Bind_Count := 0;
+      --  Steps on every Initialize, Reset, Finalize and Cancel that cancels, so a call can tell the destination
+      --  rebound or cancelled the encoder; a write in progress stops when it moves.
+      Binds : aliased Internal.Generation := 0;
    end record;
 end Pictlib.Encoding;

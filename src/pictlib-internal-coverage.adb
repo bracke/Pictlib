@@ -482,14 +482,20 @@ package body Pictlib.Internal.Coverage is
             end if;
             Charge (Item, 1);
             exit when Item.Spent or else (X = To.H and then Y = To.V);
-            if 2 * Error >= Dy then
-               Error := Error + Dy;
-               X := X + Step_X;
-            end if;
-            if 2 * Error <= Dx then
-               Error := Error + Dx;
-               Y := Y + Step_Y;
-            end if;
+            --  Both steps are decided on the error before either: deciding the second on the error the first
+            --  changed overshoots a shallow line's end, which the walk then never meets.
+            declare
+               Twice : constant Integer := 2 * Error;
+            begin
+               if Twice >= Dy then
+                  Error := Error + Dy;
+                  X := X + Step_X;
+               end if;
+               if Twice <= Dx then
+                  Error := Error + Dx;
+                  Y := Y + Step_Y;
+               end if;
+            end;
          end loop;
       end;
       if Item.Spent then

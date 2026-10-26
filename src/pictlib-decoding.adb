@@ -31,6 +31,13 @@ package body Pictlib.Decoding is
       Discard_Picture (Object);
       Object.Current_State := Ready;
       Object.Binds := Object.Binds + 1;
+   exception
+      --  The source's exception, from its Offset, passes through: the picture is gone and the decoder bound to
+      --  nothing, Stopped until Reset or Initialize, and a call it was made under is told it was rebound.
+      when others =>
+         Object.Current_State := Stopped;
+         Object.Binds := Object.Binds + 1;
+         raise;
    end Bind;
 
    procedure Initialize

@@ -110,6 +110,9 @@ package body Pictlib_Testing.Test_Shapes is
    Undone_Triangle : aliased constant Bytes := Pic (4, 4, W (16#71#) & Triangle & W (16#7B#));
 
    Thick_Line : aliased constant Bytes := Pic (4, 4, Pen_Size (2, 2) & W (16#20#) & W (0) & W (0) & W (2) & W (2));
+   --  Neither 45 degrees nor along an axis: the walk must meet the end, which a shallow line once overshot.
+   Shallow_Line : aliased constant Bytes := Pic (5, 2, W (16#20#) & W (0) & W (0) & W (1) & W (4));
+   Steep_Line : aliased constant Bytes := Pic (2, 5, W (16#20#) & W (0) & W (0) & W (4) & W (1));
    Line_Then_From : aliased constant Bytes :=
      Pic (4, 4, W (16#20#) & W (0) & W (0) & W (0) & W (3) & W (16#21#) & W (3) & W (3));
    Short_Lines : aliased constant Bytes :=
@@ -296,6 +299,8 @@ package body Pictlib_Testing.Test_Shapes is
       pragma Unreferenced (T);
    begin
       Canvases.Expect_Raster (Thick_Line, 4, 4, "BBWW/BBBW/WBBB/WWBB", "line with a 2x2 pen");
+      Canvases.Expect_Raster (Shallow_Line, 5, 2, "BBWWW/WWBBB", "a shallow line");
+      Canvases.Expect_Raster (Steep_Line, 2, 5, "BW/BW/WB/WB/WB", "a steep line");
       Canvases.Expect_Raster (Line_Then_From, 4, 4, "BBBB/WWWB/WWWB/WWWB", "Line then LineFrom");
       Canvases.Expect_Raster (Short_Lines, 4, 4, "WWWW/BBBB/WWWB/WWWB", "ShortLine then ShortLineFrom");
       Canvases.Expect_Raster (No_Pen, 4, 1, "WWWW", "a zero pen draws no lines or frames");
