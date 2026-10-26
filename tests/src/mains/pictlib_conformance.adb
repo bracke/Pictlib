@@ -235,6 +235,10 @@ begin
       return;
    end if;
    Pictlib_Testing.Tools.Start_Report ("pictlib_conformance");
+   if not Pictlib_Testing.Tools.Arguments_Known ([new String'("--require")]) then
+      Pictlib_Testing.Tools.Finish_Report;
+      return;
+   end if;
    Ada.Directories.Create_Path (Directory);
    --  The oracles' versions, so a change in what they read can be traced to a change of version.
    if Magick'Length > 0 then

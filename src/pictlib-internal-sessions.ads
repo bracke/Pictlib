@@ -65,7 +65,8 @@ package Pictlib.Internal.Sessions is
    --  Clear.
    --  @param S Session whose stream binding, retained metadata, warnings and counters are discarded.
    procedure Clear (S : in out Session);
-   --  Start: a session cleared and bound to a new picture.
+   --  Start: a session cleared and bound to a new picture. An exception from Input's Offset passes through, the
+   --  session cleared and its stream bound to nothing.
    --  @param S Session; its budget is kept.
    --  @param Input The picture's source.
    --  @param Strictness How deviations are treated.

@@ -85,6 +85,10 @@ procedure Pictlib_Prove is
    end Check;
 begin
    Pictlib_Testing.Tools.Start_Report ("pictlib_prove");
+   if not Pictlib_Testing.Tools.Arguments_Known ([1 .. 0 => null]) then
+      Pictlib_Testing.Tools.Finish_Report;
+      return;
+   end if;
    if Prover'Length > 0 then
       Pictlib_Testing.Tools.Report_Version ("gnatprove", Prover);
    end if;

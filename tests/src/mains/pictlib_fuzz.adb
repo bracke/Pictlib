@@ -69,7 +69,10 @@ procedure Pictlib_Fuzz is
    begin
       for Index in 1 .. Ada.Command_Line.Argument_Count loop
          if Ada.Command_Line.Argument (Index) not in "--fail-stuck" | "--replay" then
-            Result.Append (Ada.Command_Line.Argument (Index));
+            --  A replayed file is named from where the tool was run, before it moves to the tests directory.
+            Result.Append
+              (if Replay then Ada.Directories.Full_Name (Ada.Command_Line.Argument (Index))
+               else Ada.Command_Line.Argument (Index));
          end if;
       end loop;
       return Result;
@@ -79,7 +82,9 @@ procedure Pictlib_Fuzz is
    --  The iterations and seed, when the arguments give valid ones.
    Usable : Boolean := True;
    Iterations : Natural := 2_000;
-   Generator : Pictlib_Testing.Random.Generator := Pictlib_Testing.Random.Seeded;
+   --  The generator's seed, printed so a run can be repeated: the generator's default unless one is given.
+   Seed_Used : Interfaces.Unsigned_64 := 16#9E37_79B9_7F4A_7C15#;
+   Generator : Pictlib_Testing.Random.Generator := Pictlib_Testing.Random.Seeded (Seed_Used);
 
    function Random (Bound : Positive) return Natural is (Pictlib_Testing.Random.Next (Generator, Bound));
 
@@ -405,8 +410,11 @@ procedure Pictlib_Fuzz is
         (if Pick (4) = 0 then Pictlib.Header_Policy'Val (1 + Pick (2)) else Pictlib.Auto);
       Keep_All : constant Boolean := Pick (2) = 0;
       Require_End : constant Boolean := Pick (3) = 0;
-      Background : constant Pictlib.Images.RGB_Color :=
-        (Pictlib.Byte (Pick (256)), Pictlib.Byte (Pick (256)), Pictlib.Byte (Pick (256)));
+      --  One draw a declaration: the order an aggregate's components are evaluated in is not defined.
+      Red : constant Pictlib.Byte := Pictlib.Byte (Pick (256));
+      Green : constant Pictlib.Byte := Pictlib.Byte (Pick (256));
+      Blue : constant Pictlib.Byte := Pictlib.Byte (Pick (256));
+      Background : constant Pictlib.Images.RGB_Color := (Red, Green, Blue);
       Limits : constant Pictlib.Limits.Limit_Set :=
         (if Pick (4) = 0
          then (Budget with delta Max_Total_Allocation_Bytes => Pictlib.Byte_Count (1 + Pick (2 ** 20)))
@@ -495,10 +503,10 @@ procedure Pictlib_Fuzz is
               (Decoder, Pictlib_Testing.Canvases.Frame_View (Decoder, Canvas, Format));
             Check (Decoder, Outcome, Pictlib.Decoding.Finished, "Render");
             if Pictlib.Results.Succeeded (Outcome) and then Strictness = Pictlib.Recover_When_Safe then
-               if Pictlib.Decoding.Warning_Count (Decoder) > 0
-                 and then Pictlib.Errors."="
-                   (Pictlib.Decoding.Warning_At (Decoder, Pictlib.Decoding.Warning_Count (Decoder)).Code,
-                    Pictlib.Errors.Partial_Picture)
+               --  Any warning may be the partial picture's: an overflowing log ends with its own marker.
+               if (for some Index in 1 .. Pictlib.Decoding.Warning_Count (Decoder) =>
+                     Pictlib.Errors."=" (Pictlib.Decoding.Warning_At (Decoder, Index).Code,
+                                         Pictlib.Errors.Partial_Picture))
                then
                   Partial := Partial + 1;
                else
@@ -559,6 +567,7 @@ begin
                --  The generator never leaves 0: every choice would be the first.
                Usable := Usable and then Interfaces."/=" (Seed, 0);
                if Usable then
+                  Seed_Used := Seed;
                   Generator := Pictlib_Testing.Random.Seeded (Seed);
                end if;
             end;
@@ -594,7 +603,8 @@ begin
    Add_Encoded (Pictlib_Testing.Samples.Gradient, Pictlib.Encoding.Direct_32);
    Add_Encoded (Pictlib_Testing.Samples.Three_Colors, Pictlib.Encoding.Indexed_8);
    Add_Encoded (Pictlib_Testing.Samples.Black_And_White, Pictlib.Encoding.Mono_1);
-   Ada.Text_IO.Put_Line (Natural'Image (Natural (Seeds.Length)) & " seeds," & Iterations'Image & " iterations");
+   Ada.Text_IO.Put_Line (Natural'Image (Natural (Seeds.Length)) & " seeds," & Iterations'Image & " iterations, seed"
+                         & Seed_Used'Image);
    for Iteration in 1 .. Iterations loop
       begin
          declare

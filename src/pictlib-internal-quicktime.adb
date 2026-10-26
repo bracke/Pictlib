@@ -129,11 +129,11 @@ package body Pictlib.Internal.QuickTime is
       elsif Pixel_Count (Pixels) > S.Budget.Max_Embedded_Image_Pixels then
          return Sessions.Over_Limit
            (S, Embedded_Image_Pixel_Limit, Byte_Count (S.Budget.Max_Embedded_Image_Pixels), Pixels);
-      elsif JPEG_Bridge.Bytes_Per_Pixel * Pixels > Largest then
+      elsif JPEG_Bridge.Pixel_Bytes ((Item.Width, Item.Height, Item.Data_Size)) > Largest then
          --  The budget as set when it is the smaller bound.
          return Sessions.Over_Limit
            (S, Allocation_Byte_Limit, Byte_Count'Min (Largest, S.Budget.Max_Allocation_Bytes),
-            JPEG_Bridge.Bytes_Per_Pixel * Pixels);
+            JPEG_Bridge.Pixel_Bytes ((Item.Width, Item.Height, Item.Data_Size)));
       end if;
       return Results.Success;
    end Check_Image;
@@ -198,13 +198,106 @@ package body Pictlib.Internal.QuickTime is
       return Outcome;
    end Paint_Image;
 
+   --  Where an opcode's data began and how long it is, so its parts can be checked against what is left.
+   type Extent is record
+      Start, Length : Byte_Count := 0;
+   end record;
+
+   function Used (S : Sessions.Session; Within : Extent) return Byte_Count is (S.Picture_Offset - Within.Start);
+
+   function Left (S : Sessions.Session; Within : Extent) return Byte_Count is (Within.Length - Used (S, Within));
+
+   --  A part wanting more bytes than are left of the opcode.
+   function Part_Too_Long
+     (S : Sessions.Session; Event : Pictures.Opcode_Event; Within : Extent; Wanted : Byte_Count)
+      return Results.Result
+   is (Failures.In_Opcode (Event, Errors.Opcode_Length_Invalid, Within.Length, Used (S, Within) + Wanted));
+
+   --  The matte: an alpha image of its own, which this renderer does not composite.
+   function Skip_Matte
+     (S : in out Sessions.Session; Event : Pictures.Opcode_Event; Within : Extent; Header : Image_Header)
+      return Results.Result
+   is
+      Outcome : Results.Result;
+   begin
+      if Header.Matte_Size = 0 then
+         return Results.Success;
+      elsif Byte_Count (Header.Matte_Size) > Left (S, Within) then
+         return Part_Too_Long (S, Event, Within, Byte_Count (Header.Matte_Size));
+      end if;
+      Outcome := Rendering.Unsupported (S, Event, 0, Byte_Count (Header.Matte_Size));
+      if Results.Succeeded (Outcome) then
+         Outcome := Sessions.Skip_Data (S, Byte_Count (Header.Matte_Size));
+      end if;
+      return Outcome;
+   end Skip_Matte;
+
+   --  The mask region, in the port's local coordinates, which must take exactly the bytes the header gives it.
+   function Read_Mask
+     (P : Rendering.Painter;
+      S : in out Sessions.Session;
+      Event : Pictures.Opcode_Event;
+      Within : Extent;
+      Header : Image_Header;
+      Mask : in out Regions.Region;
+      Has_Mask : out Boolean) return Results.Result
+   is
+      Before : constant Byte_Count := Used (S, Within);
+      Outcome : Results.Result;
+   begin
+      Has_Mask := False;
+      if Header.Mask_Size = 0 then
+         return Results.Success;
+      elsif Byte_Count (Header.Mask_Size) > Left (S, Within) then
+         return Part_Too_Long (S, Event, Within, Byte_Count (Header.Mask_Size));
+      end if;
+      Outcome := Region_Reader.Read (S, Mask);
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      elsif Used (S, Within) - Before /= Byte_Count (Header.Mask_Size) then
+         return Sessions.Fail (S, Errors.Region_Invalid, Byte_Count (Header.Mask_Size), Used (S, Within) - Before);
+      end if;
+      Has_Mask := True;
+      Regions.Translate (Mask, -P.Port.Origin_H, -P.Port.Origin_V);
+      return Results.Success;
+   end Read_Mask;
+
+   --  The image description, its bytes past the fields read skipped, and room for the data it announces.
+   function Read_Image_Description
+     (S : in out Sessions.Session; Event : Pictures.Opcode_Event; Within : Extent; Item : out Description)
+      return Results.Result
+   is
+      Outcome : Results.Result;
+   begin
+      Item := (others => <>);
+      --  The matte and mask may leave no room for the description.
+      if Description_Bytes > Left (S, Within) then
+         return Part_Too_Long (S, Event, Within, Description_Bytes);
+      end if;
+      Outcome := Read_Description (S, Item);
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      elsif Item.Size < Description_Bytes then
+         return Failures.In_Opcode (Event, Errors.Opcode_Length_Invalid, Description_Bytes, Byte_Count (Item.Size));
+      elsif Byte_Count (Item.Size) - Description_Bytes > Left (S, Within) then
+         return Part_Too_Long (S, Event, Within, Byte_Count (Item.Size) - Description_Bytes);
+      end if;
+      Outcome := Sessions.Skip_Data (S, Byte_Count (Item.Size) - Description_Bytes);
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      elsif Byte_Count (Item.Data_Size) > Left (S, Within) then
+         return Part_Too_Long (S, Event, Within, Byte_Count (Item.Data_Size));
+      end if;
+      return Results.Success;
+   end Read_Image_Description;
+
    function Draw
      (P : in out Rendering.Painter;
       S : in out Sessions.Session;
       Event : Pictures.Opcode_Event;
       Length : Byte_Count) return Results.Result
    is
-      Start : constant Byte_Count := S.Picture_Offset;
+      Within : constant Extent := (Start => S.Picture_Offset, Length => Length);
       Header : Image_Header;
       Item : Description;
       Mask : Regions.Region;
@@ -212,79 +305,32 @@ package body Pictlib.Internal.QuickTime is
       Pixels : JPEG_Bridge.Pixel_Buffer_Access;
       Outcome : Results.Result;
 
-      function Used return Byte_Count is (S.Picture_Offset - Start);
-
       --  Skip whatever of the opcode is left.
       function Finish (Result : Results.Result) return Results.Result is
       begin
-         if Results.Succeeded (Result) and then Used < Length then
-            return Sessions.Skip_Data (S, Length - Used);
+         if Results.Succeeded (Result) and then Left (S, Within) > 0 then
+            return Sessions.Skip_Data (S, Left (S, Within));
          end if;
          return Result;
       end Finish;
-
-      --  A part wanting more bytes than are left of the opcode.
-      function Part_Too_Long (Wanted : Byte_Count) return Results.Result is
-        (Failures.In_Opcode (Event, Errors.Opcode_Length_Invalid, Length, Used + Wanted));
    begin
       --  Only an image drawn by this opcode hides the bits opcode after it.
       P.Port.Skip_Next_Bits := False;
       if Length < Header_Bytes + Description_Bytes then
-         return Part_Too_Long (Header_Bytes + Description_Bytes);
+         return Part_Too_Long (S, Event, Within, Header_Bytes + Description_Bytes);
       end if;
       Outcome := Read_Image_Header (S, Header);
+      if Results.Succeeded (Outcome) then
+         Outcome := Skip_Matte (S, Event, Within, Header);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Read_Mask (P, S, Event, Within, Header, Mask, Has_Mask);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Read_Image_Description (S, Event, Within, Item);
+      end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
-      end if;
-
-      --  The matte: an alpha image of its own, which this renderer does not composite.
-      if Header.Matte_Size > 0 then
-         if Byte_Count (Header.Matte_Size) > Length - Used then
-            return Part_Too_Long (Byte_Count (Header.Matte_Size));
-         end if;
-         Outcome := Rendering.Unsupported (S, Event, 0, Byte_Count (Header.Matte_Size));
-         if Results.Succeeded (Outcome) then
-            Outcome := Sessions.Skip_Data (S, Byte_Count (Header.Matte_Size));
-         end if;
-         if not Results.Succeeded (Outcome) then
-            return Outcome;
-         end if;
-      end if;
-      if Header.Mask_Size > 0 then
-         declare
-            Before : constant Byte_Count := Used;
-         begin
-            if Byte_Count (Header.Mask_Size) > Length - Used then
-               return Part_Too_Long (Byte_Count (Header.Mask_Size));
-            end if;
-            Outcome := Region_Reader.Read (S, Mask);
-            if not Results.Succeeded (Outcome) then
-               return Outcome;
-            elsif Used - Before /= Byte_Count (Header.Mask_Size) then
-               return Sessions.Fail (S, Errors.Region_Invalid, Byte_Count (Header.Mask_Size), Used - Before);
-            end if;
-            Has_Mask := True;
-            Regions.Translate (Mask, -P.Port.Origin_H, -P.Port.Origin_V);
-         end;
-      end if;
-
-      --  The matte and mask may leave no room for the description.
-      if Description_Bytes > Length - Used then
-         return Part_Too_Long (Description_Bytes);
-      end if;
-      Outcome := Read_Description (S, Item);
-      if not Results.Succeeded (Outcome) then
-         return Outcome;
-      elsif Item.Size < Description_Bytes then
-         return Failures.In_Opcode (Event, Errors.Opcode_Length_Invalid, Description_Bytes, Byte_Count (Item.Size));
-      elsif Byte_Count (Item.Size) - Description_Bytes > Length - Used then
-         return Part_Too_Long (Byte_Count (Item.Size) - Description_Bytes);
-      end if;
-      Outcome := Sessions.Skip_Data (S, Byte_Count (Item.Size) - Description_Bytes);
-      if not Results.Succeeded (Outcome) then
-         return Outcome;
-      elsif Byte_Count (Item.Data_Size) > Length - Used then
-         return Part_Too_Long (Byte_Count (Item.Data_Size));
       elsif not Is_Supported (Header, Item) then
          --  The codec named, when it is not JPEG's.
          return Finish

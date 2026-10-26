@@ -78,8 +78,19 @@ package Pictlib.Streams is
      (Object : in out Memory_Source;
       Storage : not null Const_Byte_Array_Access;
       Max_Transfer : Byte_Count := Byte_Count'Last);
+   --  Read.
+   --  @param Object Source.
+   --  @param Buffer Receives up to Max_Transfer of the bytes left, from its first element.
+   --  @return The count delivered; End_Of_Input once nothing is left.
    overriding function Read (Object : in out Memory_Source; Buffer : out Byte_Array) return Source_Result;
+   --  Offset.
+   --  @param Object Source.
+   --  @return The bytes delivered or skipped since Open.
    overriding function Offset (Object : Memory_Source) return Source_Offset;
+   --  Skip.
+   --  @param Object Source.
+   --  @param Count Bytes to pass over.
+   --  @return The count skipped, at most Max_Transfer; End_Of_Input once nothing is left.
    overriding function Skip (Object : in out Memory_Source; Count : Byte_Count) return Source_Result;
 
    type Fixed_Buffer_Destination is limited new Destination with private;
@@ -93,9 +104,18 @@ package Pictlib.Streams is
       Max_Transfer : Byte_Count := Byte_Count'Last);
    --  Write: what fits; a write the storage cannot hold whole fails with Destination_Write_Failed, expecting the
    --  storage's length and naming where the write would end.
+   --  @param Object Destination.
+   --  @param Buffer Bytes to store after those stored so far.
+   --  @return The count taken, at most Max_Transfer, or the failure.
    overriding function Write
      (Object : in out Fixed_Buffer_Destination; Buffer : Byte_Array) return Destination_Result;
+   --  Offset.
+   --  @param Object Destination.
+   --  @return The bytes stored since Open.
    overriding function Offset (Object : Fixed_Buffer_Destination) return Destination_Offset;
+   --  Flush: nothing to do, the bytes being stored as they are written.
+   --  @param Object Destination.
+   --  @return No_Error.
    overriding function Flush (Object : in out Fixed_Buffer_Destination) return Errors.Error;
 
 private

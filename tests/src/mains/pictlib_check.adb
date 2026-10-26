@@ -75,6 +75,10 @@ procedure Pictlib_Check is
    end Run;
 begin
    Pictlib_Testing.Tools.Start_Report ("pictlib_check");
+   if not Pictlib_Testing.Tools.Arguments_Known ([new String'("--policy-only")]) then
+      Pictlib_Testing.Tools.Finish_Report;
+      return;
+   end if;
    if Root'Length = 0 then
       Fail ("run below the pictlib tree");
    else

@@ -41,8 +41,12 @@ tighter bound lower it.
 
 ## Fuzzing and the real-world corpus
 
-`pictlib_fuzz` mutates the fixture pictures and fresh encoder output and runs
-every mutant through enumeration and both lenient renders under tight limits:
+`pictlib_fuzz` mutates the fixture pictures, hand-assembled version 1 and
+version 2 pictures of shapes and text, and fresh encoder output. Every mutant
+is enumerated strictly and recoverably, with a visitor that may stop, raise or
+rebind its decoder, and rendered in every strictness, read as drawn from its own
+bytes (header policy, metadata retention, required end of input, view format,
+short reads, a smaller total allocation budget), under tight limits:
 a 1024 x 1024 frame, 2^20 canvas and embedded pixels, 2^26 units of drawing
 work, 64 MiB of allocation. Besides flipping, replacing, truncating, deleting
 and inserting bytes, it plants opcodes, writes extreme points (±32 768) and

@@ -37,6 +37,10 @@ package body Pictlib.Internal.Picture_Stream is
    Rebound_Reply : constant Streams.Source_Result :=
      (Error => Errors.Make (Errors.Invalid_State), Count => 0, End_Of_Input => False);
 
+   --  The reader is bound to no source.
+   Unbound_Reply : constant Streams.Source_Result :=
+     (Error => Errors.Make (Errors.Source_Read_Failed), Count => 0, End_Of_Input => False);
+
    function Lookahead_Length (Object : Reader) return Natural is (Buffered (Object));
 
    function Input_Ended (Object : Reader) return Boolean is (Object.Input_Ended);
@@ -77,13 +81,22 @@ package body Pictlib.Internal.Picture_Stream is
       return Step;
    end Advance;
 
+   --  What the source replied to a request of Requested bytes made while the reader was in generation Before:
+   --  refused when the source's caller code rebound the reader, otherwise counted once judged sound.
+   function Delegated
+     (Object : in out Reader;
+      Before : Generation;
+      Step : Streams.Source_Result;
+      Requested : Byte_Count) return Streams.Source_Result
+   is (if Object.Bound /= Before then Rebound_Reply else Advance (Object, Step, Requested));
+
    function Fill_Lookahead (Object : in out Reader; Count : Positive) return Results.Result is
       --  Never buffer beyond the budget: those bytes could not be delivered.
       Wanted : constant Natural :=
         (if Remaining_Budget (Object) < Byte_Count (Count) then Natural (Remaining_Budget (Object)) else Count);
    begin
       if Object.Input = null then
-         return Results.Failure (Errors.Source_Read_Failed);
+         return Results.Failure (Unbound_Reply.Error);
       end if;
       --  Move what is buffered to the front so Count bytes fit.
       if Object.First > 1 then
@@ -128,7 +141,7 @@ package body Pictlib.Internal.Picture_Stream is
    overriding function Read (Object : in out Reader; Buffer : out Streams.Byte_Array) return Streams.Source_Result is
    begin
       if Object.Input = null then
-         return (Error => Errors.Make (Errors.Source_Read_Failed), Count => 0, End_Of_Input => False);
+         return Unbound_Reply;
       elsif Buffer'Length = 0 then
          return (Error => Errors.Make (Errors.No_Error), Count => 0, End_Of_Input => False);
       end if;
@@ -160,7 +173,7 @@ package body Pictlib.Internal.Picture_Stream is
          Step : constant Streams.Source_Result :=
            Object.Input.Read (Buffer (Buffer'First .. Buffer'First + Allowed - 1));
       begin
-         return (if Object.Bound /= Before then Rebound_Reply else Advance (Object, Step, Byte_Count (Allowed)));
+         return Delegated (Object, Before, Step, Byte_Count (Allowed));
       end;
    end Read;
 
@@ -168,7 +181,7 @@ package body Pictlib.Internal.Picture_Stream is
       Probe : Streams.Byte_Array (1 .. 1);
    begin
       if Object.Input = null then
-         return (Error => Errors.Make (Errors.Source_Read_Failed), Count => 0, End_Of_Input => False);
+         return Unbound_Reply;
       elsif Buffered (Object) > 0 then
          Object.First := Object.First + 1;
          Object.Consumed := Object.Consumed + 1;
@@ -180,7 +193,7 @@ package body Pictlib.Internal.Picture_Stream is
          Before : constant Generation := Object.Bound;
          Step : constant Streams.Source_Result := Object.Input.Read (Probe);
       begin
-         return (if Object.Bound /= Before then Rebound_Reply else Advance (Object, Step, 1));
+         return Delegated (Object, Before, Step, 1);
       end;
    end Probe_Past_End;
 
@@ -190,7 +203,7 @@ package body Pictlib.Internal.Picture_Stream is
    overriding function Skip (Object : in out Reader; Count : Byte_Count) return Streams.Source_Result is
    begin
       if Object.Input = null then
-         return (Error => Errors.Make (Errors.Source_Read_Failed), Count => 0, End_Of_Input => False);
+         return Unbound_Reply;
       elsif Count = 0 then
          return (Error => Errors.Make (Errors.No_Error), Count => 0, End_Of_Input => False);
       end if;
@@ -218,7 +231,7 @@ package body Pictlib.Internal.Picture_Stream is
          Before : constant Generation := Object.Bound;
          Step : constant Streams.Source_Result := Object.Input.Skip (Allowed);
       begin
-         return (if Object.Bound /= Before then Rebound_Reply else Advance (Object, Step, Allowed));
+         return Delegated (Object, Before, Step, Allowed);
       end;
    end Skip;
 end Pictlib.Internal.Picture_Stream;

@@ -419,10 +419,11 @@ package body Pictlib.Encoding is
       Item : Plan;
       Colors : Palette;
       --  Set as the first byte is written; by reference, so an exception from the destination leaves it set.
-      Started : not null access Boolean) return Results.Result
+      Started : not null access Boolean;
+      --  What the destination took.
+      Written : out Byte_Count) return Results.Result
    is
       Budget : Limits.Limit_Set renames Object.Encode_Limits;
-      Binds_At_Start : constant Internal.Generation := Object.Binds;
       Measure : Writers.Writer;
       Output : Writers.Writer;
       Outcome : Results.Result;
@@ -443,6 +444,7 @@ package body Pictlib.Encoding is
       end Emit;
    begin
       Started.all := False;
+      Written := 0;
       --  The dry run counts what the output will hold, the file header included, against the limit as it was
       --  set, so a picture that does not fit is reported in the caller's terms.
       Writers.Start (Measure, null, Budget.Max_Output_Bytes);
@@ -451,13 +453,9 @@ package body Pictlib.Encoding is
          return Outcome;
       end if;
       Started.all := True;
-      Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes);
-      Writers.Watch (Output, Object.Binds'Access);
+      Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes, Object.Binds'Access);
       Outcome := Emit (Output, Writers.Picture_Count (Measure));
-      --  A destination that rebound the encoder set its count; one that cancelled it took what it took.
-      if Object.Binds = Binds_At_Start or else Object.Current_State = Cancelled then
-         Object.Written := Writers.Count (Output);
-      end if;
+      Written := Writers.Count (Output);
       return Outcome;
    end Write;
 
@@ -475,6 +473,9 @@ package body Pictlib.Encoding is
       Binds_At_Start : Internal.Generation := 0;
    end record;
 
+   --  Caller code the guarded call ran rebound or cancelled the encoder.
+   function Rebound (Guard : Write_Guard'Class) return Boolean is (Guard.Binds.all /= Guard.Binds_At_Start);
+
    overriding procedure Initialize (Guard : in out Write_Guard);
    overriding procedure Finalize (Guard : in out Write_Guard);
 
@@ -488,7 +489,7 @@ package body Pictlib.Encoding is
    begin
       Guard.Busy.all := False;
       --  A destination that rebound the encoder left it as it chose.
-      if Guard.Started.all and then Guard.State.all = Guard.From and then Guard.Binds.all = Guard.Binds_At_Start then
+      if Guard.Started.all and then Guard.State.all = Guard.From and then not Rebound (Guard) then
          Guard.State.all := Failed;
          Guard.Error.all := Errors.Make (Errors.Destination_Write_Failed);
       end if;
@@ -505,8 +506,7 @@ package body Pictlib.Encoding is
       Guard : Write_Guard
         (Ready, Object.Current_State'Access, Object.First_Error'Access, Started'Access, Object.Busy'Access,
          Object.Binds'Access);
-      Binds : constant Internal.Generation := Object.Binds;
-      pragma Unreferenced (Guard);
+      Written : Byte_Count := 0;
    begin
       if Object.Current_State /= Ready then
          return Wrong_State (Object);
@@ -530,14 +530,20 @@ package body Pictlib.Encoding is
          begin
             Outcome := Check_Plan (Item, Colors, Object.Encode_Limits);
             if Results.Succeeded (Outcome) then
-               Outcome := Write (Object, Image, Settings, Item, Colors, Started'Access);
+               Outcome := Write (Object, Image, Settings, Item, Colors, Started'Access, Written);
             end if;
          end;
       end if;
-      --  The destination cancelled, reset or finalized the encoder under it: that stands.
-      if Object.Current_State /= Ready or else Object.Binds /= Binds then
+      --  The destination cancelled, reset or finalized the encoder under it: that stands. A rebinding set the
+      --  count; a cancelled encoder keeps what its destination took.
+      if Object.Current_State = Cancelled then
+         Object.Written := Written;
+      end if;
+      if Object.Current_State /= Ready or else Rebound (Guard) then
          return Wrong_State (Object);
-      elsif Results.Succeeded (Outcome) then
+      end if;
+      Object.Written := Written;
+      if Results.Succeeded (Outcome) then
          Object.Layout := Layout;
          Object.Current_State := Encoded;
       elsif not Started then
@@ -561,11 +567,9 @@ package body Pictlib.Encoding is
          Guard : Write_Guard
            (Encoded, Object.Current_State'Access, Object.First_Error'Access, Flushing'Access, Object.Busy'Access,
             Object.Binds'Access);
-         pragma Unreferenced (Guard);
-         Binds : constant Internal.Generation := Object.Binds;
          Flushed : constant Errors.Error := Object.Output.Flush;
       begin
-         if Object.Current_State /= Encoded or else Object.Binds /= Binds then
+         if Object.Current_State /= Encoded or else Rebound (Guard) then
             return Wrong_State (Object);
          elsif Errors.Is_Fatal (Flushed) then
             return Fail (Object, Results.Failure (Flushed));

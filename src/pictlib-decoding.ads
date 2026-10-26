@@ -1,12 +1,13 @@
 with Pictlib.Errors;
 with Pictlib.Fonts;
 with Pictlib.Images;
-with Pictlib.Internal.Decoder_State;
 with Pictlib.Limits;
 with Pictlib.Metadata;
 with Pictlib.Pictures;
 with Pictlib.Results;
 with Pictlib.Streams;
+private with Pictlib.Internal;
+private with Pictlib.Internal.Decoder_Core;
 
 --  Forward-only PICT decoder. Initialize binds a borrowed source; Read_Header reads the container;
 --  Enumerate walks the opcode stream once. Calls in the wrong state fail with Invalid_State (Operation_Cancelled
@@ -143,17 +144,15 @@ package Pictlib.Decoding is
    procedure Finalize (Object : in out Decoder);
 
 private
-   --  Steps on every Initialize, Reset and Finalize, so a call can tell caller code rebound the decoder under it.
-   type Bind_Count is mod 2 ** 32;
-
    type Decoder is limited record
       Current_State : aliased Decoder_State := Created;
       --  True while Read_Header, Enumerate or Render runs caller code, a visitor or the source, which may not read
       --  the picture again under it.
       Busy : aliased Boolean := False;
       Decode_Options : Options;
-      Inner : Internal.Decoder_State.State;
+      Inner : Internal.Decoder_Core.Core;
       First_Error : Errors.Error := Errors.Make (Errors.No_Error);
-      Binds : aliased Bind_Count := 0;
+      --  Steps on every Initialize, Reset and Finalize, so a call can tell caller code rebound the decoder under it.
+      Binds : aliased Internal.Generation := 0;
    end record;
 end Pictlib.Decoding;

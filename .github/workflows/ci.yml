@@ -52,7 +52,7 @@ jobs:
         run: alr --non-interactive build
 
       - name: Install GNATprove
-        run: alr install gnatprove^15
+        run: alr install gnatprove=15.1.0
 
       - name: Library-complete gate without the external readers
         working-directory: pictlib/tests

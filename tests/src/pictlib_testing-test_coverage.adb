@@ -35,12 +35,9 @@ package body Pictlib_Testing.Test_Coverage is
       return True;
    end Is_Canonical;
 
-   Generator : Pictlib_Testing.Random.Generator := Pictlib_Testing.Random.Seeded;
-
-   function Random (Bound : Positive) return Natural is (Pictlib_Testing.Random.Next (Generator, Bound));
-
-   --  Random sorted, disjoint spans within columns 0 .. 63.
-   function Random_Spans return Span_List is
+   --  Random sorted, disjoint spans within columns 0 .. 63, drawn from Generator.
+   function Random_Spans (Generator : in out Pictlib_Testing.Random.Generator) return Span_List is
+      function Random (Bound : Positive) return Natural is (Pictlib_Testing.Random.Next (Generator, Bound));
       Result : Span_List;
       X : Natural := Random (4);
    begin
@@ -72,11 +69,13 @@ package body Pictlib_Testing.Test_Coverage is
    --  Intersect and Subtract agree with column sets on 2,000 random pairs, and keep their result canonical.
    procedure Span_Operations (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
+      --  Seeded here, so the pairs tested are the same however often and in whatever order the suite runs.
+      Generator : Pictlib_Testing.Random.Generator := Pictlib_Testing.Random.Seeded;
    begin
       for Trial in 1 .. 2_000 loop
          declare
-            Left : constant Span_List := Random_Spans;
-            Right : constant Span_List := Random_Spans;
+            Left : constant Span_List := Random_Spans (Generator);
+            Right : constant Span_List := Random_Spans (Generator);
             Both, Less : Span_List;
             A : constant Columns := To_Columns (Left);
             B : constant Columns := To_Columns (Right);

@@ -1,4 +1,5 @@
 with Ada.Strings.Unbounded;
+with Ada.Unchecked_Deallocation;
 with Pictlib.Geometry;
 with AUnit.Assertions;
 with Pictlib_Testing.Recorders;
@@ -44,6 +45,21 @@ package body Pictlib_Testing.Canvases is
    begin
       return View (Storage, Pictlib.Geometry.Width (Frame), Pictlib.Geometry.Height (Frame), Format);
    end Frame_View;
+
+   function Render_Frame
+     (Decoder : in out Pictlib.Decoding.Decoder;
+      Storage : in out Pictlib.Streams.Byte_Array_Access) return Pictlib.Results.Result
+   is
+      procedure Free is new Ada.Unchecked_Deallocation
+        (Pictlib.Streams.Byte_Array, Pictlib.Streams.Byte_Array_Access);
+      Needed : constant Natural := Frame_Bytes (Decoder);
+   begin
+      if Pictlib.Streams."=" (Storage, null) or else Storage'Length < Needed then
+         Free (Storage);
+         Storage := new Pictlib.Streams.Byte_Array (1 .. Needed);
+      end if;
+      return Pictlib.Decoding.Render (Decoder, Frame_View (Decoder, Storage));
+   end Render_Frame;
 
    function Rendered
      (Input : Pictlib.Streams.Byte_Array;

@@ -1,27 +1,29 @@
 with Pictlib.Errors;
 with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Failures;
+with Pictlib.Internal.Replies;
 
 package body Pictlib.Internal.Writers is
    use type Interfaces.Unsigned_32;
 
-   procedure Start (Object : out Writer; Output : access Streams.Destination'Class; Max_Bytes : Byte_Count) is
+   procedure Start
+     (Object : out Writer;
+      Output : access Streams.Destination'Class;
+      Max_Bytes : Byte_Count;
+      Watched : access constant Generation := null) is
    begin
+      Object.Watched := (if Watched = null then null else Watched.all'Unchecked_Access);
+      Object.Watched_At := (if Watched = null then 0 else Watched.all);
       Object.Output := (if Output = null then null else Output.all'Unchecked_Access);
       Object.Total := 0;
       Object.Origin := 0;
       Object.Max_Bytes := Max_Bytes;
-      Object.Base := (if Output = null then 0 else Output.Offset);
       Object.Failure := Results.Success;
-      Object.Watched := null;
-      Object.Watched_At := 0;
    end Start;
 
-   procedure Watch (Object : in out Writer; Counter : not null access constant Generation) is
-   begin
-      Object.Watched := Counter.all'Unchecked_Access;
-      Object.Watched_At := Counter.all;
-   end Watch;
+   --  The watched generation moved: caller code rebound or cancelled what the writer writes for.
+   function Moved (Object : Writer) return Boolean is
+     (Object.Watched /= null and then Object.Watched.all /= Object.Watched_At);
 
    function Count (Object : Writer) return Byte_Count is (Object.Total);
 
@@ -33,10 +35,11 @@ package body Pictlib.Internal.Writers is
    function Picture_Count (Object : Writer) return Byte_Count is (Object.Total - Object.Origin);
 
    function Put (Object : in out Writer; Data : Streams.Byte_Array) return Results.Result is
+      Completed : Natural := 0;
    begin
       if not Results.Succeeded (Object.Failure) then
          return Object.Failure;
-      elsif Object.Watched /= null and then Object.Watched.all /= Object.Watched_At then
+      elsif Moved (Object) then
          Object.Failure := Results.Failure (Errors.Invalid_State);
          return Object.Failure;
       elsif Byte_Count (Data'Length) > Object.Max_Bytes - Object.Total then
@@ -45,21 +48,33 @@ package body Pictlib.Internal.Writers is
              (Output_Byte_Limit, Object.Max_Bytes, Object.Total + Data'Length,
               Destination => Destination_Offset (Object.Total));
          return Object.Failure;
-      elsif Object.Output /= null and then Data'Length > 0 then
-         Object.Failure := Streams.Write_All (Object.Output.all, Data);
-      end if;
-      if Results.Succeeded (Object.Failure) then
+      elsif Object.Output = null then
          Object.Total := Object.Total + Data'Length;
-      else
-         --  Count what the destination took of Data before it failed, as far as its offset says.
-         declare
-            Moved : constant Destination_Offset := Object.Output.Offset;
-            Taken : constant Byte_Count :=
-              (if Moved <= Object.Base then 0 else Byte_Count (Moved - Object.Base));
-         begin
-            Object.Total := Byte_Count'Min (Object.Total + Data'Length, Byte_Count'Max (Object.Total, Taken));
-         end;
+         return Object.Failure;
       end if;
+      --  Write by write, so a move of the watched generation stops the rest of Data too; what the destination
+      --  took is counted here, its offset being caller code.
+      while Completed < Data'Length loop
+         declare
+            Left : constant Byte_Count := Byte_Count (Data'Length - Completed);
+            Step : constant Streams.Destination_Result :=
+              Object.Output.Write (Data (Data'First + Completed .. Data'Last));
+            Failure : constant Errors.Error :=
+              Replies.Judged_Write (Step, Left, Destination_Offset (Object.Total) + Destination_Offset (Completed));
+            --  What a reply judged unsound claims is not counted.
+            Taken : constant Natural := (if Step.Count <= Left then Natural (Step.Count) else 0);
+         begin
+            Completed := Completed + Taken;
+            if Moved (Object) then
+               Object.Failure := Results.Failure (Errors.Invalid_State);
+               exit;
+            elsif Errors.Is_Fatal (Failure) then
+               Object.Failure := Results.Failure (Failure);
+               exit;
+            end if;
+         end;
+      end loop;
+      Object.Total := Object.Total + Byte_Count (Completed);
       return Object.Failure;
    end Put;
 

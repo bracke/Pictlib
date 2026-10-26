@@ -549,41 +549,49 @@ package body Pictlib_Testing.Test_Encoding is
       end;
       --  A destination that cancels, finalizes or resets its encoder mid-write, failing no write, leaves it so,
       --  and receives none of the rest of the picture; what was stopped finishes nothing. Reset keeps the options
-      --  for the next picture.
-      for Move in 1 .. 3 loop
-         declare
-            Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
-            Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
-            Other_Storage : constant Pictlib.Streams.Byte_Array_Access :=
-              new Pictlib.Streams.Byte_Array (1 .. Capacity);
-            Output : aliased Flaky;
-            Other : aliased Pictlib.Streams.Fixed_Buffer_Destination;
-            Encoder : aliased Encoding.Encoder;
-            Outcome : Pictlib.Results.Result;
-            Name : constant String :=
-              (case Move is when 1 => " Cancel", when 2 => " Finalize", when others => " Reset");
-         begin
-            Pictlib.Streams.Open (Output.Inner, Storage);
-            Pictlib.Streams.Open (Other, Other_Storage);
-            Output.Fail_At := 40;
-            Output.Target := Encoder'Unchecked_Access;
-            Output.Move := Move;
-            Output.Elsewhere := Other'Unchecked_Access;
-            Encoding.Initialize (Encoder, Output'Access);
-            Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 37, 23));
-            Assert (not Pictlib.Results.Succeeded (Outcome), "an encoder its destination stopped encoded");
-            Assert (Encoding.State (Encoder)
-                    = (case Move is when 1 => Encoding.Cancelled, when 2 => Encoding.Created,
-                       when others => Encoding.Ready),
-                    "a destination's" & Name & " was overwritten: " & Encoding.State (Encoder)'Image);
-            Assert (Output.Writes_After = 0,
-                    "a destination that called" & Name & " was written" & Output.Writes_After'Image & " times more");
-            Assert (Pictlib."=" (Other.Offset, 0), "the destination a Reset bound received bytes");
-            Assert (Move /= 3 or else Pictlib."=" (Encoding.Bytes_Written (Encoder), 0),
-                    "the count of the picture a Reset abandoned was kept:" & Encoding.Bytes_Written (Encoder)'Image);
-            Outcome := Encoding.Finish (Encoder);
-            Assert (not Pictlib.Results.Succeeded (Outcome), "an encoder its destination stopped finished");
-         end;
+      --  for the next picture. A destination taking a byte a write is stopped within the bytes of one Put too.
+      for Short in Boolean loop
+         for Move in 1 .. 3 loop
+            declare
+               Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
+               Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
+               Other_Storage : constant Pictlib.Streams.Byte_Array_Access :=
+                 new Pictlib.Streams.Byte_Array (1 .. Capacity);
+               Output : aliased Flaky;
+               Other : aliased Pictlib.Streams.Fixed_Buffer_Destination;
+               Encoder : aliased Encoding.Encoder;
+               Outcome : Pictlib.Results.Result;
+               Name : constant String :=
+                 (case Move is when 1 => " Cancel", when 2 => " Finalize", when others => " Reset");
+               --  What a call in the state the destination left gets.
+               Code : constant Pictlib.Errors.Error_Code :=
+                 (if Move = 1 then Pictlib.Errors.Operation_Cancelled else Pictlib.Errors.Invalid_State);
+            begin
+               Pictlib.Streams.Open
+                 (Output.Inner, Storage, Max_Transfer => (if Short then 1 else Pictlib.Byte_Count'Last));
+               Pictlib.Streams.Open (Other, Other_Storage);
+               Output.Fail_At := 40;
+               Output.Target := Encoder'Unchecked_Access;
+               Output.Move := Move;
+               Output.Elsewhere := Other'Unchecked_Access;
+               Encoding.Initialize (Encoder, Output'Access);
+               Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 37, 23));
+               Assert (Outcome.First_Error.Code = Code,
+                       "an encoder its destination stopped encoded: " & Outcome.First_Error.Code'Image);
+               Assert (Encoding.State (Encoder)
+                       = (case Move is when 1 => Encoding.Cancelled, when 2 => Encoding.Created,
+                          when others => Encoding.Ready),
+                       "a destination's" & Name & " was overwritten: " & Encoding.State (Encoder)'Image);
+               Assert (Output.Writes_After = 0,
+                       "a destination that called" & Name & " was written" & Output.Writes_After'Image & " times more");
+               Assert (Pictlib."=" (Other.Offset, 0), "the destination a Reset bound received bytes");
+               Assert (Move /= 3 or else Pictlib."=" (Encoding.Bytes_Written (Encoder), 0),
+                       "the count of the picture a Reset abandoned was kept:" & Encoding.Bytes_Written (Encoder)'Image);
+               Outcome := Encoding.Finish (Encoder);
+               Assert (Outcome.First_Error.Code = Code,
+                       "an encoder its destination stopped finished: " & Outcome.First_Error.Code'Image);
+            end;
+         end loop;
       end loop;
       declare
          Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Black_And_White, 8, 2);

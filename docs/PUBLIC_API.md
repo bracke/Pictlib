@@ -1,6 +1,9 @@
 # Public API notes
 
 Only `Pictlib.*` packages outside `Pictlib.Internal` are supported public API.
+This file lists each package and its headline entities, by the gate that made them
+available; the package specs are the complete reference, every public subprogram
+documented there.
 `tests/src/pictlib_api_consumer.ads` consumes the public surface the way an
 outside crate does and must keep compiling.
 

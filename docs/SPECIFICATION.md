@@ -353,7 +353,7 @@ Pictlib.Internal.Sessions          -- decoding session: budget-checked readers, 
 Pictlib.Internal.Sessions.Accounting -- the drawing work and allocations admitted, the cost model
 Pictlib.Internal.Sessions.Retained -- the metadata a session keeps, under its budgets
 Pictlib.Internal.Container         -- file header, picSize, picFrame, version, HeaderOp
-Pictlib.Internal.Decoder_State     -- what a public decoder holds besides its lifecycle
+Pictlib.Internal.Decoder_Core      -- what a public decoder holds besides its lifecycle
 Pictlib.Internal.Regions           -- regions as scanlines, row spans, span arithmetic
 Pictlib.Internal.Region_Reader     -- regions read or skipped under the budgets
 Pictlib.Internal.PackBits          -- unpack byte and word runs (proved), pack byte runs
@@ -489,9 +489,11 @@ leaves it `Failed`, as does an exception the destination raises once writing beg
 `Flush` in `Finish`, which propagates with `Destination_Write_Failed` as the last error;
 `Bytes_Written` is then not known. While `Encode` or `Finish` runs the destination, a nested
 `Encode` or `Finish` fails with `Invalid_State`, and a `Cancel`, `Reset`, `Initialize` or
-`Finalize` it makes stands, the call returning what one in that state gets: the destination
-receives none of the rest of the picture, and `Bytes_Written` is what the call left it (0 after a
-rebinding, what was written after `Cancel`). `Reset (Object, Output)` binds another destination,
+`Finalize` it makes stands, the call returning `Operation_Cancelled` after `Cancel` and
+`Invalid_State` otherwise: the destination receives none of the rest of the picture, not even the
+rest of the bytes it was given in the write it made the call from, and `Bytes_Written` is what the
+call left it (0 after a rebinding, what was written after `Cancel`). The encoder calls only a
+destination's `Write` while encoding, and counts what each write took itself. `Reset (Object, Output)` binds another destination,
 keeps the options and limits, as the decoder's does, and makes any encoder `Ready`; `Finished`,
 `Failed` and `Cancelled` last until `Reset` or `Initialize`. An invalid view's `Invalid_Argument` reports the least a valid view of its size
 and format holds as expected and its accessible bytes as actual, and a non-positive resolution's

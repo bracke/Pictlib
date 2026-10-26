@@ -736,6 +736,9 @@ package body Pictlib_Testing.Test_Decoder is
          Assert (Raised, "an exception from the source's Offset did not propagate");
          Assert (Decoding.State (Other) = Decoding.Stopped,
                  "a Reset whose source raised left the decoder " & Decoding.State (Other)'Image);
+         Assert (Pictlib.Pictures."=" (Decoding.Header (Other), Pictlib.Pictures.Header_Info'(others => <>))
+                 and then Decoding.Last_Error (Other).Code = Pictlib.Errors.No_Error,
+                 "a Reset whose source raised kept the earlier picture");
          Outcome := Decoding.Enumerate (Other, Visitor);
          Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State,
                  "a decoder whose binding raised enumerated: " & Outcome.First_Error.Code'Image);

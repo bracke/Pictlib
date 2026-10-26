@@ -1,34 +1,33 @@
-with Pictlib.Internal.Sessions.Accounting;
-with Pictlib.Internal.Sessions.Retained;
 with Ada.Finalization;
+with Pictlib.Geometry;
 with Pictlib.Internal.Container;
-with Pictlib.Internal.Sessions;
 with Pictlib.Internal.Failures;
 with Pictlib.Internal.Opcode_Reader;
-with Pictlib.Geometry;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Internal.Rendering;
+with Pictlib.Internal.Sessions.Accounting;
+with Pictlib.Internal.Sessions.Retained;
 with Pictlib.Opcodes;
 
 package body Pictlib.Decoding is
    package Accounting renames Pictlib.Internal.Sessions.Accounting;
    package Retained renames Pictlib.Internal.Sessions.Retained;
    use type Errors.Error_Code;
+   use type Internal.Generation;
 
    --  Everything known about the last picture goes; the options and limits stay.
    procedure Discard_Picture (Object : in out Decoder) is
    begin
-      Object.Inner.Info := (others => <>);
-      Object.Inner.Header_Events := [others => (others => <>)];
-      Object.Inner.Header_Event_Count := 0;
+      Internal.Decoder_Core.Discard (Object.Inner);
       Object.First_Error := Errors.Make (Errors.No_Error);
    end Discard_Picture;
 
    procedure Bind (Object : in out Decoder; Input : not null access Streams.Source'Class) is
    begin
+      --  First, so a source whose Offset raises below leaves no picture behind.
+      Discard_Picture (Object);
       Internal.Sessions.Start
         (Object.Inner.Session, Input, Object.Decode_Options.Strictness, Object.Decode_Options.Retention);
-      Discard_Picture (Object);
       Object.Current_State := Ready;
       Object.Binds := Object.Binds + 1;
    exception
@@ -79,28 +78,27 @@ package body Pictlib.Decoding is
    type Call_Guard
      (From : Decoder_State;
       State : not null access Decoder_State;
-      Busy : access Boolean;
-      Binds : not null access constant Bind_Count) is new Ada.Finalization.Limited_Controlled with record
-      Binds_At_Start : Bind_Count := 0;
+      Busy : not null access Boolean;
+      Binds : not null access constant Internal.Generation) is new Ada.Finalization.Limited_Controlled with record
+      Binds_At_Start : Internal.Generation := 0;
    end record;
+
+   --  Caller code the guarded call ran rebound the decoder.
+   function Rebound (Guard : Call_Guard'Class) return Boolean is (Guard.Binds.all /= Guard.Binds_At_Start);
 
    overriding procedure Initialize (Guard : in out Call_Guard);
    overriding procedure Finalize (Guard : in out Call_Guard);
 
    overriding procedure Initialize (Guard : in out Call_Guard) is
    begin
-      if Guard.Busy /= null then
-         Guard.Busy.all := True;
-      end if;
+      Guard.Busy.all := True;
       Guard.Binds_At_Start := Guard.Binds.all;
    end Initialize;
 
    overriding procedure Finalize (Guard : in out Call_Guard) is
    begin
-      if Guard.Busy /= null then
-         Guard.Busy.all := False;
-      end if;
-      if Guard.State.all = Guard.From and then Guard.Binds.all = Guard.Binds_At_Start then
+      Guard.Busy.all := False;
+      if Guard.State.all = Guard.From and then not Rebound (Guard) then
          Guard.State.all := Stopped;
       end if;
    end Finalize;
@@ -114,15 +112,13 @@ package body Pictlib.Decoding is
       end if;
       declare
          Guard : Call_Guard (Ready, Object.Current_State'Access, Object.Busy'Access, Object.Binds'Access);
-         pragma Unreferenced (Guard);
-         Binds : constant Bind_Count := Object.Binds;
          Outcome : constant Results.Result :=
            Internal.Container.Read_Header
              (Object.Inner.Session, Object.Decode_Options.File_Header, Object.Inner.Info, Object.Inner.Header_Events,
               Object.Inner.Header_Event_Count);
       begin
          --  The source cancelled, reset or finalized the decoder under it: that stands.
-         if Object.Current_State /= Ready or else Object.Binds /= Binds then
+         if Object.Current_State /= Ready or else Rebound (Guard) then
             return Wrong_State (Object);
          elsif Results.Succeeded (Outcome) then
             Object.Current_State := Header_Read;

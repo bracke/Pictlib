@@ -22,6 +22,12 @@ package Pictlib.Internal.JPEG_Bridge is
       Data_Size : Interfaces.Unsigned_32 := 0;
    end record;
 
+   --  Pixel bytes.
+   --  @param Item An image.
+   --  @return The bytes its decoded pixels take.
+   function Pixel_Bytes (Item : Image) return Byte_Count is
+     (Bytes_Per_Pixel * Byte_Count (Item.Width) * Byte_Count (Item.Height));
+
    --  Admit and decode.
    --  @param S Session positioned at the compressed data.
    --  @param Event The opcode, for diagnostics.
@@ -32,5 +38,7 @@ package Pictlib.Internal.JPEG_Bridge is
      (S : in out Sessions.Session;
       Event : Pictures.Opcode_Event;
       Item : Image;
-      Pixels : out Pixel_Buffer_Access) return Results.Result;
+      Pixels : out Pixel_Buffer_Access) return Results.Result
+     --  The pixels are one array, indexed by Natural: the caller refuses an image larger.
+     with Pre => Pixel_Bytes (Item) <= Byte_Count (Natural'Last);
 end Pictlib.Internal.JPEG_Bridge;

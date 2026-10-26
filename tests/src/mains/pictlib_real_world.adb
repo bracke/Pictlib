@@ -103,15 +103,15 @@ procedure Pictlib_Real_World is
          Frame : constant Pictlib.Geometry.Rect := Pictlib.Decoding.Header (Decoder).Frame;
          Width : constant Positive := Pictlib.Geometry.Width (Frame);
          Height : constant Positive := Pictlib.Geometry.Height (Frame);
-         Storage : Pictlib.Streams.Byte_Array_Access :=
-           new Pictlib.Streams.Byte_Array (1 .. Pictlib_Testing.Canvases.Frame_Bytes (Decoder));
-         View : constant Pictlib.Images.Mutable_Image_View := Pictlib_Testing.Canvases.Frame_View (Decoder, Storage);
+         Storage : Pictlib.Streams.Byte_Array_Access;
       begin
-         Outcome := Pictlib.Decoding.Render (Decoder, View);
+         Outcome := Pictlib_Testing.Canvases.Render_Frame (Decoder, Storage);
          if Pictlib.Results.Succeeded (Outcome) and then Reference'Length > 0 then
             declare
                Raster : Pictlib_Testing.Files.Raster;
                Wrong : Natural := 0;
+               View : constant Pictlib.Images.Mutable_Image_View :=
+                 Pictlib_Testing.Canvases.Frame_View (Decoder, Storage);
             begin
                if not Pictlib_Testing.Files.Read_Raster (Reference, Raster)
                  or else Raster.Width /= Width or else Raster.Height /= Height

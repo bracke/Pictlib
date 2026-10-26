@@ -36,7 +36,7 @@ package Pictlib.Encoding is
 
    --  Initialize.
    --  @param Object Encoder; any earlier picture is discarded.
-   --  @param Output Borrowed destination; the caller keeps it alive until Finalize or another Initialize.
+   --  @param Output Borrowed destination; the caller keeps it alive until Reset, Finalize or another Initialize.
    --  @param Encode_Options Layout, file header, resolution, threshold and alpha.
    --  @param Encode_Limits Max_Output_Bytes, Max_Allocation_Bytes and the frame limits apply.
    procedure Initialize
@@ -46,7 +46,8 @@ package Pictlib.Encoding is
       Encode_Limits : Limits.Limit_Set := Limits.Default_Limits);
    --  Reset.
    --  @param Object Encoder; any earlier picture is discarded, its options and limits kept.
-   --  @param Output Borrowed destination for the next picture.
+   --  @param Output Borrowed destination for the next picture; the caller keeps it alive until Reset, Finalize or
+   --  Initialize.
    procedure Reset (Object : in out Encoder; Output : not null access Streams.Destination'Class);
    --  State.
    --  @param Object Encoder.

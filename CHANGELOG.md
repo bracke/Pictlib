@@ -58,6 +58,13 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Fixed
 
+- A `Reset` or `Initialize` whose source's `Offset` raises discards the
+  earlier picture too: `Header` and `Last_Error` no longer report it.
+- The encoder stops writing the moment a destination rebinds or cancels it,
+  even within the bytes of one write: it writes through its own loop, which
+  checks after every `Write`, and asks the destination nothing else (no
+  `Offset`), so no caller code runs before it starts watching. A destination
+  taking a byte a write was written 472 times more after cancelling.
 - A line neither along an axis nor at 45 degrees ended: its walk decided its
   second step on the error the first had changed, overshot a shallow line's
   end and ran on until the drawing budget stopped the picture. The fuzzer's
@@ -363,6 +370,17 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Internal structure
 
+- `Pictlib.Decoding` names its internals only privately, and they are
+  `Internal.Decoder_Core`, which discards its own picture. Decoder, encoder,
+  writer and picture stream share one `Internal.Generation`; each guard
+  answers `Rebound` instead of every call keeping its own snapshot, and the
+  picture stream judges a delegated reply in one place. The JPEG bridge
+  computes its pixel bytes once, requiring the caller's bound, and its
+  embedded source is a type of its own. QuickTime reads its matte, mask and
+  description in functions of their own; a polygon's edges, a line's walk,
+  a region frame's erosion and a text's glyph requests are subprograms of
+  their own, their containers instantiated once.
+
 No behaviour changes; what each part of the library does now lives in one
 place:
 
@@ -568,6 +586,14 @@ All tooling is Ada, in the `tests` crate:
   cleanly, so a failure can be read in CI's log; CI passes its fuzz seed in
   `PICTLIB_FUZZ_SEED`, which `pictlib_complete` reads when `--fuzz-seed` is
   not given, rather than in an argument holding a space.
+- `pictlib_check`, `pictlib_conformance`, `pictlib_benchmark` and
+  `pictlib_prove` refuse unknown arguments, so a misspelt `--require` cannot
+  pass with the decoders skipped. `pictlib_fuzz --replay` names files from
+  where it is run, prints its generator's seed, draws its variants in a
+  defined order and counts a partial picture whatever warning reports it.
+  The benchmark and the real-world tool render through one
+  `Canvases.Render_Frame`; the span test seeds its own generator. CI installs
+  the gnatprove it resolves, exactly.
 - `pictlib_fuzz` enumerates strictly and recoverably and renders in every
   strictness, Strict included, and draws from each input's own bytes how it
   is read: header policy, retention of every metadata kind, required end of

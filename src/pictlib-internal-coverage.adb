@@ -343,35 +343,25 @@ package body Pictlib.Internal.Coverage is
       end;
    end Wedge;
 
-   procedure Polygon (Item : in out Shape; Points : Point_Vectors.Vector) is
-      --  An edge crosses the centers of rows First .. Last: 2y + 1 in [Low, High) of its doubled ends.
-      type Edge is record
-         X0, Y0, X1, Y1 : Long_Long_Integer := 0;
-         First, Last : Long_Long_Integer := 0;
-      end record;
+   --  A polygon edge, its ends doubled so pixel centers are integers. It crosses the centers of rows First ..
+   --  Last: 2y + 1 in [Low, High) of its doubled ends.
+   type Edge is record
+      X0, Y0, X1, Y1 : Long_Long_Integer := 0;
+      First, Last : Long_Long_Integer := 0;
+   end record;
 
-      function Starts_Before (Left, Right : Edge) return Boolean is (Left.First < Right.First);
+   function Starts_Before (Left, Right : Edge) return Boolean is (Left.First < Right.First);
 
-      package Edge_Vectors is new Ada.Containers.Vectors (Positive, Edge);
-      package Edge_Sorting is new Edge_Vectors.Generic_Sorting (Starts_Before);
-      package Boundary_Vectors is new Ada.Containers.Vectors (Positive, Long_Long_Integer);
-      package Boundary_Sorting is new Boundary_Vectors.Generic_Sorting;
+   package Edge_Vectors is new Ada.Containers.Vectors (Positive, Edge);
+   package Edge_Sorting is new Edge_Vectors.Generic_Sorting (Starts_Before);
+   package Boundary_Vectors is new Ada.Containers.Vectors (Positive, Long_Long_Integer);
+   package Boundary_Sorting is new Boundary_Vectors.Generic_Sorting;
 
+   --  The edges of the closed polygon through Points that cross a row's center, sorted by the first they cross.
+   procedure Build_Edges (Points : Point_Vectors.Vector; Edges : out Edge_Vectors.Vector) is
       Count : constant Natural := Natural (Points.Length);
-      Edges, Active : Edge_Vectors.Vector;
-      --  A row's crossings and the edges still active below it, kept across rows so their storage is reused.
-      Boundaries : Boundary_Vectors.Vector;
-      Kept : Edge_Vectors.Vector;
-      Next_Edge : Positive := 1;
    begin
-      if Count < 3 then
-         return;
-      end if;
-      --  The edges are charged before they are built and sorted.
-      Charge (Item, Count);
-      if Item.Spent then
-         return;
-      end if;
+      Edges.Clear;
       for Index in 1 .. Count loop
          declare
             P : constant Point := Points (Index);
@@ -389,6 +379,37 @@ package body Pictlib.Internal.Coverage is
          end;
       end loop;
       Edge_Sorting.Sort (Edges);
+   end Build_Edges;
+
+   --  Where E crosses the row whose doubled center is Center: the first pixel whose center is at or right of it.
+   function Crossing (E : Edge; Center : Long_Long_Integer) return Long_Long_Integer is
+      Den : Long_Long_Integer := E.Y1 - E.Y0;
+      Num : Long_Long_Integer := E.X0 * Den + (Center - E.Y0) * (E.X1 - E.X0);
+   begin
+      if Den < 0 then
+         Den := -Den;
+         Num := -Num;
+      end if;
+      return Ceiling_Divide (Num - Den, 2 * Den);
+   end Crossing;
+
+   procedure Polygon (Item : in out Shape; Points : Point_Vectors.Vector) is
+      Count : constant Natural := Natural (Points.Length);
+      Edges, Active : Edge_Vectors.Vector;
+      --  A row's crossings and the edges still active below it, kept across rows so their storage is reused.
+      Boundaries : Boundary_Vectors.Vector;
+      Kept : Edge_Vectors.Vector;
+      Next_Edge : Positive := 1;
+   begin
+      if Count < 3 then
+         return;
+      end if;
+      --  The edges are charged before they are built and sorted.
+      Charge (Item, Count);
+      if Item.Spent then
+         return;
+      end if;
+      Build_Edges (Points, Edges);
       if Edges.Is_Empty then
          return;
       end if;
@@ -412,17 +433,7 @@ package body Pictlib.Internal.Coverage is
             for E of Active loop
                if E.Last >= Row then
                   Kept.Append (E);
-                  declare
-                     Den : Long_Long_Integer := E.Y1 - E.Y0;
-                     Num : Long_Long_Integer := E.X0 * Den + (Center - E.Y0) * (E.X1 - E.X0);
-                  begin
-                     if Den < 0 then
-                        Den := -Den;
-                        Num := -Num;
-                     end if;
-                     --  The first pixel whose center is at or right of the crossing.
-                     Boundaries.Append (Ceiling_Divide (Num - Den, 2 * Den));
-                  end;
+                  Boundaries.Append (Crossing (E, Center));
                end if;
             end loop;
             Active.Move (Kept);
@@ -440,8 +451,49 @@ package body Pictlib.Internal.Coverage is
       end loop;
    end Polygon;
 
+   package Integer_Vectors is new Ada.Containers.Vectors (Natural, Integer);
+
+   --  Walk the path from From to To, a pixel a step, charging each: rows Kept_Top .. Kept_Bottom record their
+   --  leftmost and rightmost columns in Low_X and High_X, indexed from Kept_Top.
+   procedure Walk
+     (Item : in out Shape;
+      From, To : Point;
+      Kept_Top, Kept_Bottom : Integer;
+      Low_X, High_X : in out Integer_Vectors.Vector)
+   is
+      X : Integer := From.H;
+      Y : Integer := From.V;
+      Dx : constant Integer := abs (To.H - From.H);
+      Dy : constant Integer := -abs (To.V - From.V);
+      Step_X : constant Integer := (if From.H < To.H then 1 else -1);
+      Step_Y : constant Integer := (if From.V < To.V then 1 else -1);
+      Error : Integer := Dx + Dy;
+   begin
+      loop
+         if Y in Kept_Top .. Kept_Bottom then
+            Low_X (Y - Kept_Top) := Integer'Min (Low_X (Y - Kept_Top), X);
+            High_X (Y - Kept_Top) := Integer'Max (High_X (Y - Kept_Top), X);
+         end if;
+         Charge (Item, 1);
+         exit when Item.Spent or else (X = To.H and then Y = To.V);
+         --  Both steps are decided on the error before either: deciding the second on the error the first
+         --  changed overshoots a shallow line's end, which the walk then never meets.
+         declare
+            Twice : constant Integer := 2 * Error;
+         begin
+            if Twice >= Dy then
+               Error := Error + Dy;
+               X := X + Step_X;
+            end if;
+            if Twice <= Dx then
+               Error := Error + Dx;
+               Y := Y + Step_Y;
+            end if;
+         end;
+      end loop;
+   end Walk;
+
    procedure Line (Item : in out Shape; From, To : Point; Pen_Width, Pen_Height : Integer) is
-      package Integer_Vectors is new Ada.Containers.Vectors (Natural, Integer);
       Top : constant Integer := Integer'Min (From.V, To.V);
       Bottom : constant Integer := Integer'Max (From.V, To.V);
       --  Only the path rows whose pen reaches the window are kept.
@@ -466,38 +518,7 @@ package body Pictlib.Internal.Coverage is
          Low_X (Index) := Integer'Last;
          High_X (Index) := Integer'First;
       end loop;
-      declare
-         X : Integer := From.H;
-         Y : Integer := From.V;
-         Dx : constant Integer := abs (To.H - From.H);
-         Dy : constant Integer := -abs (To.V - From.V);
-         Step_X : constant Integer := (if From.H < To.H then 1 else -1);
-         Step_Y : constant Integer := (if From.V < To.V then 1 else -1);
-         Error : Integer := Dx + Dy;
-      begin
-         loop
-            if Y in Kept_Top .. Kept_Bottom then
-               Low_X (Y - Kept_Top) := Integer'Min (Low_X (Y - Kept_Top), X);
-               High_X (Y - Kept_Top) := Integer'Max (High_X (Y - Kept_Top), X);
-            end if;
-            Charge (Item, 1);
-            exit when Item.Spent or else (X = To.H and then Y = To.V);
-            --  Both steps are decided on the error before either: deciding the second on the error the first
-            --  changed overshoots a shallow line's end, which the walk then never meets.
-            declare
-               Twice : constant Integer := 2 * Error;
-            begin
-               if Twice >= Dy then
-                  Error := Error + Dy;
-                  X := X + Step_X;
-               end if;
-               if Twice <= Dx then
-                  Error := Error + Dx;
-                  Y := Y + Step_Y;
-               end if;
-            end;
-         end loop;
-      end;
+      Walk (Item, From, To, Kept_Top, Kept_Bottom, Low_X, High_X);
       if Item.Spent then
          return;
       end if;
@@ -535,6 +556,36 @@ package body Pictlib.Internal.Coverage is
       end if;
    end From_Region;
 
+   --  By doubling, row r of Rows becomes the intersection of rows r .. r + Reach - 1, Reach the largest power of
+   --  two within Window, in log2 (Reach) passes, each row of each pass charged before it is made; any Window
+   --  rows are then the intersection of two of those. Stops as soon as Item is spent, Rows then part done.
+   procedure Intersect_Runs
+     (Item : in out Shape;
+      Rows : in out Row_Vectors.Vector;
+      Window : Positive;
+      Reach : out Positive) is
+   begin
+      Reach := 1;
+      while Reach <= Window / 2 loop
+         declare
+            Next : Row_Vectors.Vector;
+            Scratch : Span_List;
+         begin
+            for R in 0 .. Natural (Rows.Length) - Reach - 1 loop
+               --  An intersection walks both its rows.
+               Charge (Item, Natural (Rows (R).Length) + Natural (Rows (R + Reach).Length) + 1);
+               if Item.Spent then
+                  return;
+               end if;
+               Regions.Intersect (Rows (R), Rows (R + Reach), Scratch);
+               Next.Append (Scratch);
+            end loop;
+            Rows.Move (Next);
+         end;
+         Reach := 2 * Reach;
+      end loop;
+   end Intersect_Runs;
+
    procedure Region_Frame (Item : in out Shape; Source : in out Regions.Region; Pen_Width, Pen_Height : Integer) is
       Box : constant Area := Regions.Bounds (Source);
       First, Last : Integer;
@@ -566,33 +617,15 @@ package body Pictlib.Internal.Coverage is
                Narrowed.Append (Inset);
             end;
          end loop;
-         --  A row's eroded part is the intersection of the 2 x Pen_Height + 1 narrowed rows around it. By doubling,
-         --  Narrowed's row r becomes the intersection of rows r .. r + Reach - 1, Reach the largest power of two
-         --  within that window, in log2 (Reach) passes, each row of each pass charged; any window is then the
-         --  intersection of two of its rows.
+         --  A row's eroded part is the intersection of the 2 x Pen_Height + 1 narrowed rows around it.
          declare
-            Window : constant Positive := 2 * Pen_Height + 1;
-            Reach : Positive := 1;
+            Reach : Positive;
          begin
-            while Reach <= Window / 2 loop
-               declare
-                  Next : Row_Vectors.Vector;
-                  Scratch : Span_List;
-               begin
-                  for R in 0 .. Natural (Narrowed.Length) - Reach - 1 loop
-                     --  An intersection walks both its rows: charged before it is made.
-                     Charge (Item, Natural (Narrowed (R).Length) + Natural (Narrowed (R + Reach).Length) + 1);
-                     --  A part-eroded shape is never used.
-                     if Item.Spent then
-                        return;
-                     end if;
-                     Regions.Intersect (Narrowed (R), Narrowed (R + Reach), Scratch);
-                     Next.Append (Scratch);
-                  end loop;
-                  Narrowed.Move (Next);
-               end;
-               Reach := 2 * Reach;
-            end loop;
+            Intersect_Runs (Item, Narrowed, 2 * Pen_Height + 1, Reach);
+            --  A part-eroded shape is never used.
+            if Item.Spent then
+               return;
+            end if;
             for Y in First .. Last loop
                exit when Item.Spent;
                declare

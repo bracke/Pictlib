@@ -281,39 +281,51 @@ package body Pictlib.Internal.Typesetting is
       begin
          return (if Results.Succeeded (Result) then Paint_Ink (P, S, Baseline + 1) else Result);
       end Paint_Underline;
+
+      --  Take Item's glyph as the next cell, its request charged, and restart the run when the request emptied
+      --  the atlas. Control characters draw nothing and cost nothing.
+      function Take_Glyph (Item : Byte) return Results.Result is
+         Result : Results.Result;
+      begin
+         if Item < Space then
+            return Results.Success;
+         end if;
+         --  Every glyph request is drawing work, wherever the character lands.
+         Result := Accounting.Charge_Work (S, Text.Glyph_Work (Size));
+         if not Results.Succeeded (Result) then
+            return Result;
+         end if;
+         declare
+            --  Defined even when the font lacks the glyph and leaves it alone.
+            Metric : Textrender.Glyph_Metric :=
+              (X | Y | W | H => 0, U0 | V0 | U1 | V1 | Advance_X | Bearing_X | Bearing_Y => 0.0);
+            Status : constant Textrender.Status_Code := Font.Get_Glyph (Text.To_Unicode (Item), Metric, Style);
+            Advance : constant Float :=
+              Advance_Of (Item, (if Status = Textrender.Success then Metric.Advance_X else Float (Size) / 2.0),
+                          Width_Change, State);
+         begin
+            if Status /= Textrender.Success and then not Missing_Reported then
+               Sessions.Warn (S, Errors.Data_Loss, Errors.Data_Loss,
+                              (Failures.Context_Of (Event) with delta Actual => Byte_Count (Item)));
+               Missing_Reported := True;
+            end if;
+            Cell_Count := Cell_Count + 1;
+            Cells (Cell_Count) :=
+              Cell_At (Text.To_Unicode (Item), Metric,
+                       Status = Textrender.Success and then Metric.W > 0 and then Metric.H > 0,
+                       Pen, Advance, Baseline, Ascent, Descent, Bold);
+            Pen := Pen + Advance;
+            if Font.Atlas_Generation /= Run_Generation then
+               Result := Restart_Run (Cell_Count);
+            end if;
+         end;
+         return Result;
+      end Take_Glyph;
    begin
       for Item of Characters loop
-         --  Every glyph request is drawing work, wherever the character lands; control characters draw nothing.
-         if Item >= Space then
-            Outcome := Accounting.Charge_Work (S, Text.Glyph_Work (Size));
-            exit when not Results.Succeeded (Outcome);
-            declare
-               --  Defined even when the font lacks the glyph and leaves it alone.
-               Metric : Textrender.Glyph_Metric :=
-                 (X | Y | W | H => 0, U0 | V0 | U1 | V1 | Advance_X | Bearing_X | Bearing_Y => 0.0);
-               Status : constant Textrender.Status_Code := Font.Get_Glyph (Text.To_Unicode (Item), Metric, Style);
-               Advance : constant Float :=
-                 Advance_Of (Item, (if Status = Textrender.Success then Metric.Advance_X else Float (Size) / 2.0),
-                             Width_Change, State);
-            begin
-               if Status /= Textrender.Success and then not Missing_Reported then
-                  Sessions.Warn (S, Errors.Data_Loss, Errors.Data_Loss,
-                                 (Failures.Context_Of (Event) with delta Actual => Byte_Count (Item)));
-                  Missing_Reported := True;
-               end if;
-               Cell_Count := Cell_Count + 1;
-               Cells (Cell_Count) :=
-                 Cell_At (Text.To_Unicode (Item), Metric,
-                          Status = Textrender.Success and then Metric.W > 0 and then Metric.H > 0,
-                          Pen, Advance, Baseline, Ascent, Descent, Bold);
-               Pen := Pen + Advance;
-               if Font.Atlas_Generation /= Run_Generation then
-                  Outcome := Restart_Run (Cell_Count);
-               end if;
-            end;
-            --  A failed restart ends the text: a later, smaller charge must not paper over it.
-            exit when not Results.Succeeded (Outcome);
-         end if;
+         Outcome := Take_Glyph (Item);
+         --  A failed charge or restart ends the text: a later, smaller charge must not paper over it.
+         exit when not Results.Succeeded (Outcome);
       end loop;
       if Results.Succeeded (Outcome) and then Cell_Count >= Run_First then
          Outcome := Paint_Run (Run_First, Cell_Count);

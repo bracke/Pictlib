@@ -29,6 +29,15 @@ package Pictlib_Testing.Canvases is
       Format : Pictlib.Pixel_Format := Pictlib.RGB_24) return Pictlib.Images.Mutable_Image_View
      with Pre => Storage'Length >= Frame_Bytes (Decoder, Format);
 
+   --  Render frame: render Decoder, its header read, into an RGB_24 view of its frame held in Storage, which is
+   --  allocated, or replaced when too small, for it.
+   --  @param Decoder Decoder in state Header_Read.
+   --  @param Storage The view's storage, kept for the caller to read and reuse; the caller frees it.
+   --  @return What Render returned.
+   function Render_Frame
+     (Decoder : in out Pictlib.Decoding.Decoder;
+      Storage : in out Pictlib.Streams.Byte_Array_Access) return Pictlib.Results.Result;
+
    --  Render Input into Output with a fresh decoder.
    procedure Render
      (Input : aliased Pictlib.Streams.Byte_Array;

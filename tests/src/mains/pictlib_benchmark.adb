@@ -56,11 +56,7 @@ procedure Pictlib_Benchmark is
       Pictlib.Decoding.Initialize (Decoder, Source'Access);
       Outcome := Pictlib.Decoding.Read_Header (Decoder);
       if Pictlib.Results.Succeeded (Outcome) then
-         if Storage = null or else Storage'Length < Pictlib_Testing.Canvases.Frame_Bytes (Decoder) then
-            Free (Storage);
-            Storage := new Pictlib.Streams.Byte_Array (1 .. Pictlib_Testing.Canvases.Frame_Bytes (Decoder));
-         end if;
-         Outcome := Pictlib.Decoding.Render (Decoder, Pictlib_Testing.Canvases.Frame_View (Decoder, Storage));
+         Outcome := Pictlib_Testing.Canvases.Render_Frame (Decoder, Storage);
       end if;
       return Pictlib.Results.Succeeded (Outcome);
    end Render;
@@ -133,6 +129,10 @@ begin
       return;
    end if;
    Pictlib_Testing.Tools.Start_Report ("pictlib_benchmark");
+   if not Pictlib_Testing.Tools.Arguments_Known ([1 .. 0 => null]) then
+      Pictlib_Testing.Tools.Finish_Report;
+      return;
+   end if;
    Layout (Pictlib_Testing.Samples.Gradient, Pictlib.Encoding.Direct_32);
    Layout (Pictlib_Testing.Samples.Three_Colors, Pictlib.Encoding.Indexed_8);
    Layout (Pictlib_Testing.Samples.Black_And_White, Pictlib.Encoding.Mono_1);
