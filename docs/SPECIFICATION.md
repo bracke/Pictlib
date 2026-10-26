@@ -542,8 +542,8 @@ before or as the work is done, whether or not anything is drawn, and nothing is 
 | a region shape | every unit of its region's size, for the copy moved to the origin, besides building it |
 | building a shape | every row walked and every unit of span, region, polygon and line work; building stops at the budget left, and a shape that stops covers nothing |
 | painting | every pixel painted, underlines included |
-| a copied pixmap | every pixel of every row converted and every destination row walked; 1 for every row a copy skips, a QuickTime placeholder's included |
-| a pattern | 1, plus every pixel and row of a color `PixPat` tile decoded |
+| a copied pixmap | for every row converted, its pixels or the bytes it unpacks to, whichever is more, plus 1; every destination row walked; 1 for every row a copy skips, a QuickTime placeholder's included |
+| a pattern | 1, plus, for every row of a color `PixPat` tile decoded, its pixels or the bytes it unpacks to, whichever is more, plus 1 |
 | a QuickTime image | every pixel and row decoded, and every byte of its compressed data |
 | text | every font loaded: its atlas bytes, its file bytes and 65 536; every glyph asked for, wherever it lands: 16 per pixel of its cell |
 | a region walk | every inversion point and line passed |

@@ -89,7 +89,7 @@ builds and `pictlib_check` runs, so the code stays true to the API
    end;
 ```
 
-Run it with `alr --chdir tests exec -- ./bin/pictlib_example`.
+Run it with `alr --chdir=tests exec -- ./bin/pictlib_example`.
 
 ## Build and test
 
@@ -98,8 +98,8 @@ tooling is Ada, in the `tests` crate. The day-to-day gate builds the library on
 its own, checks the source policy and runs the AUnit suite:
 
 ```sh
-alr --chdir tests build
-alr --chdir tests run --skip-build pictlib_check
+alr --chdir=tests build
+alr --chdir=tests run --skip-build pictlib_check
 ```
 
 `alr test` runs the same. The library-complete gate adds the real-world corpus,
@@ -107,7 +107,7 @@ fuzzing, the SPARK proofs and encoder conformance against ImageMagick and
 LibreOffice (test-time only; `--args=--without-conformance` leaves that out):
 
 ```sh
-alr --chdir tests run --skip-build pictlib_complete
+alr --chdir=tests run --skip-build pictlib_complete
 ```
 
 `pictlib_generate` regenerates the external fixtures with ImageMagick and

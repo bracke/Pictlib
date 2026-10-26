@@ -403,6 +403,12 @@ package body Pictlib_Testing.Test_Hostile is
       Decoder : Pictlib.Decoding.Decoder;
       Outcome : Pictlib.Results.Result;
       Small : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
+      --  A 1-pixel BitMap whose row is 1,000 bytes: seven runs of 128 and one of 104, behind a word count. Its
+      --  unpacking, not its one pixel, is the work.
+      Wide_Row : aliased constant Bytes :=
+        Pic (1, 1, W (16#98#) & W (1_000) & Rect (0, 0, 1, 1) & Rect (0, 0, 1, 1) & Rect (0, 0, 1, 1) & W (0)
+                   & W (16)
+                   & [for Index in 1 .. 16 => (if Index = 15 then 16#99# elsif Index mod 2 = 1 then 16#81# else 0)]);
       --  A 1 x 1 BitMap stretched over 65,535 rows, all left of the frame: each destination row walked costs.
       Stretched : aliased constant Bytes :=
         Pic (16, 1, W (16#90#) & W (2) & Rect (0, 0, 1, 1) & Rect (0, 0, 1, 1)
@@ -418,6 +424,8 @@ package body Pictlib_Testing.Test_Hostile is
       Cut_Pen_Bits : aliased constant Bytes := V2_Prefix (0, 0, 4, 4) & W (16#09#) & Zeros (3);
       Cut_Pixel_Pattern : aliased constant Bytes := V2_Prefix (0, 0, 4, 4) & W (16#13#) & W (1);
    begin
+      Assert (Pictlib."<=" (1_000, Canvases.Least_Drawing_Work (Wide_Row, 1, 1, "a 1,000-byte row")),
+              "a 1-pixel row of 1,000 unpacked bytes was charged as one pixel");
       Canvases.Expect_Failure (Empty_Rows, 64, 1_000, Errors.PackBits_Invalid, "empty packed rows", 16#98#,
                                Compatible);
       Canvases.Render (Empty_Rows, Decoder, Canvases.View (Storage'Access, 64, 1_000), Outcome,

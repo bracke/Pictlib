@@ -403,8 +403,9 @@ package body Pictlib.Internal.Rendering is
       Outcome := Pixmaps.Start (S, Decoder, Header);
       for Row in 0 .. Header.Height - 1 loop
          exit when not Results.Succeeded (Outcome);
-         --  Each row is converted whether or not any of it is drawn.
-         Outcome := Accounting.Charge_Work (S, Header.Width + 1);
+         --  Each row is unpacked and converted whether or not any of it is drawn: a unit per pixel or per byte
+         --  unpacked, whichever is more, as rowBytes may be far wider than the pixels.
+         Outcome := Accounting.Charge_Work (S, Natural'Max (Header.Width, Header.Unpacked_Length) + 1);
          if Results.Succeeded (Outcome) then
             Outcome := Pixmaps.Read_Row (S, Decoder, Row);
          end if;

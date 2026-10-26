@@ -2,7 +2,7 @@
 --  (library build, source policy, AUnit suite), the real-world corpus, a fuzzing run, the SPARK proof profile and
 --  encoder conformance against ImageMagick and LibreOffice. --without-conformance leaves out the last, for hosts
 --  without those readers; --fuzz-seed N fuzzes from seed N instead of the default, so each CI run explores new
---  inputs. Runs from anywhere below the pictlib tree after `alr --chdir tests build`.
+--  inputs. Runs from anywhere below the pictlib tree after `alr --chdir=tests build`.
 with Ada.Command_Line;
 with Ada.Environment_Variables;
 with Ada.Strings.Unbounded;

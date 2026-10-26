@@ -98,9 +98,10 @@ package body Pictlib.Internal.Patterns is
             return Outcome;
          end;
       end if;
-      --  Decoding is drawing work, a unit per pixel and per row, like converting a copied row: checked before
-      --  anything is set aside, so a picture without the budget for its tile never allocates it.
-      Needed := Pixel_Count (Header.Width + 1) * Pixel_Count (Header.Height);
+      --  Decoding is drawing work, a unit per pixel or per byte unpacked, whichever is more, and per row, like
+      --  converting a copied row: checked before anything is set aside, so a picture without the budget for its
+      --  tile never allocates it.
+      Needed := Pixel_Count (Natural'Max (Header.Width, Header.Unpacked_Length) + 1) * Pixel_Count (Header.Height);
       if Needed > Allowance - Pixel_Count'Min (Work, Allowance) then
          return Accounting.Over_Work (S, Work + Needed);
       end if;

@@ -5,7 +5,7 @@ with Ada.Exceptions;
 --  production units that depend only on Ada, Interfaces, GNAT, pictlib, jpeglib's public packages and
 --  textrender, an invariant registry true to the suite, and a README whose example is the example program,
 --  which runs. --policy-only checks the sources alone. Run from
---  anywhere below the pictlib tree, after `alr --chdir tests build`.
+--  anywhere below the pictlib tree, after `alr --chdir=tests build`.
 with Ada.Directories;
 with Ada.Strings.Unbounded;
 with Pictlib_Testing.Source_Policy;

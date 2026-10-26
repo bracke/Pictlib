@@ -16,8 +16,8 @@ This crate pins its GNAT toolchain via Alire (`gnat_native = "^15"`). Build and 
 GNAT / GPRBuild / GNATprove / GNATdoc tools on `PATH` — `alr exec -- gnatls --version` must report the pinned GNAT.
 
 ```sh
-alr --chdir tests build
-alr --chdir tests run --skip-build pictlib_check
+alr --chdir=tests build
+alr --chdir=tests run --skip-build pictlib_check
 ```
 
 `pictlib_check` is the day-to-day gate: it builds the library on its own, checks the source policy and runs the

@@ -56,9 +56,12 @@ jobs:
 
       - name: Library-complete gate without the external readers
         working-directory: pictlib/tests
+        shell: bash
         env:
           PICTLIB_FUZZ_SEED: ${{ github.run_number }}
-        run: alr --non-interactive run --skip-build pictlib_complete --args=--without-conformance
+          # `alr run` reports a built tool as "not built by this release" on Windows: run the binary itself.
+          EXE: ${{ runner.os == 'Windows' && '.exe' || '' }}
+        run: alr --non-interactive exec -- bin/pictlib_complete$EXE --without-conformance
 
       - name: Keep the fuzzer's defect, slow and stuck inputs
         if: failure()

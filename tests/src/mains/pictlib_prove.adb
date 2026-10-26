@@ -47,8 +47,9 @@ procedure Pictlib_Prove is
            Project_Tools.Processes.Command_Output
              (Alr,
               Project_Tools.Processes.Arguments
-                ([Arg ("--non-interactive"), Arg ("--chdir"),
-                  Arg (Root), Arg ("exec"),
+                ([Arg ("--non-interactive"),
+                  --  Attached: alr 2.1.1 refuses --chdir with its directory as the next argument.
+                  Arg ("--chdir=" & Root), Arg ("exec"),
                   Arg ("--"),
                   Arg (Prover), Arg ("-P"),
                   Arg ("proof/pictlib_proof.gpr"),

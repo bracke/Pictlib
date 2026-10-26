@@ -7,7 +7,7 @@ fails on any unproved check, any medium or high diagnostic, or a declared SPARK
 body that was skipped:
 
 ```sh
-alr --chdir tests run --skip-build pictlib_prove
+alr --chdir=tests run --skip-build pictlib_prove
 ```
 
 | Unit | What is proved |

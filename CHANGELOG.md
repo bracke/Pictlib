@@ -58,6 +58,9 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Fixed
 
+- A copied pixmap or pattern is charged work for each row's unpacked bytes
+  as well as its pixels: a row whose rowBytes is far wider than the picture
+  drew a thousand bytes of PackBits for one unit.
 - `Limits.Max_Canvas_Bytes` and `Canvas_Byte_Limit` are gone: they were
   never enforced, the renderer allocating no canvas.
 - An exception from a source in `Read_Header` or `Render`, as from a
@@ -550,3 +553,7 @@ All tooling is Ada, in the `tests` crate:
   cleanly, so a failure can be read in CI's log; CI passes its fuzz seed in
   `PICTLIB_FUZZ_SEED`, which `pictlib_complete` reads when `--fuzz-seed` is
   not given, rather than in an argument holding a space.
+- Every `alr --chdir` names its directory attached (`--chdir=tests`): alr
+  2.1.1, which CI installs, refuses the directory as a separate argument, and
+  so failed every proof. CI runs `pictlib_complete` through `alr exec`, as
+  `alr run` reports it "not built by this release" on Windows.

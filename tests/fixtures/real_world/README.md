@@ -1,6 +1,6 @@
 # Real-world corpus
 
-Run with `alr --chdir tests exec -- ./bin/pictlib_real_world`. Every picture is
+Run with `alr --chdir=tests exec -- ./bin/pictlib_real_world`. Every picture is
 enumerated strictly and rendered compatibly and recoverably with the DejaVu
 test fonts; an exception escaping pictlib is a defect, and every outcome must
 match `expected.txt` (`--update` rewrites it after review; `--opcodes`

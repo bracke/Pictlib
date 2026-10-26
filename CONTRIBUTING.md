@@ -16,6 +16,6 @@ commands that run those tools.
 Keep the repository buildable after every change. The day-to-day gate is:
 
 ```sh
-alr --chdir tests build
-alr --chdir tests run --skip-build pictlib_check
+alr --chdir=tests build
+alr --chdir=tests run --skip-build pictlib_check
 ```

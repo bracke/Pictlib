@@ -13,7 +13,7 @@
   Any design conflict is resolved in the specification first.
 - For each task, implement its public contract, internal implementation, positive and adversarial
   AUnit tests, and documentation together. Keep tasks small enough for one focused session.
-- Build after each task (`alr build`, `alr --chdir tests build`) and run the tests. Do not claim
+- Build after each task (`alr build`, `alr --chdir=tests build`) and run the tests. Do not claim
   completion without verified results.
 - Never suppress corrupt input or exceed configured limits to make a test pass. Error reporting is
   non-raising and deterministic.
