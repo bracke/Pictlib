@@ -43,6 +43,10 @@ package Pictlib.Encoding is
       Output : not null access Streams.Destination'Class;
       Encode_Options : Options := (others => <>);
       Encode_Limits : Limits.Limit_Set := Limits.Default_Limits);
+   --  Reset.
+   --  @param Object Encoder; any earlier picture is discarded, its options and limits kept.
+   --  @param Output Borrowed destination for the next picture.
+   procedure Reset (Object : in out Encoder; Output : not null access Streams.Destination'Class);
    --  State.
    --  @param Object Encoder.
    --  @return Current state.
@@ -85,6 +89,8 @@ package Pictlib.Encoding is
 private
    type Destination_Access is access all Streams.Destination'Class;
 
+   type Bind_Count is mod 2 ** 32;
+
    type Encoder is limited record
       Current_State : aliased Encoder_State := Created;
       Output : Destination_Access := null;
@@ -95,5 +101,7 @@ private
       First_Error : aliased Errors.Error := Errors.Make (Errors.No_Error);
       --  True while Encode or Finish runs the destination, which may not call into the encoder under it.
       Busy : aliased Boolean := False;
+      --  Steps on every Initialize, Reset and Finalize, so a call can tell the destination rebound the encoder.
+      Binds : aliased Bind_Count := 0;
    end record;
 end Pictlib.Encoding;

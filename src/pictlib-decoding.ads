@@ -140,12 +140,17 @@ package Pictlib.Decoding is
    procedure Finalize (Object : in out Decoder);
 
 private
+   --  Steps on every Initialize, Reset and Finalize, so a call can tell caller code rebound the decoder under it.
+   type Bind_Count is mod 2 ** 32;
+
    type Decoder is limited record
       Current_State : aliased Decoder_State := Created;
-      --  True while Enumerate calls a visitor, which may not read the picture again under it.
-      Visiting : aliased Boolean := False;
+      --  True while Read_Header, Enumerate or Render runs caller code, a visitor or the source, which may not read
+      --  the picture again under it.
+      Busy : aliased Boolean := False;
       Decode_Options : Options;
       Inner : Internal.Decoder_State.State;
       First_Error : Errors.Error := Errors.Make (Errors.No_Error);
+      Binds : aliased Bind_Count := 0;
    end record;
 end Pictlib.Decoding;

@@ -1,7 +1,8 @@
 # External-oracle fixtures
 
 Produced by `pictlib_generate` (`alr --chdir tests run --skip-build pictlib_generate`), which reproduces
-these files byte for byte with ImageMagick 7.1.1-43 Q16 and Netpbm `ppmtopict`: each source raster (`.ppm`, `.pbm`) was drawn by
+these files byte for byte with ImageMagick 7.1.1-43 Q16 and Netpbm 11.5.2 `ppmtopict`, as
+`pictlib_generate --check` verifies (it prints the versions it ran with): each source raster (`.ppm`, `.pbm`) was drawn by
 ImageMagick and written as PICT by Netpbm `ppmtopict` or ImageMagick, neither of
 which shares code with pictlib. The test `external.*` renders every `.pict`
 and requires the pixels of its source raster exactly.

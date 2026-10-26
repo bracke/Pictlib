@@ -1,10 +1,13 @@
 --  Regenerates the external-oracle fixtures: source rasters drawn by ImageMagick, written as PICT by two
 --  independent encoders (Netpbm ppmtopict and ImageMagick), QuickTime pictures with embedded JPEGs and libjpeg's
 --  decodings of those JPEGs. Test-time tooling only; the tools are run directly, never through a shell. Everything
---  is made in a staging directory first and copied into place only when every step succeeded.
---  Arguments: [--output DIR], fixtures/external by default. Runs from anywhere below the pictlib tree.
+--  is made in a staging directory first and copied into place only when every step succeeded. With --check,
+--  nothing is copied: each product is compared with the committed fixture byte for byte, and any difference
+--  fails, so a drift of ImageMagick, Netpbm or libjpeg shows. The tools' versions are printed either way.
+--  Arguments: [--output DIR] [--check], fixtures/external by default. Runs from anywhere below the pictlib tree.
 with Ada.Command_Line;
 with Ada.Directories;
+with Ada.Exceptions;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
@@ -29,6 +32,7 @@ procedure Pictlib_Generate is
       +"truecolor_embedded.ppm", +"palette_embedded.ppm", +"small.jpg", +"small_decoded.ppm"];
 
    Target : Unbounded_String := +"fixtures/external";
+   Check_Only : Boolean := False;
    Magick : constant String := Pictlib_Testing.Tools.ImageMagick;
    Ppmtopict : constant String := Processes.Locate_Command ("ppmtopict");
 
@@ -40,8 +44,11 @@ procedure Pictlib_Generate is
             --  Relative to where the tool was run, before it moves to the tests directory.
             Target := +Ada.Directories.Full_Name (Ada.Command_Line.Argument (Index + 1));
             Index := Index + 2;
+         elsif Ada.Command_Line.Argument (Index) = "--check" then
+            Check_Only := True;
+            Index := Index + 1;
          else
-            Fail ("usage: pictlib_generate [--output DIR]");
+            Fail ("usage: pictlib_generate [--output DIR] [--check]");
             return;
          end if;
       end loop;
@@ -73,6 +80,8 @@ procedure Pictlib_Generate is
          GNAT.OS_Lib.Free (Arguments (1));
          return;
       end if;
+      --  Spawned straight into the product file: ppmtopict writes the picture to standard output, and a file
+      --  keeps its bytes exactly where a captured string could translate line ends.
       GNAT.OS_Lib.Spawn (Ppmtopict, Arguments, Path (Product), Success, Status, Err_To_Out => False);
       GNAT.OS_Lib.Free (Arguments (1));
       if not Success or else Status /= 0 then
@@ -115,6 +124,12 @@ begin
       Fail ("needs ImageMagick (magick, or ImageMagick 6's convert) and Netpbm's ppmtopict");
    end if;
    if Pictlib_Testing.Tools.Failures = 0 then
+      Pictlib_Testing.Tools.Report_Version ("ImageMagick", Magick, "-version");
+      Pictlib_Testing.Tools.Report_Version ("ppmtopict", Ppmtopict);
+      --  Nothing a run that stopped early left behind can stand in for a product of this one.
+      if Ada.Directories.Exists (Staging) then
+         Ada.Directories.Delete_Tree (Staging);
+      end if;
       Ada.Directories.Create_Path (Staging);
    end if;
 
@@ -161,15 +176,48 @@ begin
          end if;
       end loop;
    end if;
-   if Pictlib_Testing.Tools.Failures = 0 then
+   if Pictlib_Testing.Tools.Failures = 0 and then Check_Only then
+      for Product of Products loop
+         declare
+            Name : constant String := To_String (Product);
+            Committed : constant String := To_String (Target) & "/" & Name;
+         begin
+            if not Ada.Directories.Exists (Committed) then
+               Fail (Committed & ": no committed fixture to compare");
+            elsif Project_Tools.Files.Read_Raw_File (Path (Name)) /= Project_Tools.Files.Read_Raw_File (Committed)
+            then
+               Fail (Name & ": differs from the committed fixture");
+            else
+               Ada.Text_IO.Put_Line ("same " & Name);
+            end if;
+         end;
+      end loop;
+   elsif Pictlib_Testing.Tools.Failures = 0 then
       Ada.Directories.Create_Path (To_String (Target));
       for Product of Products loop
-         Ada.Directories.Copy_File (Path (To_String (Product)), To_String (Target) & "/" & To_String (Product));
+         begin
+            Ada.Directories.Copy_File (Path (To_String (Product)), To_String (Target) & "/" & To_String (Product));
+         exception
+            when Error : others =>
+               Fail ("copying " & To_String (Product) & " failed, the fixtures before it already replaced: "
+                     & Ada.Exceptions.Exception_Message (Error));
+               exit;
+         end;
       end loop;
-      Ada.Text_IO.Put_Line ("generated the external fixtures in " & To_String (Target));
+      if Pictlib_Testing.Tools.Failures = 0 then
+         Ada.Text_IO.Put_Line ("generated the external fixtures in " & To_String (Target));
+      end if;
    end if;
    if Ada.Directories.Exists (Staging) then
       Ada.Directories.Delete_Tree (Staging);
    end if;
    Pictlib_Testing.Tools.Finish_Report;
+exception
+   --  A tool that raised still leaves no staging behind, and fails.
+   when Error : others =>
+      if Ada.Directories.Exists (Staging) then
+         Ada.Directories.Delete_Tree (Staging);
+      end if;
+      Fail ("stopped: " & Ada.Exceptions.Exception_Information (Error));
+      Pictlib_Testing.Tools.Finish_Report;
 end Pictlib_Generate;

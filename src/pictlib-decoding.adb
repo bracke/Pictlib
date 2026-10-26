@@ -1,3 +1,5 @@
+with Pictlib.Internal.Sessions.Accounting;
+with Pictlib.Internal.Sessions.Retained;
 with Ada.Finalization;
 with Pictlib.Internal.Container;
 with Pictlib.Internal.Sessions;
@@ -9,6 +11,8 @@ with Pictlib.Internal.Rendering;
 with Pictlib.Opcodes;
 
 package body Pictlib.Decoding is
+   package Accounting renames Pictlib.Internal.Sessions.Accounting;
+   package Retained renames Pictlib.Internal.Sessions.Retained;
    use type Errors.Error_Code;
 
    --  Everything known about the last picture goes; the options and limits stay.
@@ -26,6 +30,7 @@ package body Pictlib.Decoding is
         (Object.Inner.Session, Input, Object.Decode_Options.Strictness, Object.Decode_Options.Retention);
       Discard_Picture (Object);
       Object.Current_State := Ready;
+      Object.Binds := Object.Binds + 1;
    end Bind;
 
    procedure Initialize
@@ -60,49 +65,57 @@ package body Pictlib.Decoding is
    end Finish;
 
    --  Guards a call that reads the picture: caller code it runs (a visitor, the source) may raise, or the task be
-   --  aborted. However the call ends, Visiting, when given, is cleared; a call that leaves the decoder in From,
+   --  aborted. However the call ends, Busy, when given, is cleared; a call that leaves the decoder in From,
    --  the state it began in, did not return, since every return moves it on, and leaves it Stopped, its stream
    --  partly read, until Reset or Initialize.
-   type Call_Guard (From : Decoder_State; State : not null access Decoder_State; Visiting : access Boolean) is
-     new Ada.Finalization.Limited_Controlled with null record;
+   --  A call whose caller code rebound the decoder (Binds moved) left it as that code chose.
+   type Call_Guard
+     (From : Decoder_State;
+      State : not null access Decoder_State;
+      Busy : access Boolean;
+      Binds : not null access constant Bind_Count) is new Ada.Finalization.Limited_Controlled with record
+      Binds_At_Start : Bind_Count := 0;
+   end record;
 
    overriding procedure Initialize (Guard : in out Call_Guard);
    overriding procedure Finalize (Guard : in out Call_Guard);
 
    overriding procedure Initialize (Guard : in out Call_Guard) is
    begin
-      if Guard.Visiting /= null then
-         Guard.Visiting.all := True;
+      if Guard.Busy /= null then
+         Guard.Busy.all := True;
       end if;
+      Guard.Binds_At_Start := Guard.Binds.all;
    end Initialize;
 
    overriding procedure Finalize (Guard : in out Call_Guard) is
    begin
-      if Guard.Visiting /= null then
-         Guard.Visiting.all := False;
+      if Guard.Busy /= null then
+         Guard.Busy.all := False;
       end if;
-      if Guard.State.all = Guard.From then
+      if Guard.State.all = Guard.From and then Guard.Binds.all = Guard.Binds_At_Start then
          Guard.State.all := Stopped;
       end if;
    end Finalize;
 
    function Read_Header (Object : in out Decoder) return Results.Result is
    begin
-      if Object.Visiting then
+      if Object.Busy then
          return Results.Failure (Errors.Invalid_State);
       elsif Object.Current_State /= Ready then
          return Wrong_State (Object);
       end if;
       declare
-         Guard : Call_Guard (Ready, Object.Current_State'Access, Object.Visiting'Access);
+         Guard : Call_Guard (Ready, Object.Current_State'Access, Object.Busy'Access, Object.Binds'Access);
          pragma Unreferenced (Guard);
+         Binds : constant Bind_Count := Object.Binds;
          Outcome : constant Results.Result :=
            Internal.Container.Read_Header
              (Object.Inner.Session, Object.Decode_Options.File_Header, Object.Inner.Info, Object.Inner.Header_Events,
               Object.Inner.Header_Event_Count);
       begin
-         --  The source cancelled the decoder under it: that stands.
-         if Object.Current_State /= Ready then
+         --  The source cancelled, reset or finalized the decoder under it: that stands.
+         if Object.Current_State /= Ready or else Object.Binds /= Binds then
             return Wrong_State (Object);
          elsif Results.Succeeded (Outcome) then
             Object.Current_State := Header_Read;
@@ -161,7 +174,7 @@ package body Pictlib.Decoding is
       return Results.Success;
    end Step;
 
-   --  Enumerate while Visiting is set. A visitor may cancel, reset or finalize the decoder: the state it leaves
+   --  Enumerate while Busy is set. A visitor may cancel, reset or finalize the decoder: the state it leaves
    --  stands, and enumeration ends with what a call in that state gets.
    function Enumerate_Opcodes (Object : in out Decoder; Visitor : in out Opcode_Visitor'Class)
      return Results.Result
@@ -222,13 +235,13 @@ package body Pictlib.Decoding is
 
    function Enumerate (Object : in out Decoder; Visitor : in out Opcode_Visitor'Class) return Results.Result is
    begin
-      if Object.Visiting then
+      if Object.Busy then
          return Results.Failure (Errors.Invalid_State);
       elsif Object.Current_State /= Header_Read then
          return Wrong_State (Object);
       end if;
       declare
-         Guard : Call_Guard (Header_Read, Object.Current_State'Access, Object.Visiting'Access);
+         Guard : Call_Guard (Header_Read, Object.Current_State'Access, Object.Busy'Access, Object.Binds'Access);
          pragma Unreferenced (Guard);
       begin
          return Enumerate_Opcodes (Object, Visitor);
@@ -269,14 +282,7 @@ package body Pictlib.Decoding is
       then
          --  The frame's size, but not a valid view: the least a valid view of its size and format holds, against
          --  what it holds.
-         return Results.Failure
-           (Errors.Make
-              (Errors.Invalid_Argument,
-               (Expected =>
-                  Images.Minimum_Row_Bytes (Output.Descriptor.Width, Output.Descriptor.Format)
-                  * Byte_Count (Output.Descriptor.Height),
-                Actual => Output.Descriptor.Accessible_Bytes,
-                others => <>)));
+         return Internal.Failures.Invalid_View (Output.Descriptor);
       elsif not Images.Is_Valid (Output)
         or else Integer (Output.Descriptor.Width) /= Geometry.Width (Frame)
         or else Integer (Output.Descriptor.Height) /= Geometry.Height (Frame)
@@ -296,7 +302,7 @@ package body Pictlib.Decoding is
 
    function Render (Object : in out Decoder; Output : Images.Mutable_Image_View) return Results.Result is
    begin
-      if Object.Visiting then
+      if Object.Busy then
          return Results.Failure (Errors.Invalid_State);
       elsif Object.Current_State /= Header_Read then
          return Wrong_State (Object);
@@ -317,13 +323,13 @@ package body Pictlib.Decoding is
 
       declare
          --  Before the painter, so the painter is finalized first.
-         Guard : Call_Guard (Header_Read, Object.Current_State'Access, Object.Visiting'Access);
+         Guard : Call_Guard (Header_Read, Object.Current_State'Access, Object.Busy'Access, Object.Binds'Access);
          pragma Unreferenced (Guard);
          Paint : aliased Internal.Rendering.Painter;
          Outcome : Results.Result := Results.Success;
       begin
          --  Each render has the whole drawing budget.
-         Internal.Sessions.Start_Drawing (Object.Inner.Session);
+         Accounting.Start_Drawing (Object.Inner.Session);
          Internal.Rendering.Start
            (Paint, Output, Object.Inner.Info.Frame, Object.Decode_Options.Background, Object.Decode_Options.Fonts);
          loop
@@ -371,17 +377,17 @@ package body Pictlib.Decoding is
      (Internal.Sessions.Warning_At (Object.Inner.Session, Index));
 
    function Metadata_Count (Object : Decoder) return Natural is
-     (Internal.Sessions.Metadata_Count (Object.Inner.Session));
+     (Retained.Metadata_Count (Object.Inner.Session));
 
    function Metadata_Item (Object : Decoder; Index : Positive) return Metadata.Item_Info is
-     (Internal.Sessions.Metadata_Item (Object.Inner.Session, Index));
+     (Retained.Metadata_Item (Object.Inner.Session, Index));
 
    function Copy_Metadata
      (Object : Decoder;
       Index : Positive;
       Buffer : out Streams.Byte_Array;
       Count : out Byte_Count) return Results.Result is
-     (Internal.Sessions.Copy_Metadata (Object.Inner.Session, Index, Buffer, Count));
+     (Retained.Copy_Metadata (Object.Inner.Session, Index, Buffer, Count));
 
    procedure Cancel (Object : in out Decoder) is
    begin
@@ -395,5 +401,6 @@ package body Pictlib.Decoding is
       Internal.Sessions.Clear (Object.Inner.Session);
       Discard_Picture (Object);
       Object.Current_State := Created;
+      Object.Binds := Object.Binds + 1;
    end Finalize;
 end Pictlib.Decoding;

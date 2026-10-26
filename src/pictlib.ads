@@ -20,6 +20,8 @@ package Pictlib is
    type Pixel_Depth is range 1 .. 32
      with Static_Predicate => Pixel_Depth in 1 | 2 | 4 | 8 | 16 | 32;
    type Row_Index is range 0 .. 2 ** 31 - 1;
+   --  A Macintosh font ID, as TxFont and fontName give it.
+   type Font_ID is range 0 .. 16#FFFF#;
 
    type Strictness_Mode is (Strict, Compatible, Recover_When_Safe);
    type PICT_Version is (Version_1, Version_2, Extended_Version_2);

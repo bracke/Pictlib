@@ -26,14 +26,22 @@ procedure Pictlib_Benchmark is
    package Duration_IO is new Ada.Text_IO.Fixed_IO (Duration);
 
    procedure Report (Label : String; Pixels : Natural; Elapsed : Duration) is
-      Rate : constant Float := Float (Pixels) / Float (Elapsed) / 1.0E6;
    begin
       Ada.Text_IO.Put (Label & ": ");
       Duration_IO.Put (Elapsed, Fore => 3, Aft => 3);
-      Ada.Text_IO.Put_Line (" s," & Integer'Image (Integer (Rate)) & " Mpx/s");
+      --  A clock too coarse to time the work has no rate to report.
+      if Elapsed <= 0.0 then
+         Ada.Text_IO.Put_Line (" s, too fast to time");
+      else
+         Ada.Text_IO.Put_Line
+           (" s," & Natural'Image (Natural (Float'Min (Float (Pixels) / Float (Elapsed) / 1.0E6, 1.0E9)))
+            & " Mpx/s");
+      end if;
    end Report;
 
    procedure Free is new Ada.Unchecked_Deallocation (Pictlib.Streams.Byte_Array, Pictlib.Streams.Byte_Array_Access);
+   procedure Free_Picture is new Ada.Unchecked_Deallocation
+     (Pictlib.Streams.Byte_Array, Pictlib_Testing.Samples.Bytes_Access);
 
    --  Render Data into a view of its frame, allocated once and kept in Storage across calls.
    function Render
@@ -72,6 +80,10 @@ procedure Pictlib_Benchmark is
          if not Pictlib.Results.Succeeded (Picture.Outcome) then
             Pictlib_Testing.Tools.Fail (Kind'Image & ": encode failed");
             return;
+         end if;
+         --  Every round's picture but the last, which is rendered below.
+         if Round < Rounds then
+            Free_Picture (Picture.Data);
          end if;
       end loop;
       Report (Kind'Image & " encode", Rounds * Width * Height, Ada.Calendar.Clock - Started);

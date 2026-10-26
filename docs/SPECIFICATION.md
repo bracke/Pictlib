@@ -345,8 +345,9 @@ Pictlib.Internal.Replies           -- the one judgement of a source's reply
 Pictlib.Internal.Picture_Stream    -- look-ahead source wrapper, picture byte budget
 Pictlib.Internal.Diagnostics       -- bounded warning log
 Pictlib.Internal.Metadata_Store    -- retained metadata under budgets
-Pictlib.Internal.Sessions          -- decoding session: budget-checked readers, the drawing-work and
-                                   -- allocation accounting, the cost model, the strictness rule
+Pictlib.Internal.Sessions          -- decoding session: budget-checked readers, warnings, the strictness rule
+Pictlib.Internal.Sessions.Accounting -- the drawing work and allocations admitted, the cost model
+Pictlib.Internal.Sessions.Retained -- the metadata a session keeps, under its budgets
 Pictlib.Internal.Container         -- file header, picSize, picFrame, version, HeaderOp
 Pictlib.Internal.Decoder_State     -- what a public decoder holds besides its lifecycle
 Pictlib.Internal.Regions           -- regions as scanlines, row spans, span arithmetic
@@ -355,12 +356,15 @@ Pictlib.Internal.PackBits          -- unpack byte and word runs (proved), pack b
 Pictlib.Internal.Pixmaps           -- BitMap/PixMap and PixPat headers, color tables, rows
 Pictlib.Internal.Patterns          -- bit, color and dither patterns
 Pictlib.Internal.Transfer_Modes    -- transfer mode arithmetic
+Pictlib.Internal.Pixels            -- a view's pixels in each format, for the canvas and the encoder
 Pictlib.Internal.Canvas            -- the caller's view as a drawing surface
 Pictlib.Internal.Coverage          -- shapes as per-row spans: rects, ovals, arcs, polygons, lines, regions
 Pictlib.Internal.Text              -- text state, Mac Roman, the font cache, text costs
 Pictlib.Internal.Rendering         -- port state, the row blit every drawing paints through, fills, copies
+Pictlib.Internal.Shapes            -- the shape opcodes, as coverage painted through the port
 Pictlib.Internal.Typesetting       -- drawing text opcodes
-Pictlib.Internal.QuickTime         -- CompressedQuickTime: description, jpeglib bridge, placement
+Pictlib.Internal.JPEG_Bridge       -- the one bridge to jpeglib: an embedded JPEG under pictlib's budgets
+Pictlib.Internal.QuickTime         -- CompressedQuickTime: description, placement
 Pictlib.Internal.Drawing           -- the render dispatcher: every opcode that changes the port or draws
 Pictlib.Internal.Opcode_Reader     -- opcode framing, alignment, structural skipping and retention
 Pictlib.Internal.Writers           -- the encoder's byte output and dry-run measuring
@@ -434,7 +438,9 @@ code (the visitor, or the source during `Read_Header`, `Enumerate` or `Render`) 
 the call left in the state it began in, its stream partly read, is then `Stopped`, and is usable
 again after `Reset` or `Initialize`. The same holds for the source: while `Read_Header`,
 `Enumerate` or `Render` runs it, a nested call of any of them fails with `Invalid_State`, and a
-`Cancel` it makes stands, the call returning `Operation_Cancelled`.
+`Cancel`, `Reset`, `Initialize` or `Finalize` it makes stands: the call returns what one in the
+state it left gets (`Operation_Cancelled` after `Cancel`), and what the source delivered for the
+binding it replaced is dropped, so a reset decoder reads its new source from the start.
 
 `Render` rejects an invalid view or one whose size is not the frame's with `Invalid_Argument`
 (expecting the frame's pixels against the view's, or, for an invalid view of the frame's size, the
@@ -474,7 +480,9 @@ another image or encoder can be tried, and does not set `Last_Error`; a failure 
 leaves it `Failed`, as does an exception the destination raises once writing began, or from
 `Flush` in `Finish`, which propagates with `Destination_Write_Failed` as the last error;
 `Bytes_Written` is then not known. While `Encode` or `Finish` runs the destination, a nested
-`Encode` or `Finish` fails with `Invalid_State`. An invalid view's `Invalid_Argument` reports the least a valid view of its size
+`Encode` or `Finish` fails with `Invalid_State`, and a `Cancel`, `Reset`, `Initialize` or
+`Finalize` it makes stands, the call returning what one in that state gets. `Reset (Object,
+Output)` binds another destination and keeps the options and limits, as the decoder's does. An invalid view's `Invalid_Argument` reports the least a valid view of its size
 and format holds as expected and its accessible bytes as actual, and a non-positive resolution's
 expects 1 (the least positive Fixed) against 0, whatever the value; `Too_Many_Colors` reports 256 as
 expected and 257 as actual, as counting stops there.
@@ -571,7 +579,11 @@ against (a limit, what the format requires, or the length of what must hold it: 
 a caller's buffer or storage); actual is what the input, content or request came to. A full
 `Fixed_Buffer_Destination` fails with `Destination_Write_Failed`, expecting its length, and
 `Copy_Metadata` refuses a short buffer with `Invalid_Argument`, expecting the buffer's length.
-Failures and warnings raised while an opcode's data is read name that opcode and its ordinal.
+Failures and warnings raised while an opcode's data is read name that opcode and its ordinal. Their
+source offset follows what they judge: a field found wrong while reading (a size, a count, a row, a
+byte past a budget) names where reading stood; a verdict on the opcode as a whole (a feature this
+release does not draw, an opcode too short for its parts, a font it cannot find) names the opcode's
+own offset.
 Every limit kind but `Warning_Record_Limit` can be reported by `Limit_Exceeded`; that one names
 `Max_Warning_Records`, which caps the warning log instead of failing (section 6). Sizes taken from
 a picture saturate instead of overflowing, so an overflowing size is reported as the limit it
@@ -615,10 +627,13 @@ Root `alire.toml`: `name = "pictlib"`, `0.1.0-dev`, MIT, `gnat_native = "^15"`, 
 (the real-world corpus against its recorded outcomes), `pictlib_fuzz` (mutation fuzzing),
 `pictlib_prove` (the SPARK proof profile), `pictlib_conformance` (encoder output read by ImageMagick
 and by LibreOffice's own PICT import, exact), `pictlib_benchmark` (throughput, informational) and
-`pictlib_complete` (every gate in turn), and `pictlib_generate` (the external fixtures, from
-ImageMagick and Netpbm). All tooling is Ada; there are no shell or Python scripts.
-ImageMagick 7 reads only pictures with the file header, misreads rows stored unpacked and draws
-1-bit BitMaps black, so those pictures are judged by LibreOffice alone.
+`pictlib_complete` (every gate in turn; `--fuzz-seed N` fuzzes from seed N, as CI does with its
+run number), and `pictlib_generate` (the external fixtures, from ImageMagick and Netpbm; `--check`
+compares a regeneration with the committed files byte for byte). All tooling is Ada; there are no
+shell, Python or other scripts. The tools that run an external program print its version.
+ImageMagick (7's `magick`, or 6's `convert`, which CI's Ubuntu provides) reads only pictures with
+the file header, misreads rows stored unpacked and draws 1-bit BitMaps black, so those pictures are
+judged by LibreOffice alone.
 
 ## 12. Testing matrix
 

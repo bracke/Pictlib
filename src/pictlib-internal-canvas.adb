@@ -1,3 +1,6 @@
+with Pictlib.Streams;
+with Pictlib.Internal.Pixels;
+
 package body Pictlib.Internal.Canvas is
    procedure Bind (Target : out Canvas; View : Images.Mutable_Image_View) is
    begin
@@ -5,7 +8,7 @@ package body Pictlib.Internal.Canvas is
    end Bind;
 
    function Position (Target : Canvas; X, Y : Natural) return Positive is
-     (Target.View.Storage'First + Pixel_Offset (Target.View.Descriptor, X, Y));
+     (Target.View.Storage'First + Pixels.Pixel_Offset (Target.View.Descriptor, X, Y));
 
    procedure Put (Target : in out Canvas; X, Y : Natural; Color : Images.RGB_Color) is
       At_Pixel : constant Positive := Position (Target, X, Y);
@@ -51,7 +54,7 @@ package body Pictlib.Internal.Canvas is
    end Put_Span;
 
    function Get (Target : Canvas; X, Y : Natural) return Images.RGB_Color is
-     (Color_At (Target.View.Descriptor.Format, Target.View.Storage.all, Position (Target, X, Y)));
+     (Pixels.Color_At (Target.View.Descriptor.Format, Target.View.Storage.all, Position (Target, X, Y)));
 
    --  The first row pixel by pixel, then every other row as a copy of it.
    procedure Fill (Target : in out Canvas; Color : Images.RGB_Color) is

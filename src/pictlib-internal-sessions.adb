@@ -1,3 +1,5 @@
+with Pictlib.Internal.Sessions.Accounting;
+with Pictlib.Internal.Failures;
 with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Checked_Arithmetic;
 
@@ -114,55 +116,6 @@ package body Pictlib.Internal.Sessions is
       return Deferred;
    end Take_Deferred;
 
-   procedure Start_Drawing (S : in out Session) is
-   begin
-      S.Counts.Work_Used := 0;
-   end Start_Drawing;
-
-   function Over_Work (S : Session; Units : Pixel_Count) return Results.Result is
-     (Over_Limit
-        (S, Drawing_Work_Limit, Byte_Count (S.Budget.Max_Drawing_Work),
-         Byte_Count (Checked_Arithmetic.Saturating_Add (S.Counts.Work_Used, Units))));
-
-   function Charge_Work (S : in out Session; Units : Pixel_Count) return Results.Result is
-   begin
-      if Units > Work_Left (S) then
-         return Over_Work (S, Units);
-      end if;
-      S.Counts.Work_Used := S.Counts.Work_Used + Units;
-      return Results.Success;
-   end Charge_Work;
-
-   function Charge_Work (S : in out Session; Units : Natural) return Results.Result is
-     (Charge_Work (S, Pixel_Count (Units)));
-
-   function Admit_Allocation (S : in out Session; Length : Byte_Count) return Results.Result is
-   begin
-      if Length > S.Budget.Max_Allocation_Bytes then
-         return Over_Limit (S, Allocation_Byte_Limit, S.Budget.Max_Allocation_Bytes, Length);
-      end if;
-      return Admit_Aggregate (S, Length);
-   end Admit_Allocation;
-
-   function Admit_Aggregate (S : in out Session; Length : Byte_Count) return Results.Result is
-      Total : constant Byte_Count := Checked_Arithmetic.Saturating_Add (S.Counts.Total_Allocation_Bytes, Length);
-   begin
-      if Total > S.Budget.Max_Total_Allocation_Bytes then
-         return Over_Limit (S, Total_Allocation_Byte_Limit, S.Budget.Max_Total_Allocation_Bytes, Total);
-      end if;
-      S.Counts.Total_Allocation_Bytes := Total;
-      return Results.Success;
-   end Admit_Aggregate;
-
-   function Allocation_Units_Left (S : Session; Bytes_Per_Unit : Positive) return Pixel_Count is
-     (Pixel_Count
-        ((S.Budget.Max_Total_Allocation_Bytes
-          - Byte_Count'Min (S.Counts.Total_Allocation_Bytes, S.Budget.Max_Total_Allocation_Bytes))
-         / Byte_Count (Bytes_Per_Unit)));
-
-   function Shape_Work_Left (S : Session) return Pixel_Count is
-     (Pixel_Count'Min (Work_Left (S), Allocation_Units_Left (S, Shape_Bytes_Per_Work_Unit)));
-
    function Claim_Ordinal (S : in out Session; Ordinal : out Opcode_Ordinal) return Results.Result is
    begin
       Ordinal := S.Counts.Next_Ordinal;
@@ -233,7 +186,7 @@ package body Pictlib.Internal.Sessions is
       elsif Length > Byte_Count (Natural'Last) then
          return Over_Limit (S, Allocation_Byte_Limit, Byte_Count (Natural'Last), Length);
       end if;
-      Outcome := Admit_Allocation (S, Length);
+      Outcome := Accounting.Admit_Allocation (S, Length);
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
@@ -243,63 +196,12 @@ package body Pictlib.Internal.Sessions is
          Bytes.Free (Data);
       end if;
       return Outcome;
-   end Read_Payload;
-
-   --  Decide whether an item of Length bytes may be kept, admitting it to the allocation budget when it is. When
-   --  the metadata budgets have no room a strict session fails and a lenient one records Data_Loss and sets Keep
-   --  to False; the session's allocation limit is never recovered.
-   function Admit_Item (S : in out Session; Length : Byte_Count; Keep : out Boolean) return Results.Result is
-      Admission : constant Results.Result := Metadata_Store.Admits (S.Kept.Store, Length, S.Budget);
-   begin
-      Keep := False;
-      if not Results.Succeeded (Admission) then
-         return Reject_Or_Warn
-           (S, Admission.First_Error.Code, Errors.Data_Loss, Errors.Data_Loss,
-            (Admission.First_Error.Context with delta Source => S.Stream.Offset));
-      end if;
-      Keep := True;
-      return Admit_Aggregate (S, Checked_Arithmetic.Saturating_Add (Length, Item_Overhead_Bytes));
-   end Admit_Item;
-
-   function Retain
-     (S : in out Session;
-      Info : Metadata.Item_Info;
-      Length : Byte_Count;
-      In_Opcode : Boolean := True) return Results.Result
-   is
-      Keep : Boolean;
-      --  The opcode's own budget first, so whether metadata is retained never changes which pictures its budgets
-      --  fail; a kept item is then admitted against the allocation budgets, which keeping can cross.
-      Outcome : Results.Result := (if In_Opcode then Admit_Data (S, Length) else Results.Success);
-      Data : Streams.Byte_Array_Access;
-   begin
-      if Results.Succeeded (Outcome) then
-         Outcome := Admit_Item (S, Length, Keep);
-      end if;
-      if not Results.Succeeded (Outcome) then
-         return Outcome;
-      elsif not Keep then
-         return (if In_Opcode then Skip_Data (S, Length) else Streams.Skip_Exact (S.Stream, Length));
-      end if;
-      Outcome := Read_Payload (S, Length, Data, In_Opcode);
-      if Results.Succeeded (Outcome) then
-         Metadata_Store.Append (S.Kept.Store, Info, Data.all);
+   exception
+      --  The source's exception passes through, the payload released.
+      when others =>
          Bytes.Free (Data);
-      end if;
-      return Outcome;
-   end Retain;
-
-   function Retain_Bytes (S : in out Session; Info : Metadata.Item_Info; Data : Streams.Byte_Array)
-     return Results.Result
-   is
-      Keep : Boolean;
-      Outcome : constant Results.Result := Admit_Item (S, Data'Length, Keep);
-   begin
-      if Results.Succeeded (Outcome) and then Keep then
-         Metadata_Store.Append (S.Kept.Store, Info, Data);
-      end if;
-      return Outcome;
-   end Retain_Bytes;
+         raise;
+   end Read_Payload;
 
    function Read_Polygon_Size (S : in out Session; Points : out Natural) return Results.Result is
       use type Interfaces.Unsigned_16;
@@ -370,6 +272,18 @@ package body Pictlib.Internal.Sessions is
       end if;
       return Bytes.Read_Rect (S.Stream, Value);
    end Read_Bounds;
+
+   function Read_Pair (S : in out Session; V, H : out Integer) return Results.Result is
+      Raw_V, Raw_H : Interfaces.Unsigned_16 := 0;
+      Outcome : Results.Result := Read_Word (S, Raw_V);
+   begin
+      if Results.Succeeded (Outcome) then
+         Outcome := Read_Word (S, Raw_H);
+      end if;
+      V := Integer (Bytes.To_Coordinate (Raw_V));
+      H := Integer (Bytes.To_Coordinate (Raw_H));
+      return Outcome;
+   end Read_Pair;
 
    function Read_Into (S : in out Session; Buffer : out Streams.Byte_Array) return Results.Result is
       Outcome : constant Results.Result := Admit_Data (S, Buffer'Length);

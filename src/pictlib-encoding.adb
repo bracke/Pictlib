@@ -3,9 +3,9 @@ with Ada.Containers.Vectors;
 with Ada.Finalization;
 with Interfaces;
 with Pictlib.Internal.Bytes;
-with Pictlib.Internal.Canvas;
 with Pictlib.Internal.Failures;
 with Pictlib.Internal.PackBits;
+with Pictlib.Internal.Pixels;
 with Pictlib.Internal.Writers;
 with Pictlib.Opcodes;
 
@@ -36,10 +36,10 @@ package body Pictlib.Encoding is
 
    function Pixel_At (Image : Images.Image_View; X, Y : Natural) return Pixel is
       Format : constant Pixel_Format := Image.Descriptor.Format;
-      At_Pixel : constant Positive := Image.Storage'First + Internal.Canvas.Pixel_Offset (Image.Descriptor, X, Y);
+      At_Pixel : constant Positive := Image.Storage'First + Internal.Pixels.Pixel_Offset (Image.Descriptor, X, Y);
    begin
-      return (Internal.Canvas.Color_At (Format, Image.Storage.all, At_Pixel),
-              Internal.Canvas.Alpha_At (Format, Image.Storage.all, At_Pixel));
+      return (Internal.Pixels.Color_At (Format, Image.Storage.all, At_Pixel),
+              Internal.Pixels.Alpha_At (Format, Image.Storage.all, At_Pixel));
    end Pixel_At;
 
    function Key (Color : Images.RGB_Color) return Natural is
@@ -285,11 +285,12 @@ package body Pictlib.Encoding is
       Colors : Palette;
       Outcome : in out Results.Result)
    is
-      Row : Streams.Byte_Array_Access := new Streams.Byte_Array (1 .. Item.Unpacked_Length);
-      Packed : Streams.Byte_Array_Access :=
-        new Streams.Byte_Array (1 .. Internal.PackBits.Worst_Case (Item.Unpacked_Length));
+      --  Allocated in the body, so the handler below releases whichever was made.
+      Row, Packed : Streams.Byte_Array_Access := null;
       Packed_Length : Natural;
    begin
+      Row := new Streams.Byte_Array (1 .. Item.Unpacked_Length);
+      Packed := new Streams.Byte_Array (1 .. Internal.PackBits.Worst_Case (Item.Unpacked_Length));
       for Y in 0 .. Item.Height - 1 loop
          exit when not Results.Succeeded (Outcome);
          Fill_Row (Image, Settings, Item, Colors, Y, Row.all);
@@ -340,14 +341,20 @@ package body Pictlib.Encoding is
       Encode_Options : Options := (others => <>);
       Encode_Limits : Limits.Limit_Set := Limits.Default_Limits) is
    begin
-      Object.Output := Output.all'Unchecked_Access;
       Object.Encode_Options := Encode_Options;
       Object.Encode_Limits := Encode_Limits;
+      Reset (Object, Output);
+   end Initialize;
+
+   procedure Reset (Object : in out Encoder; Output : not null access Streams.Destination'Class) is
+   begin
+      Object.Output := Output.all'Unchecked_Access;
       Object.Layout := Auto;
       Object.Written := 0;
       Object.First_Error := Errors.Make (Errors.No_Error);
       Object.Current_State := Ready;
-   end Initialize;
+      Object.Binds := Object.Binds + 1;
+   end Reset;
 
    function State (Object : Encoder) return Encoder_State is (Object.Current_State);
 
@@ -457,7 +464,10 @@ package body Pictlib.Encoding is
       State : not null access Encoder_State;
       Error : not null access Errors.Error;
       Started : not null access constant Boolean;
-      Busy : not null access Boolean) is new Ada.Finalization.Limited_Controlled with null record;
+      Busy : not null access Boolean;
+      Binds : not null access constant Bind_Count) is new Ada.Finalization.Limited_Controlled with record
+      Binds_At_Start : Bind_Count := 0;
+   end record;
 
    overriding procedure Initialize (Guard : in out Write_Guard);
    overriding procedure Finalize (Guard : in out Write_Guard);
@@ -465,12 +475,14 @@ package body Pictlib.Encoding is
    overriding procedure Initialize (Guard : in out Write_Guard) is
    begin
       Guard.Busy.all := True;
+      Guard.Binds_At_Start := Guard.Binds.all;
    end Initialize;
 
    overriding procedure Finalize (Guard : in out Write_Guard) is
    begin
       Guard.Busy.all := False;
-      if Guard.Started.all and then Guard.State.all = Guard.From then
+      --  A destination that rebound the encoder left it as it chose.
+      if Guard.Started.all and then Guard.State.all = Guard.From and then Guard.Binds.all = Guard.Binds_At_Start then
          Guard.State.all := Failed;
          Guard.Error.all := Errors.Make (Errors.Destination_Write_Failed);
       end if;
@@ -485,17 +497,16 @@ package body Pictlib.Encoding is
       --  Whether the destination was written to: a failure before leaves the encoder Ready.
       Started : aliased Boolean := False;
       Guard : Write_Guard
-        (Ready, Object.Current_State'Access, Object.First_Error'Access, Started'Access, Object.Busy'Access);
+        (Ready, Object.Current_State'Access, Object.First_Error'Access, Started'Access, Object.Busy'Access,
+         Object.Binds'Access);
+      Binds : constant Bind_Count := Object.Binds;
       pragma Unreferenced (Guard);
    begin
       if Object.Current_State /= Ready then
          return Wrong_State (Object);
       elsif not Images.Is_Valid (Image) then
          --  The least a valid view of its size and format holds, against what it holds.
-         return Invalid
-           (Images.Minimum_Row_Bytes (Image.Descriptor.Width, Image.Descriptor.Format)
-              * Byte_Count (Image.Descriptor.Height),
-            Image.Descriptor.Accessible_Bytes);
+         return Internal.Failures.Invalid_View (Image.Descriptor);
       elsif Settings.Horizontal_Resolution <= 0 or else Settings.Vertical_Resolution <= 0 then
          return Invalid (1, 0);
       end if;
@@ -517,7 +528,10 @@ package body Pictlib.Encoding is
             end if;
          end;
       end if;
-      if Results.Succeeded (Outcome) then
+      --  The destination cancelled, reset or finalized the encoder under it: that stands.
+      if Object.Current_State /= Ready or else Object.Binds /= Binds then
+         return Wrong_State (Object);
+      elsif Results.Succeeded (Outcome) then
          Object.Layout := Layout;
          Object.Current_State := Encoded;
       elsif not Started then
@@ -539,11 +553,15 @@ package body Pictlib.Encoding is
       end if;
       declare
          Guard : Write_Guard
-           (Encoded, Object.Current_State'Access, Object.First_Error'Access, Flushing'Access, Object.Busy'Access);
+           (Encoded, Object.Current_State'Access, Object.First_Error'Access, Flushing'Access, Object.Busy'Access,
+            Object.Binds'Access);
          pragma Unreferenced (Guard);
+         Binds : constant Bind_Count := Object.Binds;
          Flushed : constant Errors.Error := Object.Output.Flush;
       begin
-         if Errors.Is_Fatal (Flushed) then
+         if Object.Current_State /= Encoded or else Object.Binds /= Binds then
+            return Wrong_State (Object);
+         elsif Errors.Is_Fatal (Flushed) then
             return Fail (Object, Results.Failure (Flushed));
          end if;
          --  Inside the guard's scope, so a flush that returned is not taken for one that raised.
@@ -572,5 +590,6 @@ package body Pictlib.Encoding is
       Object.Layout := Auto;
       Object.First_Error := Errors.Make (Errors.No_Error);
       Object.Current_State := Created;
+      Object.Binds := Object.Binds + 1;
    end Finalize;
 end Pictlib.Encoding;

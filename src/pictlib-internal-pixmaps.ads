@@ -1,3 +1,4 @@
+with Ada.Finalization;
 with Interfaces;
 with Pictlib.Geometry;
 with Pictlib.Images;
@@ -139,11 +140,19 @@ private
 
    type Color_Row_Access is access Color_Row;
 
-   type Row_Decoder is limited record
-      Header : Bits_Header;
+   --  The row buffers, released by Finish or, however the decoder's scope is left, an exception from caller code
+   --  included, by finalization.
+   type Row_Buffers is new Ada.Finalization.Limited_Controlled with record
       Stored : Streams.Byte_Array_Access := null;
       Unpacked : Streams.Byte_Array_Access := null;
       Colors : Color_Row_Access := null;
+   end record;
+
+   overriding procedure Finalize (Buffers : in out Row_Buffers);
+
+   type Row_Decoder is limited record
+      Header : Bits_Header;
+      Buffers : Row_Buffers;
       Bad_Index_Reported : Boolean := False;
    end record;
 end Pictlib.Internal.Pixmaps;

@@ -48,7 +48,7 @@ Gate M5 adds no public API: QuickTime JPEG images render through `Render`.
 Available since Gate M6:
 
 - `Pictlib.Encoding` — `Layout_Kind`, `Options`, `Default_Mono_Threshold`,
-  `Encoder` with `Initialize`, `Encode`, `Finish`, `Layout_Used`,
+  `Encoder` with `Initialize`, `Reset`, `Encode`, `Finish`, `Layout_Used`,
   `Bytes_Written`, `State` and its `Encoder_State`, `Last_Error`, `Cancel`,
   `Finalize`.
 

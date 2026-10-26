@@ -359,6 +359,9 @@ package body Pictlib.Internal.Coverage is
 
       Count : constant Natural := Natural (Points.Length);
       Edges, Active : Edge_Vectors.Vector;
+      --  A row's crossings and the edges still active below it, kept across rows so their storage is reused.
+      Boundaries : Boundary_Vectors.Vector;
+      Kept : Edge_Vectors.Vector;
       Next_Edge : Positive := 1;
    begin
       if Count < 3 then
@@ -398,9 +401,9 @@ package body Pictlib.Internal.Coverage is
          declare
             Row : constant Long_Long_Integer := Long_Long_Integer (Y);
             Center : constant Long_Long_Integer := 2 * Row + 1;
-            Boundaries : Boundary_Vectors.Vector;
-            Kept : Edge_Vectors.Vector;
          begin
+            Boundaries.Clear;
+            Kept.Clear;
             while Next_Edge <= Natural (Edges.Length) and then Edges (Next_Edge).First <= Row loop
                Active.Append (Edges (Next_Edge));
                Next_Edge := Next_Edge + 1;

@@ -11,6 +11,7 @@ with Ada.Directories;
 with Ada.Streams.Stream_IO;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
+with Ada.Unchecked_Deallocation;
 with Pictlib;
 with Pictlib.Encoding;
 with Pictlib.Geometry;
@@ -78,8 +79,8 @@ procedure Pictlib_Conformance is
       Case_Of ("indexed_252", Samples.Three_Colors, 251, 3, (Layout => Encoding.Indexed_8, others => <>)),
       Case_Of ("direct_widest", Samples.Gradient, 4095, 2, (Layout => Encoding.Direct_32, others => <>)),
       Case_Of ("indexed_widest", Samples.Three_Colors, 16_382, 1, (Layout => Encoding.Indexed_8, others => <>)),
-      --  A picture past 64 KiB, whose picSize is its length's low 16 bits.
-      Case_Of ("direct_large", Samples.Gradient, 300, 60, (Layout => Encoding.Direct_32, others => <>)),
+      --  A picture past 64 KiB, about 80 KB, whose picSize is its length's low 16 bits.
+      Case_Of ("direct_large", Samples.Gradient, 1000, 40, (Layout => Encoding.Direct_32, others => <>)),
       --  A raised Mono_1 threshold, and sources in the other byte orders.
       Case_Of ("mono_threshold", Samples.Gray_Ramp, 37, 3,
                (Layout => Encoding.Mono_1, Mono_Threshold => 200, others => <>)),
@@ -116,6 +117,10 @@ procedure Pictlib_Conformance is
    end Differences;
 
    --  The first PNG embedded in an SVG file, as a data URI, written to Target.
+   type String_Access is access String;
+   procedure Free is new Ada.Unchecked_Deallocation (String, String_Access);
+   procedure Free is new Ada.Unchecked_Deallocation (Pictlib.Streams.Byte_Array, Pictlib.Streams.Byte_Array_Access);
+
    function Extract_PNG (SVG_File, Target : String) return Boolean is
       use Ada.Streams.Stream_IO;
       Marker : constant String := "data:image/png;base64,";
@@ -126,7 +131,9 @@ procedure Pictlib_Conformance is
       end if;
       declare
          Size : constant Natural := Natural (Ada.Directories.Size (SVG_File));
-         Text : String (1 .. Size);
+         --  On the heap: an SVG holding a large picture's PNG is larger than a stack holds.
+         Text_Buffer : String_Access := new String (1 .. Size);
+         Text : String renames Text_Buffer.all;
          Start : Natural := 0;
       begin
          Open (File, In_File, SVG_File);
@@ -139,10 +146,12 @@ procedure Pictlib_Conformance is
             end if;
          end loop;
          if Start = 0 then
+            Free (Text_Buffer);
             return False;
          end if;
          declare
-            Decoded : Pictlib.Streams.Byte_Array (1 .. Size);
+            Decoded_Buffer : Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Size);
+            Decoded : Pictlib.Streams.Byte_Array renames Decoded_Buffer.all;
             Count : Natural := 0;
             Bits : Natural := 0;
             Held : Natural := 0;
@@ -173,6 +182,8 @@ procedure Pictlib_Conformance is
                Index := Index + 1;
             end loop;
             Files.Save_Path (Target, Decoded (1 .. Count));
+            Free (Decoded_Buffer);
+            Free (Text_Buffer);
             return Count > 0;
          end;
       end;
@@ -187,6 +198,9 @@ procedure Pictlib_Conformance is
       if not Pictlib.Results.Succeeded (Picture.Outcome) then
          Fail (To_String (Item.Name) & ": encode " & Picture.Outcome.First_Error.Code'Image);
          return False;
+      end if;
+      if To_String (Item.Name) = "direct_large" and then Picture.Data'Length <= 16#1_0000# then
+         Fail ("direct_large:" & Picture.Data'Length'Image & " bytes, not past 64 KiB");
       end if;
       Files.Save_Path (Path (To_String (Item.Name), "pict"), Picture.Data.all);
       return True;
@@ -222,6 +236,13 @@ begin
    end if;
    Pictlib_Testing.Tools.Start_Report ("pictlib_conformance");
    Ada.Directories.Create_Path (Directory);
+   --  The oracles' versions, so a change in what they read can be traced to a change of version.
+   if Magick'Length > 0 then
+      Pictlib_Testing.Tools.Report_Version ("ImageMagick", Magick, "-version");
+   end if;
+   if Office'Length > 0 then
+      Pictlib_Testing.Tools.Report_Version ("LibreOffice", Office);
+   end if;
    if Magick'Length = 0 then
       Ada.Text_IO.Put_Line ("SKIP ImageMagick: neither magick nor ImageMagick 6's convert is installed");
       Skipped := Skipped + 1;

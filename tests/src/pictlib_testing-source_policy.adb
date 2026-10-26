@@ -200,6 +200,13 @@ package body Pictlib_Testing.Source_Policy is
 
    package Name_Sets is new Ada.Containers.Indefinite_Ordered_Sets (String);
 
+   --  The last character of the line of Text that starts at From: the one before its line feed, or Text's last.
+   function End_Of_Line (Text : String; From : Positive) return Natural is
+      Feed : constant Natural := Ada.Strings.Fixed.Index (Text (From .. Text'Last), [1 => ASCII.LF]);
+   begin
+      return (if Feed = 0 then Text'Last else Feed - 1);
+   end End_Of_Line;
+
    function Read_Whole (Path : String) return String is
       File : Ada.Text_IO.File_Type;
       Text : Unbounded_String;
@@ -218,16 +225,12 @@ package body Pictlib_Testing.Source_Policy is
    procedure For_Files (Directory, Extension : String);
 
    procedure For_Files (Directory, Extension : String) is
-      use Ada.Directories;
-      Search : Search_Type;
-      Item : Directory_Entry_Type;
    begin
-      Start_Search (Search, Directory, "*." & Extension, [Ordinary_File => True, others => False]);
-      while More_Entries (Search) loop
-         Get_Next_Entry (Search, Item);
-         Each (Full_Name (Item));
+      for Path of Tools.Files_Below (Directory, Recursive => False) loop
+         if Ada.Directories.Extension (Path) = Extension then
+            Each (Path);
+         end if;
       end loop;
-      End_Search (Search);
    end For_Files;
 
    procedure Check_Readme (Root : String) is
@@ -359,9 +362,7 @@ package body Pictlib_Testing.Source_Policy is
       begin
          while Line_Start <= Text'Last loop
             declare
-               Line_End : constant Natural :=
-                 (if Ada.Strings.Fixed.Index (Text (Line_Start .. Text'Last), [1 => ASCII.LF]) = 0 then Text'Last
-                  else Ada.Strings.Fixed.Index (Text (Line_Start .. Text'Last), [1 => ASCII.LF]) - 1);
+               Line_End : constant Natural := End_Of_Line (Text, Line_Start);
                Line : constant String := Text (Line_Start .. Line_End);
                --  The bars that bound each cell.
                Bars : array (1 .. 8) of Natural := [others => 0];
@@ -509,7 +510,11 @@ package body Pictlib_Testing.Source_Policy is
             Get_Next_Entry (Search, Item);
             if Kind (Item) = Ada.Directories.Directory and then not Skipped (Simple_Name (Item)) then
                Walk (Full_Name (Item));
-            elsif Kind (Item) = Ordinary_File and then Extension (Simple_Name (Item)) in "sh" | "bash" | "py" then
+            elsif Kind (Item) = Ordinary_File
+              and then (Ada.Characters.Handling.To_Lower (Extension (Simple_Name (Item)))
+                          in "sh" | "bash" | "py" | "ps1" | "bat" | "cmd" | "pl"
+                        or else Simple_Name (Item) in "Makefile" | "makefile" | "GNUmakefile")
+            then
                Fail (Full_Name (Item) & ": a script; tooling is an Ada tool of the tests crate");
             end if;
          end loop;
@@ -530,6 +535,7 @@ package body Pictlib_Testing.Source_Policy is
    begin
       Walk (Root);
       if not Ada.Directories.Exists (Workflow) then
+         Fail (Workflow & ": missing, so no CI step is checked");
          return;
       end if;
       declare
@@ -538,9 +544,7 @@ package body Pictlib_Testing.Source_Policy is
       begin
          while Line_Start <= Text'Last loop
             declare
-               Line_End : constant Natural :=
-                 (if Ada.Strings.Fixed.Index (Text (Line_Start .. Text'Last), [1 => ASCII.LF]) = 0 then Text'Last
-                  else Ada.Strings.Fixed.Index (Text (Line_Start .. Text'Last), [1 => ASCII.LF]) - 1);
+               Line_End : constant Natural := End_Of_Line (Text, Line_Start);
                Raw : constant String := Text (Line_Start .. Line_End);
                Trimmed : constant String := Ada.Strings.Fixed.Trim (Raw, Ada.Strings.Both);
                --  A step's first key may follow the list dash.

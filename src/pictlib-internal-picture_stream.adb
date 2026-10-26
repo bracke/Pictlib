@@ -14,6 +14,7 @@ package body Pictlib.Internal.Picture_Stream is
       Object.Consumed := 0;
       Object.Picture_Origin := 0;
       Object.Max_Bytes := Max_Bytes;
+      Object.Bound := Object.Bound + 1;
    end Bind;
 
    procedure Unbind (Object : in out Reader) is
@@ -24,9 +25,15 @@ package body Pictlib.Internal.Picture_Stream is
       Object.Input_Ended := False;
       Object.Consumed := 0;
       Object.Picture_Origin := 0;
+      Object.Bound := Object.Bound + 1;
    end Unbind;
 
    function Buffered (Object : Reader) return Natural is (Object.Last - Object.First + 1);
+
+   --  The reader was rebound or unbound while its source ran, by caller code the source called: what the source
+   --  delivered belongs to no picture this reader reads, and is neither kept nor counted.
+   Rebound_Reply : constant Streams.Source_Result :=
+     (Error => Errors.Make (Errors.Invalid_State), Count => 0, End_Of_Input => False);
 
    function Lookahead_Length (Object : Reader) return Natural is (Buffered (Object));
 
@@ -88,13 +95,16 @@ package body Pictlib.Internal.Picture_Stream is
       end if;
       while Object.Last < Wanted and then not Object.Input_Ended loop
          declare
+            Before : constant Generation := Object.Bound;
             Step : constant Streams.Source_Result := Object.Input.Read (Object.Buffer (Object.Last + 1 .. Wanted));
             --  Buffered bytes are not consumed yet, so the reply is judged where the buffer ends.
             Failure : constant Errors.Error :=
               Replies.Judged (Step, Byte_Count (Wanted - Object.Last),
                       At_Offset (Object, Buffered (Object)));
          begin
-            if Errors.Is_Fatal (Failure) then
+            if Object.Bound /= Before then
+               return Results.Failure (Rebound_Reply.Error);
+            elsif Errors.Is_Fatal (Failure) then
                return Results.Failure (Failure);
             end if;
             Object.Last := Object.Last + Natural (Step.Count);
@@ -144,10 +154,11 @@ package body Pictlib.Internal.Picture_Stream is
          Allowed : constant Natural :=
            (if Remaining_Budget (Object) < Byte_Count (Buffer'Length) then Natural (Remaining_Budget (Object))
             else Buffer'Length);
+         Before : constant Generation := Object.Bound;
          Step : constant Streams.Source_Result :=
            Object.Input.Read (Buffer (Buffer'First .. Buffer'First + Allowed - 1));
       begin
-         return Advance (Object, Step, Byte_Count (Allowed));
+         return (if Object.Bound /= Before then Rebound_Reply else Advance (Object, Step, Byte_Count (Allowed)));
       end;
    end Read;
 
@@ -164,9 +175,10 @@ package body Pictlib.Internal.Picture_Stream is
          return (Error => Errors.Make (Errors.No_Error), Count => 0, End_Of_Input => True);
       end if;
       declare
+         Before : constant Generation := Object.Bound;
          Step : constant Streams.Source_Result := Object.Input.Read (Probe);
       begin
-         return Advance (Object, Step, 1);
+         return (if Object.Bound /= Before then Rebound_Reply else Advance (Object, Step, 1));
       end;
    end Probe_Past_End;
 
@@ -201,9 +213,10 @@ package body Pictlib.Internal.Picture_Stream is
 
       declare
          Allowed : constant Byte_Count := Byte_Count'Min (Count, Remaining_Budget (Object));
+         Before : constant Generation := Object.Bound;
          Step : constant Streams.Source_Result := Object.Input.Skip (Allowed);
       begin
-         return Advance (Object, Step, Allowed);
+         return (if Object.Bound /= Before then Rebound_Reply else Advance (Object, Step, Allowed));
       end;
    end Skip;
 end Pictlib.Internal.Picture_Stream;

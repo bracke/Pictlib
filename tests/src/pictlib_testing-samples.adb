@@ -1,4 +1,9 @@
+with Ada.Unchecked_Deallocation;
+
 package body Pictlib_Testing.Samples is
+   procedure Free is new Ada.Unchecked_Deallocation (Pictlib.Streams.Byte_Array, Bytes_Access);
+   procedure Free is new Ada.Unchecked_Deallocation (Pictlib.Streams.Byte_Array, Pictlib.Streams.Byte_Array_Access);
+
    function Color (Item : Kind; X, Y : Natural) return Pictlib.Images.RGB_Color is
    begin
       case Item is
@@ -104,7 +109,7 @@ package body Pictlib_Testing.Samples is
       Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last;
       Room : Positive := 4_000_000) return Encoded
    is
-      Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Room);
+      Storage : Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Room);
       Output : aliased Pictlib.Streams.Fixed_Buffer_Destination;
       Encoder : Pictlib.Encoding.Encoder;
       Result : Encoded;
@@ -118,6 +123,8 @@ package body Pictlib_Testing.Samples is
       Result.Data := new Pictlib.Streams.Byte_Array'(Storage (1 .. Natural (Output.Offset)));
       Result.Layout := Pictlib.Encoding.Layout_Used (Encoder);
       Result.Bytes_Written := Pictlib.Encoding.Bytes_Written (Encoder);
+      Pictlib.Encoding.Finalize (Encoder);
+      Free (Storage);
       return Result;
    end Encode;
 
@@ -128,6 +135,12 @@ package body Pictlib_Testing.Samples is
       Format : Pictlib.Pixel_Format := Pictlib.RGB_24;
       Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
       Max_Transfer : Pictlib.Byte_Count := Pictlib.Byte_Count'Last;
-      Room : Positive := 4_000_000) return Encoded is
-     (Encode (View (Make (Item, Width, Height, Format), Width, Height, Format), Settings, Budget, Max_Transfer, Room));
+      Room : Positive := 4_000_000) return Encoded
+   is
+      Source : Bytes_Access := Make (Item, Width, Height, Format);
+      Result : constant Encoded := Encode (View (Source, Width, Height, Format), Settings, Budget, Max_Transfer, Room);
+   begin
+      Free (Source);
+      return Result;
+   end Encode;
 end Pictlib_Testing.Samples;

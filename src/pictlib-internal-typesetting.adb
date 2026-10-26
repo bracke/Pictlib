@@ -1,3 +1,5 @@
+with Pictlib.Internal.Sessions.Accounting;
+with Pictlib.Internal.Failures;
 with Pictlib.Errors;
 with Pictlib.Fonts;
 with Pictlib.Geometry;
@@ -7,6 +9,7 @@ with Pictlib.Internal.Transfer_Modes;
 with Textrender;
 
 package body Pictlib.Internal.Typesetting is
+   package Accounting renames Pictlib.Internal.Sessions.Accounting;
    use type Textrender.Status_Code;
    use type Textrender.Alpha;
 
@@ -22,7 +25,7 @@ package body Pictlib.Internal.Typesetting is
 
    function Unavailable (S : in out Sessions.Session; Event : Pictures.Opcode_Event) return Results.Result is
      (Sessions.Reject_Or_Warn
-        (S, Errors.Font_Unavailable, Errors.Approximated_Rendering, Errors.Data_Loss, Sessions.Context_Of (Event)));
+        (S, Errors.Font_Unavailable, Errors.Approximated_Rendering, Errors.Data_Loss, Failures.Context_Of (Event)));
 
    --  The characters, with the font in Slot loaded; called under the textrender lock, which Held is.
    function Draw_Characters
@@ -72,9 +75,9 @@ package body Pictlib.Internal.Typesetting is
             --  textrender keeps a copy of the whole file beside the atlas: both are this load's allocation.
             File : constant Byte_Count := Text.File_Bytes (Path);
          begin
-            Outcome := Sessions.Admit_Allocation (S, Text.Atlas_Bytes (Size) + File);
+            Outcome := Accounting.Admit_Allocation (S, Text.Atlas_Bytes (Size) + File);
             if Results.Succeeded (Outcome) then
-               Outcome := Sessions.Charge_Work (S, Text.Load_Work (Size, File));
+               Outcome := Accounting.Charge_Work (S, Text.Load_Work (Size, File));
             end if;
          end;
          if not Results.Succeeded (Outcome) then
@@ -239,7 +242,7 @@ package body Pictlib.Internal.Typesetting is
       --  Take cell Index's glyph again, into the atlas as it is now: drawing work like the first request.
       function Retake (Index : Positive) return Results.Result is
          Result : constant Results.Result :=
-           (if Cells (Index).Drawable then Sessions.Charge_Work (S, Text.Glyph_Work (Size)) else Results.Success);
+           (if Cells (Index).Drawable then Accounting.Charge_Work (S, Text.Glyph_Work (Size)) else Results.Success);
       begin
          if Results.Succeeded (Result) and then Cells (Index).Drawable
            and then Font.Get_Glyph (Cells (Index).Code, Cells (Index).Metric, Style) /= Textrender.Success
@@ -282,7 +285,7 @@ package body Pictlib.Internal.Typesetting is
       for Item of Characters loop
          --  Every glyph request is drawing work, wherever the character lands; control characters draw nothing.
          if Item >= Space then
-            Outcome := Sessions.Charge_Work (S, Text.Glyph_Work (Size));
+            Outcome := Accounting.Charge_Work (S, Text.Glyph_Work (Size));
             exit when not Results.Succeeded (Outcome);
             declare
                --  Defined even when the font lacks the glyph and leaves it alone.
@@ -295,7 +298,7 @@ package body Pictlib.Internal.Typesetting is
             begin
                if Status /= Textrender.Success and then not Missing_Reported then
                   Sessions.Warn (S, Errors.Data_Loss, Errors.Data_Loss,
-                                 (Sessions.Context_Of (Event) with delta Actual => Byte_Count (Item)));
+                                 (Failures.Context_Of (Event) with delta Actual => Byte_Count (Item)));
                   Missing_Reported := True;
                end if;
                Cell_Count := Cell_Count + 1;

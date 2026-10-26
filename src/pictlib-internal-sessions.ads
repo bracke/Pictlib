@@ -3,7 +3,6 @@ with Pictlib.Errors;
 with Pictlib.Geometry;
 with Pictlib.Images;
 with Pictlib.Internal.Diagnostics;
-with Pictlib.Internal.Failures;
 with Pictlib.Internal.Metadata_Store;
 with Pictlib.Internal.Picture_Stream;
 with Pictlib.Limits;
@@ -12,13 +11,13 @@ with Pictlib.Pictures;
 with Pictlib.Results;
 with Pictlib.Streams;
 
---  One picture's decoding session: the bounded stream, the decoding policy, retained metadata and warnings,
---  the budget-checked readers every opcode's data goes through, and the session's accounting: the drawing work
---  done, the allocations admitted, and the one place each overrun is reported.
+--  One picture's decoding session: the bounded stream, the decoding policy, warnings, the strictness rule and
+--  the budget-checked readers every opcode's data goes through. Its children keep the rest: Accounting the
+--  drawing work and allocations admitted, Retained the metadata kept.
 package Pictlib.Internal.Sessions is
    --  What a session counts, kept by this package alone: allocations, drawing work, opcodes, and where the
    --  current opcode's data begins.
-   type Accounting is private;
+   type Counters is private;
    --  What a session keeps for its caller, reached only through this package: retained metadata and warnings.
    type Records is limited private;
 
@@ -117,12 +116,6 @@ package Pictlib.Internal.Sessions is
    --  @return A Limit_Exceeded failure.
    function Over_Limit (S : Session; Limit : Limit_Kind; Expected, Actual : Byte_Count) return Results.Result;
 
-   --  Context of.
-   --  @param Event An opcode.
-   --  @return A diagnostic context naming it: its offset, opcode and ordinal.
-   function Context_Of (Event : Pictures.Opcode_Event) return Errors.Diagnostic_Context
-     renames Failures.Context_Of;
-
    --  Reject or warn: the strictness rule for a deviation a lenient session tolerates.
    --  @param S Session whose strictness decides and whose log records the warning.
    --  @param Code The error a strict session fails with.
@@ -155,65 +148,6 @@ package Pictlib.Internal.Sessions is
    --  @param Offset Its source offset.
    --  @return True when an opcode was deferred; Op and Offset are then the next opcode's.
    function Take_Deferred (S : in out Session; Op : out Opcode; Offset : out Source_Offset) return Boolean;
-
-   --  Drawing work: one counter per render, against Max_Drawing_Work.
-
-   --  Start drawing.
-   --  @param S Session about to render; no drawing work is done yet.
-   procedure Start_Drawing (S : in out Session);
-   --  Work left.
-   --  @param S Session.
-   --  @return The drawing work the budget still allows.
-   function Work_Left (S : Session) return Pixel_Count;
-   --  Charge work.
-   --  @param S Session doing the work.
-   --  @param Units Drawing work about to be done.
-   --  @return Success, the work then counted, or Limit_Exceeded when it would cross the budget.
-   function Charge_Work (S : in out Session; Units : Pixel_Count) return Results.Result;
-   --  Charge work.
-   --  @param S Session doing the work.
-   --  @param Units Drawing work about to be done.
-   --  @return As Charge_Work above.
-   function Charge_Work (S : in out Session; Units : Natural) return Results.Result;
-   --  Over work.
-   --  @param S Session whose drawing budget was crossed.
-   --  @param Units Work asked for beyond the work done.
-   --  @return The Limit_Exceeded failure for drawing work, saturated: the one report of it.
-   function Over_Work (S : Session; Units : Pixel_Count) return Results.Result;
-
-   --  Allocations: each against Max_Allocation_Bytes, all of a session against Max_Total_Allocation_Bytes.
-
-   --  Admit allocation.
-   --  @param S Session about to allocate.
-   --  @param Length Bytes of one allocation.
-   --  @return Success, the bytes then counted against the session's total, or Limit_Exceeded when the
-   --  allocation or the total would cross its limit.
-   function Admit_Allocation (S : in out Session; Length : Byte_Count) return Results.Result;
-   --  Admit aggregate.
-   --  @param S Session about to hold storage that is not one allocation (vectors, copies).
-   --  @param Length Bytes it is estimated at, by the cost model below.
-   --  @return Success, the bytes then counted, or Limit_Exceeded when the session's total would cross its limit.
-   function Admit_Aggregate (S : in out Session; Length : Byte_Count) return Results.Result;
-   --  Shape work left.
-   --  @param S Session.
-   --  @return What building one shape may spend: the drawing work left, and no more than the spans the session's
-   --  allocation total still admits.
-   function Shape_Work_Left (S : Session) return Pixel_Count;
-
-   --  The cost model: what storage that is not one allocation is counted at against the session's total.
-   --  A retained metadata item or font name, besides its bytes.
-   Item_Overhead_Bytes : constant := 128;
-   --  A polygon point.
-   Point_Cost_Bytes : constant := 8;
-   --  A polygon edge while a filled polygon is scanned: its record in the edge and active lists, and its
-   --  crossing.
-   Polygon_Edge_Bytes : constant := 2 * 48 + 8;
-   --  A unit of a region's size, for a copy of it.
-   Region_Unit_Bytes : constant := 8;
-   --  Each byte of a region read: its scanlines and inversion points, with capacity growth.
-   Region_Payload_Factor : constant := 4;
-   --  A unit of shape-building work: the spans it can make.
-   Shape_Bytes_Per_Work_Unit : constant := 256;
 
    --  Claim ordinal.
    --  @param S Session counting opcodes.
@@ -291,52 +225,19 @@ package Pictlib.Internal.Sessions is
    --  @param Value A Rect.
    --  @return Operation result.
    function Read_Bounds (S : in out Session; Value : out Geometry.Rect) return Results.Result;
+   --  Read pair: a (v, h) pair of signed coordinates as read, without the origin: pen and oval sizes, angles,
+   --  polygon points.
+   --  @param S Session reading an opcode's data.
+   --  @param V The first word.
+   --  @param H The second.
+   --  @return Operation result.
+   function Read_Pair (S : in out Session; V, H : out Integer) return Results.Result;
    --  Read into.
    --  @param S Session reading an opcode's data.
    --  @param Buffer Filled completely within the per-opcode budget.
    --  @return Operation result.
    function Read_Into (S : in out Session; Buffer : out Streams.Byte_Array) return Results.Result;
 
-   --  Retain: an item read from the stream, or skipped when a lenient session has no room for it.
-   --  @param S Session whose store receives the item.
-   --  @param Info Item description.
-   --  @param Length Data bytes to read from the stream into the item.
-   --  @param In_Opcode False for data outside any opcode, which the per-opcode byte budget does not cover.
-   --  @return Success (also when a lenient session drops the item with a Data_Loss warning), or the failure.
-   function Retain
-     (S : in out Session;
-      Info : Metadata.Item_Info;
-      Length : Byte_Count;
-      In_Opcode : Boolean := True) return Results.Result;
-   --  Retain bytes: an item whose data was already read.
-   --  @param S Session whose store receives the item.
-   --  @param Info Item description.
-   --  @param Data The item's data.
-   --  @return Success (also when a lenient session drops the item with a Data_Loss warning), or the failure.
-   function Retain_Bytes (S : in out Session; Info : Metadata.Item_Info; Data : Streams.Byte_Array)
-     return Results.Result;
-
-   --  Metadata count.
-   --  @param S Session.
-   --  @return Items retained.
-   function Metadata_Count (S : Session) return Natural;
-   --  Metadata item.
-   --  @param S Session.
-   --  @param Index Item index.
-   --  @return Its description.
-   function Metadata_Item (S : Session; Index : Positive) return Metadata.Item_Info
-     with Pre => Index <= Metadata_Count (S);
-   --  Copy metadata.
-   --  @param S Session.
-   --  @param Index Item index.
-   --  @param Buffer Receives the item's data.
-   --  @param Count Bytes written.
-   --  @return Success, or Invalid_Argument for an index out of range or a Buffer shorter than the item.
-   function Copy_Metadata
-     (S : Session;
-      Index : Positive;
-      Buffer : out Streams.Byte_Array;
-      Count : out Byte_Count) return Results.Result;
    --  Warning count.
    --  @param S Session.
    --  @return Warnings recorded.
@@ -356,7 +257,7 @@ private
       Retention : Metadata.Retention_Policy;
       Budget : Limits.Limit_Set := Limits.Default_Limits;
       Kept : Records;
-      Counts : Accounting;
+      Counts : Counters;
    end record;
 
    type Records is limited record
@@ -364,7 +265,7 @@ private
       Log : Diagnostics.Warning_Log;
    end record;
 
-   type Accounting is record
+   type Counters is record
       --  Allocations admitted this session, never given back.
       Total_Allocation_Bytes : Byte_Count := 0;
       --  Drawing work done in the current render.
@@ -382,8 +283,6 @@ private
       Pending_Offset : Source_Offset := 0;
    end record;
 
-   function Work_Left (S : Session) return Pixel_Count is
-     (S.Budget.Max_Drawing_Work - Pixel_Count'Min (S.Counts.Work_Used, S.Budget.Max_Drawing_Work));
    function Opcodes_Read (S : Session) return Opcode_Ordinal is (S.Counts.Next_Ordinal);
    function Stream (S : aliased in out Session) return not null access Picture_Stream.Reader is (S.Stream'Access);
    function Offset (S : Session) return Source_Offset is (S.Stream.Offset);
@@ -393,15 +292,6 @@ private
    function Strictness (S : Session) return Strictness_Mode is (S.Strictness);
    function Retention (S : Session) return Metadata.Retention_Policy is (S.Retention);
    function Is_Lenient (S : Session) return Boolean is (S.Strictness /= Strict);
-   function Metadata_Count (S : Session) return Natural is (Metadata_Store.Count (S.Kept.Store));
-   function Metadata_Item (S : Session; Index : Positive) return Metadata.Item_Info is
-     (Metadata_Store.Info (S.Kept.Store, Index));
-   function Copy_Metadata
-     (S : Session;
-      Index : Positive;
-      Buffer : out Streams.Byte_Array;
-      Count : out Byte_Count) return Results.Result is
-     (Metadata_Store.Copy_Data (S.Kept.Store, Index, Buffer, Count));
    function Warning_Count (S : Session) return Natural is (Diagnostics.Count (S.Kept.Log));
    function Warning_At (S : Session; Index : Positive) return Errors.Warning is
      (Diagnostics.Element (S.Kept.Log, Index));

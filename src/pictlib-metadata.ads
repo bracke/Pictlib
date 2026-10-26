@@ -31,7 +31,7 @@ package Pictlib.Metadata is
       --  A comment's kind, for comments only.
       Comment_Kind : Interfaces.Unsigned_16 := 0;
       --  The font ID a fontName names, for font names only.
-      Font_ID : Interfaces.Unsigned_16 := 0;
+      Font_ID : Pictlib.Font_ID := 0;
       --  Bytes retained.
       Data_Length : Byte_Count := 0;
    end record;

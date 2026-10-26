@@ -1,11 +1,13 @@
 --  Real-world corpus: every picture under fixtures/real_world is enumerated strictly and rendered compatibly
 --  and recoverably, with the test fonts. An exception escaping pictlib is a defect. Each outcome is printed as
 --  "<file> <strict enumerate> <compatible render> <recovering render>" and compared with
---  fixtures/real_world/expected.txt; --update rewrites that file. Runs from anywhere below the pictlib tree.
+--  fixtures/real_world/expected.txt; --update rewrites that file, and --opcodes prints each picture's opcode
+--  counts. Runs from anywhere below the pictlib tree.
 with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Files;
 with Pictlib_Testing.Fonts;
 with Pictlib_Testing.Tools;
+with Ada.Characters.Handling;
 with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Directories;
 with Ada.Exceptions;
@@ -29,8 +31,9 @@ procedure Pictlib_Real_World is
 
    package Outcome_Maps is new Ada.Containers.Indefinite_Ordered_Maps (String, String);
 
-   Root : constant String := "fixtures/real_world";
-   Expected_File : constant String := Root & "/expected.txt";
+   --  The corpus, relative to the tests directory.
+   Corpus : constant String := "fixtures/real_world";
+   Expected_File : constant String := Corpus & "/expected.txt";
    Results_Now : Outcome_Maps.Map;
    Defects : Natural := 0;
 
@@ -145,24 +148,28 @@ procedure Pictlib_Real_World is
       end;
    end Render;
 
+   --  Item with every backslash a slash.
+   function Slashed (Item : String) return String is
+      Result : String := Item;
+   begin
+      for C of Result loop
+         if C = '\' then
+            C := '/';
+         end if;
+      end loop;
+      return Result;
+   end Slashed;
+
    procedure Visit (Directory : String) is
       use Ada.Directories;
-      Search : Search_Type;
-      Item : Directory_Entry_Type;
+      Prefix : constant String := Full_Name (Directory);
    begin
-      Start_Search (Search, Directory, "*");
-      while More_Entries (Search) loop
-         Get_Next_Entry (Search, Item);
+      for Path of Pictlib_Testing.Tools.Files_Below (Directory) loop
          declare
-            Name : constant String := Simple_Name (Item);
-            Path : constant String := Full_Name (Item);
-            Relative : constant String := Directory (Directory'First + Root'Length + 1 .. Directory'Last) & "/" & Name;
+            --  The key in expected.txt: the path below the corpus, with '/' whatever the platform's separator.
+            Relative : constant String := Slashed (Path (Path'First + Prefix'Length + 1 .. Path'Last));
          begin
-            if Name (Name'First) = '.' then
-               null;
-            elsif Kind (Item) = Ada.Directories.Directory then
-               Visit (Directory & "/" & Name);
-            elsif Extension (Name) in "pct" | "pict" | "PCT" | "PICT" then
+            if Ada.Characters.Handling.To_Lower (Extension (Path)) in "pct" | "pict" then
                declare
                   Data : Bytes_Access := Pictlib_Testing.Files.Load_Path (Path);
                   Line : Unbounded_String;
@@ -178,11 +185,11 @@ procedure Pictlib_Real_World is
                   when Error : others =>
                      Defects := Defects + 1;
                      Results_Now.Include (Relative, "exception " & Ada.Exceptions.Exception_Name (Error));
+                     Ada.Text_IO.Put_Line (Relative & ": " & Ada.Exceptions.Exception_Information (Error));
                end;
             end if;
          end;
       end loop;
-      End_Search (Search);
    end Visit;
 
    Expected : Outcome_Maps.Map;
@@ -192,7 +199,13 @@ begin
       return;
    end if;
    Pictlib_Testing.Tools.Start_Report ("pictlib_real_world");
-   Visit (Root);
+   if not Pictlib_Testing.Tools.Arguments_Known
+            ([new String'("--update"), new String'("--opcodes")])
+   then
+      Pictlib_Testing.Tools.Finish_Report;
+      return;
+   end if;
+   Visit (Corpus);
    if Ada.Directories.Exists (Expected_File) then
       declare
          File : Ada.Text_IO.File_Type;

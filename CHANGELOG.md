@@ -81,6 +81,26 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   says; a wrong version the limit leaves in view is `Version_Invalid`, not
   the limit.
 - The encoder frees its row buffers when the destination raises.
+- Region framing charges each intersection by the rows it walks, before it
+  is made, rather than by its result; pictures near the drawing limit may
+  now reach it.
+- A source that resets, initializes or finalizes its decoder mid-read, or a
+  destination that does so to its encoder mid-write, leaves it as it chose:
+  what the source delivered for the old binding is dropped, the call
+  returns what one in the new state gets, and nothing reads a cleared
+  stream. A source's `Finalize` used to make the look-ahead read through a
+  null source and raise, and a `Reset` during `Read_Header` used to be
+  undone. A destination's `Cancel` or `Finalize` is no longer overwritten.
+- The decoder frees its row buffers, payloads and embedded-JPEG pixels when
+  the source raises, as the specification promises for every failure.
+- `Encoding.Reset` binds another destination and keeps the options and
+  limits, as the decoder's does.
+- `Pictlib.Font_ID` is one type: `Fonts.Font_ID` is a subtype of it and
+  `Metadata.Item_Info.Font_ID` has it, so a font name read back can be
+  given to a font table without a conversion.
+- Diagnostic offsets follow one rule the specification now states: a field
+  found wrong while reading names where reading stood, a verdict on the
+  whole opcode names its offset.
 - The warning log's suppression record keeps the context of the first
   warning suppressed, as documented, not the latest's.
 - `lineJustify` with extra space is unsupported (strictly a failure,
@@ -320,6 +340,10 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   `PUBLIC_API.md` records that `Pack_Type` is internal;
   `tests/fixtures/README.md` says where provenance is actually kept.
 
+- The specification names the new units and the rules for rebinding from
+  caller code; the fixture READMEs record the Netpbm version and the check
+  that reproduces them.
+
 ### Internal structure
 
 No behaviour changes; what each part of the library does now lives in one
@@ -385,8 +409,18 @@ place:
   for the dry run and the real one, and its color table in a procedure of
   its own; writes are judged by `Replies.Judged_Write` as reads are; the
   version bytes are named by their constants; misplaced comments are back
-  above their declarations; region framing charges each intersection's
-  rows before it and moves its rows instead of copying them.
+  above their declarations; region framing moves its rows instead of
+  copying them.
+
+- The jpeglib bridge (`Internal.JPEG_Bridge`), shape drawing
+  (`Internal.Shapes`), a view's pixel accessors (`Internal.Pixels`) and the
+  session's accounting and retained metadata (`Sessions.Accounting`,
+  `Sessions.Retained`) are units of their own; `Read_Pair` is a session
+  reader; failures over a limit in a context and invalid views are built by
+  `Failures`; `Sessions.Context_Of` is gone in favour of
+  `Failures.Context_Of`; `Visiting` is `Busy`; the font cache checks it is
+  given a held textrender guard; `Text.File_Bytes` catches only file
+  errors; polygon filling reuses its row vectors.
 
 ### Tooling
 
@@ -492,3 +526,23 @@ All tooling is Ada, in the `tests` crate:
   that calls into or cancels its decoder, a destination that calls Encode,
   the early picture byte check, a wrong version under a small budget, and
   the suppression record's context; the Direct pixmap builder is shared.
+- `pictlib.gpr` takes Alire's build profile: `-O2` for release, `-Og -g`
+  otherwise, every check kept; the tests crate builds with `-g` and binds
+  with `-Es`, so defects carry a traceback; the proof profile uses the
+  library's switches.
+- `pictlib_generate --check` regenerates the external fixtures and
+  compares them with the committed ones byte for byte; it clears stale
+  staging first and reports a failure partway. `pictlib_conformance`,
+  `pictlib_generate` and `pictlib_prove` print the versions of the external
+  programs they run; CI installs `gnatprove^15`, fuzzes from its run number
+  (`pictlib_complete --fuzz-seed`) and keeps the fuzzer's inputs when it
+  fails.
+- `pictlib_fuzz` fails without its fixture seeds and refuses seed 0 and no
+  iterations; the generator draws from its high bits. `pictlib_check` runs
+  every policy step and the suite whatever one of them raises, requires the
+  CI workflow, and bans PowerShell, batch and Perl scripts and Makefiles;
+  `pictlib_real_world` and `pictlib_complete` refuse unknown arguments, and
+  the tools walk directories through one sorted walker.
+- `Samples.Encode` and the benchmark free their buffers, the benchmark
+  reports a rate it cannot time instead of raising, and conformance reads
+  SVGs on the heap; `direct_large` is past 64 KiB, and checked to be.

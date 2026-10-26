@@ -1,3 +1,4 @@
+with Ada.Exceptions;
 --  The day-to-day gate: the library builds on its own, the sources keep the policy, and the AUnit suite passes.
 --  The policy holds independent of what an incremental build recompiled: lines of at most 120 characters in
 --  every Ada source of both crates, GNATdoc tags on every public subprogram of the public packages,
@@ -21,32 +22,48 @@ procedure Pictlib_Check is
      (Ada.Directories.Extension (Name) in "ads" | "adb");
 
    procedure Check_Tree (Directory : String; Production : Boolean) is
-      use Ada.Directories;
-      Search : Search_Type;
-      Item : Directory_Entry_Type;
    begin
-      Start_Search (Search, Directory, "*");
-      while More_Entries (Search) loop
-         Get_Next_Entry (Search, Item);
-         declare
-            Name : constant String := Simple_Name (Item);
-            Path : constant String := Full_Name (Item);
-         begin
-            if Name (Name'First) = '.' then
-               null;
-            elsif Kind (Item) = Ada.Directories.Directory then
-               Check_Tree (Path, Production);
-            elsif Is_Ada (Name) then
-               Pictlib_Testing.Source_Policy.Check_Line_Lengths (Path);
-               if Production then
-                  Pictlib_Testing.Source_Policy.Check_Production_Unit (Path);
-               end if;
+      for Path of Pictlib_Testing.Tools.Files_Below (Directory) loop
+         if Is_Ada (Path) then
+            Pictlib_Testing.Source_Policy.Check_Line_Lengths (Path);
+            if Production then
+               Pictlib_Testing.Source_Policy.Check_Production_Unit (Path);
             end if;
-         end;
+         end if;
       end loop;
-      End_Search (Search);
    end Check_Tree;
    Policy_Only : constant Boolean := Project_Tools.Processes.Has_Argument ("--policy-only");
+
+   --  Run one policy step; one that raises is a finding, and the steps and the suite after it still run.
+   procedure Policy_Step (Label : String; Step : not null access procedure) is
+   begin
+      Step.all;
+   exception
+      when Error : others =>
+         Fail (Label & " stopped: " & Ada.Exceptions.Exception_Information (Error));
+   end Policy_Step;
+
+   procedure Check_Sources is
+   begin
+      Check_Tree (Root & "/src", Production => True);
+      Check_Tree (Root & "/tests/src", Production => False);
+   end Check_Sources;
+   procedure Check_Registry is
+   begin
+      Pictlib_Testing.Source_Policy.Check_Registry (Root);
+   end Check_Registry;
+   procedure Check_Suite is
+   begin
+      Pictlib_Testing.Source_Policy.Check_Suite (Root);
+   end Check_Suite;
+   procedure Check_Tooling is
+   begin
+      Pictlib_Testing.Source_Policy.Check_Tooling (Root);
+   end Check_Tooling;
+   procedure Check_Readme is
+   begin
+      Pictlib_Testing.Source_Policy.Check_Readme (Root);
+   end Check_Readme;
 
    procedure Run (Label, Directory, Program : String; Arguments : Project_Tools.Processes.Argument_Items) is
    begin
@@ -75,12 +92,11 @@ begin
             end if;
          end;
       end if;
-      Check_Tree (Root & "/src", Production => True);
-      Check_Tree (Root & "/tests/src", Production => False);
-      Pictlib_Testing.Source_Policy.Check_Registry (Root);
-      Pictlib_Testing.Source_Policy.Check_Suite (Root);
-      Pictlib_Testing.Source_Policy.Check_Tooling (Root);
-      Pictlib_Testing.Source_Policy.Check_Readme (Root);
+      Policy_Step ("the source checks", Check_Sources'Access);
+      Policy_Step ("the registry check", Check_Registry'Access);
+      Policy_Step ("the suite check", Check_Suite'Access);
+      Policy_Step ("the tooling check", Check_Tooling'Access);
+      Policy_Step ("the README check", Check_Readme'Access);
       --  The suite runs whatever the policy found, so a policy finding never hides a failing test.
       if not Policy_Only then
          Run ("unit tests", Root & "/tests",

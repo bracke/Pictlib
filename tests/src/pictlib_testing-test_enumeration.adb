@@ -17,6 +17,7 @@ package body Pictlib_Testing.Test_Enumeration is
    use Pictlib_Testing.Builders;
    use type Interfaces.Unsigned_16;
    use type Pictlib.Byte_Count;
+   use type Pictlib.Font_ID;
    use type Pictlib.Decoding.Decoder_State;
    use type Pictlib.Errors.Error_Code;
    use type Pictlib.Errors.Warning_Code;
@@ -195,7 +196,7 @@ package body Pictlib_Testing.Test_Enumeration is
       Op : Pictlib.Opcode;
       Data : Bytes;
       Comment_Kind : Interfaces.Unsigned_16 := 0;
-      Font_ID : Interfaces.Unsigned_16 := 0)
+      Font_ID : Pictlib.Font_ID := 0)
    is
       Item : constant Pictlib.Metadata.Item_Info := Decoding.Metadata_Item (Decoder, Index);
       Copy : Bytes (1 .. 600);

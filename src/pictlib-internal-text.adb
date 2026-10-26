@@ -69,7 +69,8 @@ package body Pictlib.Internal.Text is
    begin
       return Byte_Count (Ada.Directories.Size (Path));
    exception
-      when others =>
+      --  A path that names no readable file: the load fails, and costs nothing for its file.
+      when Ada.Directories.Name_Error | Ada.Directories.Use_Error =>
          return 0;
    end File_Bytes;
 
@@ -91,7 +92,6 @@ package body Pictlib.Internal.Text is
       Slot : out Positive;
       Held : Textrender_Guard) return Textrender.Status_Code
    is
-      pragma Unreferenced (Held);
       Key : constant Ada.Strings.Unbounded.Unbounded_String := Ada.Strings.Unbounded.To_Unbounded_String (Path);
       Spare : Natural := 0;
       Loaded : Natural := 0;
@@ -154,7 +154,6 @@ package body Pictlib.Internal.Text is
    function Renderer (Cache : Font_Cache; Slot : Positive; Held : Textrender_Guard)
      return not null access Textrender.Renderer
    is
-      pragma Unreferenced (Held);
    begin
       return Cache.Items (Slot).Renderer;
    end Renderer;

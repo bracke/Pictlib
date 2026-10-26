@@ -5,7 +5,7 @@ project Pictlib_Proof is
 
    package Compiler is
       for Default_Switches ("Ada") use
-        ("-gnat2022", "-gnatX", "-gnata", "-gnato", "-gnatVa", "-gnatwa");
+        ("-gnat2022", "-gnatyM120", "-gnatX", "-gnata", "-gnato", "-gnatVa", "-gnatwa", "-gnatwe");
    end Compiler;
 
    package Prove is

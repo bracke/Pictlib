@@ -8,7 +8,8 @@ package Pictlib_Testing.Random is
    --  Seeded.
    --  @param Seed Any value but 0, which the generator never leaves.
    --  @return A generator starting from Seed.
-   function Seeded (Seed : Interfaces.Unsigned_64 := 16#9E37_79B9_7F4A_7C15#) return Generator;
+   function Seeded (Seed : Interfaces.Unsigned_64 := 16#9E37_79B9_7F4A_7C15#) return Generator
+     with Pre => Interfaces."/=" (Seed, 0);
    --  Next.
    --  @param Item Generator, advanced.
    --  @param Bound Values to choose from.

@@ -23,7 +23,8 @@ package Pictlib_Testing.Source_Policy is
    --  @param Root The pictlib tree.
    procedure Check_Suite (Root : String);
 
-   --  Check tooling: no shell or Python script anywhere in the tree, all tooling being Ada in the tests crate,
+   --  Check tooling: no shell, Python, PowerShell, batch or Perl script and no Makefile anywhere in the tree, all
+   --  tooling being Ada in the tests crate,
    --  and every CI step a single command: one line, with no shell list, pipe or redirection.
    --  @param Root The pictlib tree.
    procedure Check_Tooling (Root : String);

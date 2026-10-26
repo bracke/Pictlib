@@ -1,3 +1,4 @@
+with Pictlib.Internal.Sessions.Retained;
 with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Geometry;
@@ -9,6 +10,7 @@ with Pictlib.Opcodes;
 with Pictlib.Streams;
 
 package body Pictlib.Internal.Container is
+   package Retained renames Pictlib.Internal.Sessions.Retained;
    use type Interfaces.Unsigned_16;
    use type Geometry.Fixed;
    use type Errors.Error_Code;
@@ -45,7 +47,7 @@ package body Pictlib.Internal.Container is
    --  The file header is not an opcode: retained or skipped, the per-opcode byte budget does not apply to it.
    function Read_File_Header (S : in out Sessions.Session) return Results.Result is
      (if S.Retention.File_Headers
-      then Sessions.Retain
+      then Retained.Retain
              (S, (Kind => Metadata.File_Header, Offset => S.Offset, others => <>), File_Header_Bytes,
               In_Opcode => False)
       else Streams.Skip_Exact (S.Stream.all, File_Header_Bytes));
@@ -65,7 +67,7 @@ package body Pictlib.Internal.Container is
       Event : Pictures.Opcode_Event;
       Info : in out Pictures.Header_Info) return Results.Result
    is
-      Header_Op_Context : constant Errors.Diagnostic_Context := Sessions.Context_Of (Event);
+      Header_Op_Context : constant Errors.Diagnostic_Context := Failures.Context_Of (Event);
       First, Second : Interfaces.Unsigned_16;
       Outcome : Results.Result := Bytes.Read_U16_BE (S.Stream.all, First);
    begin

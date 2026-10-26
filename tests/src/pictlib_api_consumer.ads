@@ -90,6 +90,8 @@ package Pictlib_API_Consumer is
       Encode_Options : Pictlib.Encoding.Options := (others => <>);
       Encode_Limits : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits)
      renames Pictlib.Encoding.Initialize;
+   procedure Reset (Object : in out Encoder; Output : not null access Pictlib.Streams.Destination'Class)
+     renames Pictlib.Encoding.Reset;
    function State (Object : Encoder) return Pictlib.Encoding.Encoder_State renames Pictlib.Encoding.State;
    function Encode (Object : in out Encoder; Image : Pictlib.Images.Image_View) return Pictlib.Results.Result
      renames Pictlib.Encoding.Encode;

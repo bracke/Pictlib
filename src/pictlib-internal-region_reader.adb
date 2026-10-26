@@ -1,3 +1,4 @@
+with Pictlib.Internal.Sessions.Accounting;
 with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Geometry;
@@ -5,6 +6,7 @@ with Pictlib.Internal.Bytes;
 with Pictlib.Streams;
 
 package body Pictlib.Internal.Region_Reader is
+   package Accounting renames Pictlib.Internal.Sessions.Accounting;
    use type Interfaces.Unsigned_16;
 
    function Read_Size (S : in out Sessions.Session; Size : out Interfaces.Unsigned_16) return Results.Result is
@@ -51,7 +53,8 @@ package body Pictlib.Internal.Region_Reader is
          return Outcome;
       end if;
       --  The scanlines and inversion points built from the payload, while it is still held.
-      Outcome := Sessions.Admit_Aggregate (S, Sessions.Region_Payload_Factor * (Byte_Count (Size) - Smallest_Region));
+      Outcome :=
+        Accounting.Admit_Aggregate (S, Accounting.Region_Payload_Factor * (Byte_Count (Size) - Smallest_Region));
       if Results.Succeeded (Outcome) and then not Regions.From_Scanlines (Regions.To_Area (Rect), Data.all, Item)
       then
          Outcome := Sessions.Fail (S, Errors.Region_Invalid, Actual => Byte_Count (Size));

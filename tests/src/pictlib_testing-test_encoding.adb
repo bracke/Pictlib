@@ -45,8 +45,9 @@ package body Pictlib_Testing.Test_Encoding is
       Fail_At : Positive := 1;
       --  Raise at Fail_At instead of failing.
       Raises : Boolean := False;
-      --  At Fail_At, call Encode on Target instead, keeping what it returns in Nested.
+      --  At Fail_At, call into Target instead: Encode, keeping what it returns in Nested, Cancel or Finalize.
       Target : access Encoding.Encoder;
+      Move : Natural := 0;
       Nested : Pictlib.Results.Result := Pictlib.Results.Success;
       --  What Flush does: succeed, fail, or raise.
       Flush_Fails, Flush_Raises : Boolean := False;
@@ -64,11 +65,16 @@ package body Pictlib_Testing.Test_Encoding is
    begin
       Object.Calls := Object.Calls + 1;
       if Object.Calls = Object.Fail_At and then Object.Target /= null then
-         declare
-            Again : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 2, 2);
-         begin
-            Object.Nested := Encoding.Encode (Object.Target.all, Samples.View (Again, 2, 2));
-         end;
+         case Object.Move is
+            when 1 => Encoding.Cancel (Object.Target.all);
+            when 2 => Encoding.Finalize (Object.Target.all);
+            when others =>
+               declare
+                  Again : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 2, 2);
+               begin
+                  Object.Nested := Encoding.Encode (Object.Target.all, Samples.View (Again, 2, 2));
+               end;
+         end case;
       elsif Object.Calls = Object.Fail_At and then Object.Raises then
          raise Destination_Raised;
       elsif Object.Calls = Object.Fail_At then
@@ -538,6 +544,48 @@ package body Pictlib_Testing.Test_Encoding is
          Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State,
                  "an encoder whose destination raised encoded again");
       end;
+      --  A destination that cancels or finalizes its encoder mid-write leaves it so, and a finalized one finishes
+      --  nothing; Reset keeps the options for the next picture.
+      for Move in 1 .. 2 loop
+         declare
+            Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
+            Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
+            Output : aliased Flaky;
+            Encoder : aliased Encoding.Encoder;
+            Outcome : Pictlib.Results.Result;
+         begin
+            Pictlib.Streams.Open (Output.Inner, Storage);
+            Output.Fail_At := 40;
+            Output.Target := Encoder'Unchecked_Access;
+            Output.Move := Move;
+            Encoding.Initialize (Encoder, Output'Access);
+            Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 37, 23));
+            Assert (not Pictlib.Results.Succeeded (Outcome), "an encoder its destination stopped encoded");
+            Assert (Encoding.State (Encoder) = (if Move = 1 then Encoding.Cancelled else Encoding.Created),
+                    "a destination's" & (if Move = 1 then " Cancel" else " Finalize") & " was overwritten: "
+                    & Encoding.State (Encoder)'Image);
+            Outcome := Encoding.Finish (Encoder);
+            Assert (not Pictlib.Results.Succeeded (Outcome), "an encoder its destination stopped finished");
+         end;
+      end loop;
+      declare
+         Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Black_And_White, 8, 2);
+         Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
+         Output : aliased Pictlib.Streams.Fixed_Buffer_Destination;
+         Encoder : Encoding.Encoder;
+         Outcome : Pictlib.Results.Result;
+      begin
+         Pictlib.Streams.Open (Output, Storage);
+         Encoding.Initialize (Encoder, Output'Access, (Layout => Encoding.Indexed_8, others => <>));
+         Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 8, 2));
+         Assert (Pictlib.Results.Succeeded (Outcome), "the first picture was not encoded");
+         Pictlib.Streams.Open (Output, Storage);
+         Encoding.Reset (Encoder, Output'Access);
+         Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 8, 2));
+         Assert (Pictlib.Results.Succeeded (Outcome) and then Encoding.Layout_Used (Encoder) = Encoding.Indexed_8,
+                 "Reset did not keep the encoder's options");
+      end;
+
       --  A destination that calls Encode on its encoder is refused; a flush that fails or raises fails the encoder.
       for Move in 1 .. 3 loop
          declare

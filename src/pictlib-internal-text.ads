@@ -8,7 +8,7 @@ with Textrender;
 
 --  Text state of the port, the Mac Roman character set, and the TrueType renderers text is drawn with.
 package Pictlib.Internal.Text is
-   package Name_Maps is new Ada.Containers.Indefinite_Ordered_Maps (Fonts.Font_ID, String, Fonts."<");
+   package Name_Maps is new Ada.Containers.Indefinite_Ordered_Maps (Fonts.Font_ID, String, Pictlib."<");
 
    --  TxFace bits.
    Bold : constant := 1;
@@ -45,6 +45,10 @@ package Pictlib.Internal.Text is
    --  Textrender keeps scratch buffers shared by every renderer, so no two textrender calls may run at once,
    --  even on different renderers. A Textrender_Guard holds the process-wide lock for its lifetime.
    type Textrender_Guard is new Ada.Finalization.Limited_Controlled with private;
+   --  Holds.
+   --  @param Guard A guard.
+   --  @return True while Guard holds the lock: a guard the caller declared, not finalized yet.
+   function Holds (Guard : Textrender_Guard) return Boolean;
 
    --  Renderers are created and destroyed, as well as used, under the lock: textrender does not promise that
    --  initializing or finalizing a renderer leaves the shared buffers alone. Finalizing a cache that holds a
@@ -64,7 +68,8 @@ package Pictlib.Internal.Text is
       Path : String;
       Size : Positive;
       Slot : out Positive;
-      Held : Textrender_Guard) return Textrender.Status_Code;
+      Held : Textrender_Guard) return Textrender.Status_Code
+     with Pre => Holds (Held);
    --  Cached.
    --  @param Cache Cache of loaded fonts.
    --  @param Path TrueType file.
@@ -77,7 +82,8 @@ package Pictlib.Internal.Text is
    --  @param Held The guard the caller holds for as long as it uses the renderer.
    --  @return Its renderer.
    function Renderer (Cache : Font_Cache; Slot : Positive; Held : Textrender_Guard)
-     return not null access Textrender.Renderer;
+     return not null access Textrender.Renderer
+     with Pre => Holds (Held);
    --  Clear.
    --  @param Cache Cache whose fonts and renderers are released, under the lock it takes.
    procedure Clear (Cache : in out Font_Cache);
@@ -119,6 +125,8 @@ private
 
    overriding procedure Initialize (Guard : in out Textrender_Guard);
    overriding procedure Finalize (Guard : in out Textrender_Guard);
+
+   function Holds (Guard : Textrender_Guard) return Boolean is (Guard.Held);
 
    --  At most Slots fonts stay loaded; one renderer more lets a font load before any is evicted.
    Slots : constant := 8;

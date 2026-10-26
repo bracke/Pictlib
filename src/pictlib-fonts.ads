@@ -7,7 +7,7 @@ private with Ada.Strings.Unbounded;
 --  The TrueType fonts text renders with. pictlib ships no fonts: the caller maps the Macintosh font families a
 --  picture names to TrueType files, by name or by font ID, and may name a default for everything else.
 package Pictlib.Fonts is
-   type Font_ID is range 0 .. 16#FFFF#;
+   subtype Font_ID is Pictlib.Font_ID;
 
    type Font_Table is private;
 

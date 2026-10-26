@@ -52,11 +52,19 @@ jobs:
         run: alr --non-interactive build
 
       - name: Install GNATprove
-        run: alr install gnatprove
+        run: alr install gnatprove^15
 
       - name: Library-complete gate without the external readers
         working-directory: pictlib/tests
-        run: alr --non-interactive run --skip-build pictlib_complete --args=--without-conformance
+        run: alr --non-interactive run --skip-build pictlib_complete "--args=--without-conformance --fuzz-seed ${{ github.run_number }}"
+
+      - name: Keep the fuzzer's defect, slow and stuck inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-inputs-${{ matrix.os }}
+          path: pictlib/tests/artifacts/fuzz
+          if-no-files-found: ignore
 
   conformance:
     name: encoder conformance (ImageMagick, LibreOffice)

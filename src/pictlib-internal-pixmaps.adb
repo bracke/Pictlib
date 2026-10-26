@@ -1,3 +1,4 @@
+with Pictlib.Internal.Sessions.Accounting;
 with Pictlib.Internal.Checked_Arithmetic;
 with Ada.Unchecked_Deallocation;
 with Pictlib.Errors;
@@ -8,6 +9,7 @@ with Pictlib.Internal.PackBits;
 with Pictlib.Opcodes;
 
 package body Pictlib.Internal.Pixmaps is
+   package Accounting renames Pictlib.Internal.Sessions.Accounting;
    use type Interfaces.Unsigned_16;
    use type PackBits.Unpack_Status;
 
@@ -442,16 +444,16 @@ package body Pictlib.Internal.Pixmaps is
       Finish (Decoder);
       declare
          Admission : constant Results.Result :=
-           Sessions.Admit_Allocation (S, Total);
+           Accounting.Admit_Allocation (S, Total);
       begin
          if not Results.Succeeded (Admission) then
             return Admission;
          end if;
       end;
       Decoder.Header := Header;
-      Decoder.Stored := new Streams.Byte_Array (1 .. Stored_Length (Header));
-      Decoder.Unpacked := new Streams.Byte_Array (1 .. Unpacked_Length (Header));
-      Decoder.Colors := new Color_Row (0 .. Header.Width - 1);
+      Decoder.Buffers.Stored := new Streams.Byte_Array (1 .. Stored_Length (Header));
+      Decoder.Buffers.Unpacked := new Streams.Byte_Array (1 .. Unpacked_Length (Header));
+      Decoder.Buffers.Colors := new Color_Row (0 .. Header.Width - 1);
       Decoder.Bad_Index_Reported := False;
       return Results.Success;
    end Start;
@@ -482,9 +484,9 @@ package body Pictlib.Internal.Pixmaps is
                      Index : constant Natural := (Value / 2 ** (8 - Depth - Bit mod 8)) mod (Mask + 1);
                   begin
                      if Header.Encoding = Bitmap_Bits then
-                        Decoder.Colors (X) := (if Index = 1 then Images.Black else Images.White);
+                        Decoder.Buffers.Colors (X) := (if Index = 1 then Images.Black else Images.White);
                      elsif Header.Table.Defined (Index) then
-                        Decoder.Colors (X) := Header.Table.Colors (Index);
+                        Decoder.Buffers.Colors (X) := Header.Table.Colors (Index);
                      else
                         --  Leniently black, reported once per opcode.
                         if not Decoder.Bad_Index_Reported then
@@ -499,7 +501,7 @@ package body Pictlib.Internal.Pixmaps is
                            end;
                            Decoder.Bad_Index_Reported := True;
                         end if;
-                        Decoder.Colors (X) := Images.Black;
+                        Decoder.Buffers.Colors (X) := Images.Black;
                      end if;
                   end;
                end loop;
@@ -509,7 +511,7 @@ package body Pictlib.Internal.Pixmaps is
                declare
                   Word : constant Interfaces.Unsigned_16 := Bytes.Word_At (Data, First + 2 * X);
                begin
-                  Decoder.Colors (X) :=
+                  Decoder.Buffers.Colors (X) :=
                     (Red => Expand_5 (Interfaces.Shift_Right (Word, 10) and 31),
                      Green => Expand_5 (Interfaces.Shift_Right (Word, 5) and 31),
                      Blue => Expand_5 (Word and 31));
@@ -517,11 +519,12 @@ package body Pictlib.Internal.Pixmaps is
             end loop;
          when XRGB_Chunky =>
             for X in 0 .. Width - 1 loop
-               Decoder.Colors (X) := (Data (First + 4 * X + 1), Data (First + 4 * X + 2), Data (First + 4 * X + 3));
+               Decoder.Buffers.Colors (X) :=
+                 (Data (First + 4 * X + 1), Data (First + 4 * X + 2), Data (First + 4 * X + 3));
             end loop;
          when RGB_Triplets =>
             for X in 0 .. Width - 1 loop
-               Decoder.Colors (X) := (Data (First + 3 * X), Data (First + 3 * X + 1), Data (First + 3 * X + 2));
+               Decoder.Buffers.Colors (X) := (Data (First + 3 * X), Data (First + 3 * X + 1), Data (First + 3 * X + 2));
             end loop;
          when Planar =>
             declare
@@ -531,7 +534,7 @@ package body Pictlib.Internal.Pixmaps is
                Blue : constant Natural := First + Plane_Offset (Blue_Plane, Components, Width);
             begin
                for X in 0 .. Width - 1 loop
-                  Decoder.Colors (X) := (Data (Red + X), Data (Green + X), Data (Blue + X));
+                  Decoder.Buffers.Colors (X) := (Data (Red + X), Data (Green + X), Data (Blue + X));
                end loop;
             end;
       end case;
@@ -543,9 +546,9 @@ package body Pictlib.Internal.Pixmaps is
       Outcome : Results.Result;
    begin
       if Header.Layout = Unpacked then
-         Outcome := Sessions.Read_Into (S, Decoder.Stored (1 .. Header.Raw_Length));
+         Outcome := Sessions.Read_Into (S, Decoder.Buffers.Stored (1 .. Header.Raw_Length));
          if Results.Succeeded (Outcome) then
-            Outcome := Convert (S, Decoder, Decoder.Stored (1 .. Header.Raw_Length), Row);
+            Outcome := Convert (S, Decoder, Decoder.Buffers.Stored (1 .. Header.Raw_Length), Row);
          end if;
       else
          declare
@@ -555,12 +558,12 @@ package body Pictlib.Internal.Pixmaps is
          begin
             Outcome := Read_Packed_Count (S, Header.Row_Bytes, Count);
             if Results.Succeeded (Outcome) then
-               Outcome := Sessions.Read_Into (S, Decoder.Stored (1 .. Count));
+               Outcome := Sessions.Read_Into (S, Decoder.Buffers.Stored (1 .. Count));
             end if;
             if Results.Succeeded (Outcome) then
                PackBits.Unpack
-                 (Decoder.Stored (1 .. Count), (if Header.Layout = Packed_Words then 2 else 1),
-                  Decoder.Unpacked (1 .. Header.Unpacked_Length), Written, Status);
+                 (Decoder.Buffers.Stored (1 .. Count), (if Header.Layout = Packed_Words then 2 else 1),
+                  Decoder.Buffers.Unpacked (1 .. Header.Unpacked_Length), Written, Status);
                --  In every mode: Recover_When_Safe turns it into a partial picture.
                if Status /= PackBits.Exact then
                   Outcome := Sessions.Fail
@@ -568,19 +571,25 @@ package body Pictlib.Internal.Pixmaps is
                end if;
             end if;
             if Results.Succeeded (Outcome) then
-               Outcome := Convert (S, Decoder, Decoder.Unpacked (1 .. Header.Unpacked_Length), Row);
+               Outcome := Convert (S, Decoder, Decoder.Buffers.Unpacked (1 .. Header.Unpacked_Length), Row);
             end if;
          end;
       end if;
       return Failures.At_Row (Outcome, Row);
    end Read_Row;
 
-   function Pixel (Decoder : Row_Decoder; Column : Natural) return Images.RGB_Color is (Decoder.Colors (Column));
+   function Pixel (Decoder : Row_Decoder; Column : Natural) return Images.RGB_Color is
+     (Decoder.Buffers.Colors (Column));
+
+   overriding procedure Finalize (Buffers : in out Row_Buffers) is
+   begin
+      Bytes.Free (Buffers.Stored);
+      Bytes.Free (Buffers.Unpacked);
+      Free (Buffers.Colors);
+   end Finalize;
 
    procedure Finish (Decoder : in out Row_Decoder) is
    begin
-      Bytes.Free (Decoder.Stored);
-      Bytes.Free (Decoder.Unpacked);
-      Free (Decoder.Colors);
+      Finalize (Decoder.Buffers);
    end Finish;
 end Pictlib.Internal.Pixmaps;

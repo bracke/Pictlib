@@ -15,7 +15,9 @@ with Pictlib_Testing.Fonts;
 with Pictlib_Testing.Random;
 with Pictlib_Testing.Recorders;
 with Pictlib_Testing.Tools;
+with Project_Tools.Processes;
 with Ada.Calendar;
+with Ada.Characters.Handling;
 with Ada.Command_Line;
 with Ada.Containers.Indefinite_Vectors;
 with Ada.Directories;
@@ -48,13 +50,10 @@ procedure Pictlib_Fuzz is
    Stuck_Seconds : constant Duration := 60.0;
    Artifacts : constant String := "artifacts/fuzz";
 
-   Fail_Stuck : constant Boolean :=
-     (for some Index in 1 .. Ada.Command_Line.Argument_Count => Ada.Command_Line.Argument (Index) = "--fail-stuck");
-   Replay : constant Boolean :=
-     (for some Index in 1 .. Ada.Command_Line.Argument_Count => Ada.Command_Line.Argument (Index) = "--replay");
+   Fail_Stuck : constant Boolean := Project_Tools.Processes.Has_Argument ("--fail-stuck");
+   Replay : constant Boolean := Project_Tools.Processes.Has_Argument ("--replay");
 
-   package Name_Vectors is new Ada.Containers.Indefinite_Vectors (Positive, String);
-   package Name_Sorting is new Name_Vectors.Generic_Sorting;
+   package Name_Vectors renames Pictlib_Testing.Tools.Name_Vectors;
 
    --  The arguments that are not flags: the replayed files, or the iterations and seed.
    function Positional return Name_Vectors.Vector is
@@ -122,26 +121,16 @@ procedure Pictlib_Fuzz is
    end Check;
 
    procedure Add_Files (Directory : String) is
-      use Ada.Directories;
-      Search : Search_Type;
-      Item : Directory_Entry_Type;
-      Names : Name_Vectors.Vector;
    begin
-      if not Exists (Directory) then
+      if not Ada.Directories.Exists (Directory) then
+         Fail ("missing seed directory " & Directory);
          return;
       end if;
-      Start_Search (Search, Directory, "*");
-      while More_Entries (Search) loop
-         Get_Next_Entry (Search, Item);
-         if Kind (Item) = Ordinary_File and then Extension (Simple_Name (Item)) in "pict" | "pct" then
-            Names.Append (Full_Name (Item));
-         end if;
-      end loop;
-      End_Search (Search);
-      --  The search order depends on the file system; the seeds' order must not.
-      Name_Sorting.Sort (Names);
-      for Name of Names loop
-         if Ada.Directories.Size (Name) <= 256 * 1024 then
+      --  Sorted, so the seeds' order does not depend on the file system.
+      for Name of Pictlib_Testing.Tools.Files_Below (Directory, Recursive => False) loop
+         if Ada.Characters.Handling.To_Lower (Ada.Directories.Extension (Name)) in "pict" | "pct"
+           and then Ada.Directories."<=" (Ada.Directories.Size (Name), 262_144)
+         then
             Seeds.Append (Pictlib_Testing.Files.Load_Path (Name).all);
          end if;
       end loop;
@@ -369,9 +358,19 @@ begin
             Usable := False;
          elsif Natural (Arguments.Length) >= 1 then
             Iterations := Natural'Value (Arguments (1));
+            --  No iterations would pass having fuzzed nothing.
+            Usable := Iterations > 0;
          end if;
          if Natural (Arguments.Length) = 2 then
-            Generator := Pictlib_Testing.Random.Seeded (Interfaces.Unsigned_64'Value (Arguments (2)));
+            declare
+               Seed : constant Interfaces.Unsigned_64 := Interfaces.Unsigned_64'Value (Arguments (2));
+            begin
+               --  The generator never leaves 0: every choice would be the first.
+               Usable := Usable and then Interfaces."/=" (Seed, 0);
+               if Usable then
+                  Generator := Pictlib_Testing.Random.Seeded (Seed);
+               end if;
+            end;
          end if;
       exception
          when Constraint_Error => Usable := False;
@@ -393,15 +392,17 @@ begin
    end if;
    Add_Files ("fixtures/external");
    Add_Files ("fixtures/real_world/libreoffice/pass");
+   --  The fixtures are most of what is fuzzed: without them the run would mutate three tiny encoder outputs and
+   --  pass, having tested little.
+   if Seeds.Is_Empty then
+      Fail ("no fixture seeds: fixtures/external and fixtures/real_world/libreoffice/pass hold no picture");
+      Pictlib_Testing.Tools.Finish_Report;
+      return;
+   end if;
    Add_Encoded (Pictlib_Testing.Samples.Gradient, Pictlib.Encoding.Direct_32);
    Add_Encoded (Pictlib_Testing.Samples.Three_Colors, Pictlib.Encoding.Indexed_8);
    Add_Encoded (Pictlib_Testing.Samples.Black_And_White, Pictlib.Encoding.Mono_1);
    Ada.Text_IO.Put_Line (Natural'Image (Natural (Seeds.Length)) & " seeds," & Iterations'Image & " iterations");
-   if Seeds.Is_Empty then
-      Fail ("no seeds: run below the pictlib tree, with its fixtures");
-      Pictlib_Testing.Tools.Finish_Report;
-      return;
-   end if;
    for Iteration in 1 .. Iterations loop
       begin
          declare

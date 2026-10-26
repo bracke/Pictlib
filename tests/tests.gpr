@@ -13,6 +13,11 @@ project Tests is
 
    package Compiler is
       for Default_Switches ("Ada") use
-        ("-gnat2022", "-gnatyM120", "-gnatX", "-gnata", "-gnato", "-gnatVa", "-gnatwa", "-gnatwe");
+        ("-gnat2022", "-gnatyM120", "-gnatX", "-gnata", "-gnato", "-gnatVa", "-gnatwa", "-gnatwe", "-g");
    end Compiler;
+
+   --  Exceptions carry a symbolic traceback, so a defect the fuzzer or a tool reports shows where it arose.
+   package Binder is
+      for Default_Switches ("Ada") use ("-Es");
+   end Binder;
 end Tests;

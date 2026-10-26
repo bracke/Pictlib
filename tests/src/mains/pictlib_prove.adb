@@ -10,6 +10,8 @@ with Project_Tools.Text;
 
 procedure Pictlib_Prove is
    procedure Fail (Message : String) renames Pictlib_Testing.Tools.Fail;
+   function Arg (Value : String) return Ada.Strings.Unbounded.Unbounded_String
+     renames Project_Tools.Processes.Argument;
    use Ada.Strings.Unbounded;
 
    --  The units the profile proves; docs/proof_profile.md says what each proof covers.
@@ -45,14 +47,13 @@ procedure Pictlib_Prove is
            Project_Tools.Processes.Command_Output
              (Alr,
               Project_Tools.Processes.Arguments
-                ([Project_Tools.Processes.Argument ("--non-interactive"), Project_Tools.Processes.Argument ("--chdir"),
-                  Project_Tools.Processes.Argument (Root), Project_Tools.Processes.Argument ("exec"),
-                  Project_Tools.Processes.Argument ("--"),
-                  Project_Tools.Processes.Argument (Prover), Project_Tools.Processes.Argument ("-P"),
-                  Project_Tools.Processes.Argument ("proof/pictlib_proof.gpr"),
-                  Project_Tools.Processes.Argument ("-u"), Project_Tools.Processes.Argument (Unit),
-                  Project_Tools.Processes.Argument ("--level=0"),
-                  Project_Tools.Processes.Argument ("--checks-as-errors=on")]),
+                ([Arg ("--non-interactive"), Arg ("--chdir"),
+                  Arg (Root), Arg ("exec"),
+                  Arg ("--"),
+                  Arg (Prover), Arg ("-P"),
+                  Arg ("proof/pictlib_proof.gpr"),
+                  Arg ("-u"), Arg (Unit),
+                  Arg ("--checks-as-errors=on")]),
               Status => Status'Access,
               Err_To_Out => True);
       begin
@@ -76,6 +77,9 @@ procedure Pictlib_Prove is
    end Check;
 begin
    Pictlib_Testing.Tools.Start_Report ("pictlib_prove");
+   if Prover'Length > 0 then
+      Pictlib_Testing.Tools.Report_Version ("gnatprove", Prover);
+   end if;
    if Root'Length = 0 then
       Fail ("run below the pictlib tree");
    else

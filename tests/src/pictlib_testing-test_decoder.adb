@@ -68,7 +68,7 @@ package body Pictlib_Testing.Test_Decoder is
      (Object : in out Overreporting; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result;
 
    --  What a meddling source does once it has delivered After bytes.
-   type Source_Move is (Raises, Reenters, Cancels);
+   type Source_Move is (Raises, Reenters, Cancels, Resets, Finalizes);
 
    --  A source that, once it has delivered After bytes, raises, or calls into or cancels Target.
    type Raising is limited new Pictlib.Streams.Source with record
@@ -76,6 +76,8 @@ package body Pictlib_Testing.Test_Decoder is
       After : Pictlib.Byte_Count := 0;
       Move : Source_Move := Raises;
       Target : access Decoding.Decoder;
+      --  The source Resets rebinds Target to.
+      Again : access Pictlib.Streams.Source'Class;
       Done : Boolean := False;
       Nested : Pictlib.Results.Result := Pictlib.Results.Success;
    end record;
@@ -157,6 +159,12 @@ package body Pictlib_Testing.Test_Decoder is
             when Cancels =>
                Object.Done := True;
                Decoding.Cancel (Object.Target.all);
+            when Resets =>
+               Object.Done := True;
+               Decoding.Reset (Object.Target.all, Object.Again);
+            when Finalizes =>
+               Object.Done := True;
+               Decoding.Finalize (Object.Target.all);
          end case;
       end if;
       return Object.Inner.Read (Buffer);
@@ -376,7 +384,7 @@ package body Pictlib_Testing.Test_Decoder is
                end;
             end loop;
 
-            for Move in Resets .. Finalizes loop
+            for Move in Meddle range Resets .. Finalizes loop
                declare
                   Inside : aliased Decoding.Decoder;
                   Visitor : Meddling :=
@@ -473,6 +481,43 @@ package body Pictlib_Testing.Test_Decoder is
             Outcome := Decoding.Read_Header (Inside);
             Assert (Pictlib.Results.Succeeded (Outcome), "a decoder whose source raised read no header after Reset");
          end;
+      end loop;
+
+      --  A source that resets or finalizes its decoder mid-read leaves it as it chose, in Read_Header and in Render:
+      --  what it read for the old binding is dropped, and a reset decoder reads its new source from the start.
+      for Move in Source_Move range Resets .. Finalizes loop
+         for In_Render in Boolean loop
+            declare
+               Inside : aliased Decoding.Decoder;
+               Faulty : aliased Raising;
+               Fresh : aliased Pictlib.Streams.Memory_Source;
+               Storage : aliased Bytes := [1 .. 3 * 8 * 4 => 0];
+               Where : constant String := Move'Image & (if In_Render then " in Render" else " in Read_Header");
+            begin
+               Pictlib.Streams.Open (Faulty.Inner, Skipped'Access);
+               Pictlib.Streams.Open (Fresh, Other'Access);
+               Faulty.After := (if In_Render then 528 else 0);
+               Faulty.Move := Move;
+               Faulty.Target := Inside'Unchecked_Access;
+               Faulty.Again := Fresh'Unchecked_Access;
+               Decoding.Initialize (Inside, Faulty'Access);
+               Outcome := Decoding.Read_Header (Inside);
+               if In_Render then
+                  Assert (Pictlib.Results.Succeeded (Outcome), "the header was not read, " & Where);
+                  Outcome := Decoding.Render (Inside, Canvases.View (Storage'Access, 8, 4));
+               end if;
+               Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State
+                       and then Decoding.State (Inside)
+                                = (if Move = Resets then Decoding.Ready else Decoding.Created),
+                       "a source's " & Where & " did not stand: " & Decoding.State (Inside)'Image);
+               if Move = Resets then
+                  Outcome := Decoding.Read_Header (Inside);
+                  Assert (Pictlib.Results.Succeeded (Outcome)
+                          and then Decoding.Header (Inside).Version = Pictlib.Version_1,
+                          "a decoder its source reset did not read the new source, " & Where);
+               end if;
+            end;
+         end loop;
       end loop;
 
       --  A source that calls into its decoder is refused; one that cancels it mid-render leaves it cancelled.

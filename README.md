@@ -111,7 +111,8 @@ alr --chdir tests run --skip-build pictlib_complete
 ```
 
 `pictlib_generate` regenerates the external fixtures with ImageMagick and
-Netpbm.
+Netpbm; with `--check` it compares the regeneration with the committed files
+byte for byte instead of replacing them.
 
 ## License
 

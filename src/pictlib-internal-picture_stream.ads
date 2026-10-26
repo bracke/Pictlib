@@ -63,6 +63,9 @@ package Pictlib.Internal.Picture_Stream is
 private
    type Source_Access is access all Streams.Source'Class;
 
+   --  Steps on every Bind and Unbind, so a call into the source can tell the reader was rebound under it.
+   type Generation is mod 2 ** 32;
+
    type Reader is limited new Streams.Source with record
       Input : Source_Access := null;
       Buffer : Streams.Byte_Array (1 .. Lookahead_Capacity) := [others => 0];
@@ -73,5 +76,6 @@ private
       Consumed : Byte_Count := 0;
       Picture_Origin : Byte_Count := 0;
       Max_Bytes : Byte_Count := 0;
+      Bound : Generation := 0;
    end record;
 end Pictlib.Internal.Picture_Stream;

@@ -1,9 +1,12 @@
+with Pictlib.Internal.Sessions.Accounting;
+with Pictlib.Internal.Failures;
 with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Internal.Pixmaps;
 with Pictlib.Streams;
 
 package body Pictlib.Internal.Patterns is
+   package Accounting renames Pictlib.Internal.Sessions.Accounting;
 
    function From_Bits (Rows : Bit_Rows) return Pattern is ((Kind => Bit_Pattern, Bits => Rows, others => <>));
 
@@ -79,14 +82,14 @@ package body Pictlib.Internal.Patterns is
       if Pixels > Max_Tile_Pixels then
          declare
             Context : constant Errors.Diagnostic_Context :=
-              (Sessions.Context_Of (Event) with delta Expected => Max_Tile_Pixels, Actual => Pixels);
+              (Failures.Context_Of (Event) with delta Expected => Max_Tile_Pixels, Actual => Pixels);
          begin
             if not Sessions.Is_Lenient (S) then
-               return Results.Failure (Errors.Make (Errors.Unsupported_Feature, Context));
+               return Failures.In_Opcode (Event, Errors.Unsupported_Feature, Max_Tile_Pixels, Pixels);
             end if;
             Outcome := Pixmaps.Skip_Pixels (S, Header);
             if Results.Succeeded (Outcome) then
-               Outcome := Sessions.Charge_Work (S, Work);
+               Outcome := Accounting.Charge_Work (S, Work);
                Work := 0;
             end if;
             if Results.Succeeded (Outcome) then
@@ -99,7 +102,7 @@ package body Pictlib.Internal.Patterns is
       --  anything is set aside, so a picture without the budget for its tile never allocates it.
       Needed := Pixel_Count (Header.Width + 1) * Pixel_Count (Header.Height);
       if Needed > Allowance - Pixel_Count'Min (Work, Allowance) then
-         return Sessions.Over_Work (S, Work + Needed);
+         return Accounting.Over_Work (S, Work + Needed);
       end if;
       --  The tile and the row buffers are one opcode's allocation; the tile is set aside whole, once.
       Outcome := Pixmaps.Start (S, Decoder, Header, Extra => 3 * Pixels);

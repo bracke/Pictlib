@@ -1,4 +1,5 @@
 with Pictlib.Errors;
+with Pictlib.Images;
 with Pictlib.Limits;
 with Pictlib.Pictures;
 with Pictlib.Results;
@@ -30,6 +31,33 @@ package Pictlib.Internal.Failures is
         (Errors.Make
            (Errors.Limit_Exceeded,
             (Source => Source, Destination => Destination, Expected => Expected, Actual => Actual, Limit => Limit,
+             others => <>))));
+
+   --  Over limit, in a context: a crossed limit the context names further, an opcode or an underlying code.
+   --  @param Context The context the failure carries besides the limit.
+   --  @param Limit The budget crossed.
+   --  @param Expected The budget.
+   --  @param Actual The amount asked for.
+   --  @return A Limit_Exceeded failure.
+   function Over_Limit
+     (Context : Errors.Diagnostic_Context;
+      Limit : Limit_Kind;
+      Expected, Actual : Byte_Count) return Results.Result is
+     (Results.Failure
+        (Errors.Make
+           (Errors.Limit_Exceeded, (Context with delta Limit => Limit, Expected => Expected, Actual => Actual))));
+
+   --  Invalid view: a view of the right size that is not valid, reported as the least a valid view of its size and
+   --  format holds against what it holds.
+   --  @param Descriptor The view's descriptor.
+   --  @return An Invalid_Argument failure.
+   function Invalid_View (Descriptor : Images.Image_Descriptor) return Results.Result is
+     (Results.Failure
+        (Errors.Make
+           (Errors.Invalid_Argument,
+            (Expected =>
+               Images.Minimum_Row_Bytes (Descriptor.Width, Descriptor.Format) * Byte_Count (Descriptor.Height),
+             Actual => Descriptor.Accessible_Bytes,
              others => <>))));
 
    --  In opcode: a failure of an opcode's data.

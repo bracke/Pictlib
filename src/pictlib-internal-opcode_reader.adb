@@ -1,3 +1,6 @@
+with Pictlib.Internal.Sessions.Accounting;
+with Pictlib.Internal.Sessions.Retained;
+with Pictlib.Internal.Failures;
 with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Internal.Bytes;
@@ -10,6 +13,8 @@ with Pictlib.Opcodes;
 with Pictlib.Streams;
 
 package body Pictlib.Internal.Opcode_Reader is
+   package Accounting renames Pictlib.Internal.Sessions.Accounting;
+   package Retained renames Pictlib.Internal.Sessions.Retained;
    use type Errors.Error_Code;
    use type Opcodes.Data_Rule;
 
@@ -74,7 +79,7 @@ package body Pictlib.Internal.Opcode_Reader is
       Outcome : constant Results.Result := Sessions.Read_Word (S, Kind);
    begin
       if Results.Succeeded (Outcome) and then S.Retention.Comments then
-         return Sessions.Retain_Bytes
+         return Retained.Retain_Bytes
            (S, (Item_For (Metadata.Short_Comment, Event) with delta Comment_Kind => Kind), [1 .. 0 => 0]);
       end if;
       return Outcome;
@@ -90,7 +95,7 @@ package body Pictlib.Internal.Opcode_Reader is
       if not Results.Succeeded (Outcome) then
          return Outcome;
       elsif S.Retention.Comments then
-         return Sessions.Retain
+         return Retained.Retain
            (S, (Item_For (Metadata.Long_Comment, Event) with delta Comment_Kind => Kind), Byte_Count (Size));
       end if;
       return Sessions.Skip_Data (S, Byte_Count (Size));
@@ -117,7 +122,7 @@ package body Pictlib.Internal.Opcode_Reader is
             Bytes.Free (Data);
             return Sessions.Reject_Or_Warn
               (S, Errors.Opcode_Length_Invalid, Errors.Data_Loss, Errors.Data_Loss,
-               (Sessions.Context_Of (Event) with delta Expected => Length, Actual => Needed));
+               (Failures.Context_Of (Event) with delta Expected => Length, Actual => Needed));
          end;
       end if;
       declare
@@ -125,7 +130,9 @@ package body Pictlib.Internal.Opcode_Reader is
          Font : constant Interfaces.Unsigned_16 := Bytes.Word_At (Data.all, Data'First);
       begin
          if Paint /= null then
-            Outcome := Sessions.Admit_Aggregate (S, Byte_Count (Name_Length) + Sessions.Item_Overhead_Bytes);
+            Outcome :=
+              Accounting.Admit_Aggregate
+                (S, Byte_Count (Name_Length) + Accounting.Item_Overhead_Bytes);
             if not Results.Succeeded (Outcome) then
                Bytes.Free (Data);
                return Outcome;
@@ -140,8 +147,9 @@ package body Pictlib.Internal.Opcode_Reader is
             end;
          end if;
          if S.Retention.Font_Names then
-            Outcome := Sessions.Retain_Bytes
-              (S, (Item_For (Metadata.Font_Name, Event) with delta Font_ID => Font), Data (4 .. 3 + Name_Length));
+            Outcome := Retained.Retain_Bytes
+              (S, (Item_For (Metadata.Font_Name, Event) with delta Font_ID => Pictlib.Font_ID (Font)),
+               Data (4 .. 3 + Name_Length));
          end if;
       end;
       Bytes.Free (Data);
@@ -166,9 +174,9 @@ package body Pictlib.Internal.Opcode_Reader is
         and then S.Retention.QuickTime_Payloads and then Paint = null
       then
          --  Only enumeration retains QuickTime payloads; rendering skips an uncompressed one.
-         return Sessions.Retain (S, Item_For (Metadata.QuickTime_Payload, Event), Length);
+         return Retained.Retain (S, Item_For (Metadata.QuickTime_Payload, Event), Length);
       elsif Event.Reserved and then S.Retention.Reserved_Payloads then
-         return Sessions.Retain (S, Item_For (Metadata.Reserved_Payload, Event), Length);
+         return Retained.Retain (S, Item_For (Metadata.Reserved_Payload, Event), Length);
       end if;
       return Sessions.Skip_Data (S, Length);
    end Consume_Length_Prefixed;
@@ -305,7 +313,7 @@ package body Pictlib.Internal.Opcode_Reader is
       end if;
       if Event.Reserved then
          Sessions.Warn (S, Errors.Reserved_Opcode_Skipped, Errors.Informational,
-                        (Sessions.Context_Of (Event) with delta Actual => Event.Data_Length));
+                        (Failures.Context_Of (Event) with delta Actual => Event.Data_Length));
       end if;
       return Results.Success;
    end Next;
