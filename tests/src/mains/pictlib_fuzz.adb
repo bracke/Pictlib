@@ -30,7 +30,6 @@ with Ada.Containers.Indefinite_Vectors;
 with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Finalization;
-with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Interfaces;
 with Pictlib;
@@ -139,8 +138,13 @@ procedure Pictlib_Fuzz is
    end Check;
 
    procedure Add_File (Name : String) is
-      Data : Pictlib_Testing.Files.Bytes_Access := Pictlib_Testing.Files.Load_Path (Name);
+      Data : Pictlib_Testing.Files.Bytes_Access;
    begin
+      if not Ada.Directories.Exists (Name) then
+         Fail ("missing seed " & Name);
+         return;
+      end if;
+      Data := Pictlib_Testing.Files.Load_Path (Name);
       Seeds.Append (Data.all);
       Pictlib_Testing.Files.Free (Data);
    end Add_File;
@@ -176,8 +180,9 @@ procedure Pictlib_Fuzz is
       Pictlib_Testing.Files.Save_Path (Artifacts & "/" & Name, Input);
    end Save;
 
-   function Stuck_Name (Iteration : Positive) return String is
-     ("stuck-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict");
+   --  The file an input of Iteration is saved as, Prefix "slow", "stuck" or "defect".
+   function Input_Name (Prefix : String; Iteration : Positive) return String is
+     (Prefix & "-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict");
 
    type Input_Access is access constant Bytes;
 
@@ -226,17 +231,16 @@ procedure Pictlib_Fuzz is
       procedure Finish;
       --  The input, when one has run longer than Stuck_Seconds and was not handed out yet; else empty.
       procedure Take_Stuck (Input : out Bytes_Holders.Holder; Iteration : out Natural);
-      --  Whether the watchdog took iteration Iteration, the last one started, to save.
+      --  The watchdog could not save iteration Iteration: the main loop saves it, should it return.
+      procedure Not_Saved (Iteration : Positive);
+      --  Whether the watchdog saved iteration Iteration, the last one started.
       function Saved (Iteration : Positive) return Boolean;
-      --  What went wrong in the watchdog, reported once it has stopped.
-      procedure Note_Failure (Message : String);
-      function Failure return String;
    private
       Running : Input_Access;
       Number : Natural := 0;
       Started : Ada.Calendar.Time;
       Taken : Boolean := False;
-      Failures : Ada.Strings.Unbounded.Unbounded_String;
+      Failed : Boolean := False;
    end Current;
 
    protected body Current is
@@ -246,6 +250,7 @@ procedure Pictlib_Fuzz is
          Number := Iteration;
          Started := Ada.Calendar.Clock;
          Taken := False;
+         Failed := False;
       end Start;
 
       procedure Finish is
@@ -264,14 +269,14 @@ procedure Pictlib_Fuzz is
          end if;
       end Take_Stuck;
 
-      function Saved (Iteration : Positive) return Boolean is (Number = Iteration and then Taken);
-
-      procedure Note_Failure (Message : String) is
+      procedure Not_Saved (Iteration : Positive) is
       begin
-         Ada.Strings.Unbounded.Append (Failures, Message & "; ");
-      end Note_Failure;
+         if Number = Iteration then
+            Failed := True;
+         end if;
+      end Not_Saved;
 
-      function Failure return String is (Ada.Strings.Unbounded.To_String (Failures));
+      function Saved (Iteration : Positive) return Boolean is (Number = Iteration and then Taken and then not Failed);
    end Current;
 
    --  Watches Input for as long as it lives: declared around a call, it ends the watch however the call ends, so
@@ -291,8 +296,8 @@ procedure Pictlib_Fuzz is
       Current.Finish;
    end Finalize;
 
-   --  Saves an input still running after Stuck_Seconds, while it runs. A failure of its own is noted for the main
-   --  loop to report, so the watchdog goes on watching.
+   --  Saves an input still running after Stuck_Seconds, while it runs. A failure of its own is reported at once,
+   --  a run that never returns being the case it is for, and the watchdog goes on watching.
    task type Watchdog is
       entry Stop;
    end Watchdog;
@@ -310,20 +315,26 @@ procedure Pictlib_Fuzz is
             Current.Take_Stuck (Input, Iteration);
             if Iteration > 0 then
                begin
-                  Save (Stuck_Name (Iteration), Input.Element);
+                  Save (Input_Name ("stuck", Iteration), Input.Element);
                   Say ("still running after" & Stuck_Seconds'Image & " s: iteration" & Iteration'Image
-                       & ", saved as " & Artifacts & "/" & Stuck_Name (Iteration));
+                       & ", saved as " & Artifacts & "/" & Input_Name ("stuck", Iteration));
                exception
                   when Error : others =>
-                     Current.Note_Failure ("could not save the stuck input of iteration" & Iteration'Image & ": "
-                                           & Ada.Exceptions.Exception_Message (Error));
+                     Current.Not_Saved (Iteration);
+                     Say ("could not save the stuck input of iteration" & Iteration'Image & ": "
+                          & Ada.Exceptions.Exception_Message (Error), Failure => True);
                end;
             end if;
          end select;
       end loop;
    exception
       when Error : others =>
-         Current.Note_Failure ("the watchdog failed: " & Ada.Exceptions.Exception_Message (Error));
+         begin
+            Say ("the watchdog failed: " & Ada.Exceptions.Exception_Message (Error), Failure => True);
+         exception
+            --  Nothing is left to report it with.
+            when others => null;
+         end;
    end Watchdog;
 
    --  Pictures of the shapes, pen, pattern and text opcodes, assembled by hand from Inside Macintosh's layouts:
@@ -756,14 +767,18 @@ begin
    end if;
    Add_Files ("fixtures/external");
    Add_Files ("fixtures/real_world/libreoffice/pass");
+   --  The fixtures are most of what is fuzzed: without them the run would mutate a few small pictures and pass,
+   --  having tested little.
+   if Seeds.Is_Empty then
+      Fail ("no fixture seeds: fixtures/external and fixtures/real_world/libreoffice/pass hold no picture");
+      Pictlib_Testing.Tools.Finish_Report;
+      return;
+   end if;
    --  The pictures that made LibreOffice throw or hang; its exploit reproductions are stored scrambled, and would
    --  only seed the version check.
    Add_File ("fixtures/real_world/libreoffice/fail/exception-1.pct");
    Add_File ("fixtures/real_world/libreoffice/fail/hang-1.pct");
-   --  The fixtures are most of what is fuzzed: without them the run would mutate three tiny encoder outputs and
-   --  pass, having tested little.
-   if Seeds.Is_Empty then
-      Fail ("no fixture seeds: fixtures/external and fixtures/real_world/libreoffice hold no picture");
+   if Pictlib_Testing.Tools.Failures > 0 then
       Pictlib_Testing.Tools.Finish_Report;
       return;
    end if;
@@ -791,9 +806,9 @@ begin
          if not Guard'Terminated then
             Guard.Stop;
          end if;
-         if Current.Failure'Length > 0 then
-            Fail (Current.Failure);
-         end if;
+      exception
+         --  It ended between the test and the call, having reported why.
+         when Tasking_Error => null;
       end Stop_Watchdog;
    begin
       for Iteration in 1 .. Iterations loop
@@ -814,11 +829,11 @@ begin
                   Stuck := Stuck + 1;
                   --  The watchdog saved it while it ran, unless it returned between two of its looks.
                   if not Current.Saved (Iteration) then
-                     Keep (Stuck_Name (Iteration), Input, Iteration);
+                     Keep (Input_Name ("stuck", Iteration), Input, Iteration);
                   end if;
                elsif Took > Slow_Seconds then
                   Slow := Slow + 1;
-                  Keep ("slow-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input, Iteration);
+                  Keep (Input_Name ("slow", Iteration), Input, Iteration);
                end if;
             exception
                when Error : others =>
@@ -826,12 +841,12 @@ begin
                   Say ("DEFECT at iteration" & Iteration'Image & ": " & Ada.Exceptions.Exception_Information (Error),
                        Failure => True);
                   --  Reported first, so a failure to save the input cannot hide the defect.
-                  Keep ("defect-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input, Iteration);
+                  Keep (Input_Name ("defect", Iteration), Input, Iteration);
             end;
          exception
-            --  Mutation itself failed: a fault of this tool, with no input to save.
+            --  Mutating the input, or reporting a defect, failed: a fault of this tool's, not of pictlib's.
             when Error : others =>
-               Say ("mutation failed at iteration" & Iteration'Image & ": "
+               Say ("this tool failed at iteration" & Iteration'Image & ": "
                     & Ada.Exceptions.Exception_Information (Error), Failure => True);
          end;
       end loop;

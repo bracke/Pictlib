@@ -73,5 +73,10 @@ package body Pictlib.Internal.Region_Reader is
       end if;
       Bytes.Free (Data);
       return Outcome;
+   exception
+      --  Building the region may run out of memory: the payload is released, and the exception passes through.
+      when others =>
+         Bytes.Free (Data);
+         raise;
    end Read;
 end Pictlib.Internal.Region_Reader;

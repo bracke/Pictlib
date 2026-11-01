@@ -58,6 +58,9 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Fixed
 
+- A region's or a font name's payload is released when building the region,
+  or registering or retaining the name, raises (out of memory), as every
+  other payload already was.
 - An encoder its destination reset and then cancelled reports 0 bytes
   written, as after any rebinding, not the count of the picture it
   abandoned (604 bytes in the test): a cancel steps a generation of its
@@ -642,6 +645,12 @@ All tooling is Ada, in the `tests` crate:
   cleanly, so a failure can be read in CI's log; CI passes its fuzz seed in
   `PICTLIB_FUZZ_SEED`, which `pictlib_complete` reads when `--fuzz-seed` is
   not given, rather than in an argument holding a space.
+- `pictlib_fuzz`'s watchdog reports a failed save at once, rather than at
+  the end of a run that may never end, and leaves the input to the main
+  loop to save; stopping it cannot raise; a missing seed file is reported,
+  not a traceback, and the fixture check runs before the two named seeds
+  can hide it; a fault in reporting a defect is called the tool's; saved
+  inputs are named in one place.
 - `pictlib_fuzz`'s watchdog no longer reads an input that is gone: the
   watch on an input ends however its run ends, through a guard object (an
   input that raised stayed watched). A failure in the watchdog is reported

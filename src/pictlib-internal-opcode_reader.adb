@@ -154,6 +154,12 @@ package body Pictlib.Internal.Opcode_Reader is
       end;
       Bytes.Free (Data);
       return Outcome;
+   exception
+      --  Registering or retaining the name may run out of memory: the payload is released, and the exception
+      --  passes through.
+      when others =>
+         Bytes.Free (Data);
+         raise;
    end Consume_Font_Name;
 
    function Consume_Length_Prefixed
