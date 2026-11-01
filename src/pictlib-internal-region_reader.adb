@@ -10,14 +10,16 @@ package body Pictlib.Internal.Region_Reader is
    use type Interfaces.Unsigned_16;
 
    function Read_Size
-     (S : in out Sessions.Session; Size : out Interfaces.Unsigned_16; Expected_Size : Byte_Count := 0)
-      return Results.Result
+     (S : in out Sessions.Session;
+      Size : out Interfaces.Unsigned_16;
+      Exact_Size : Boolean := False;
+      Expected_Size : Byte_Count := 0) return Results.Result
    is
       Outcome : constant Results.Result := Sessions.Read_Word (S, Size);
    begin
       if not Results.Succeeded (Outcome) then
          return Outcome;
-      elsif Expected_Size /= 0 and then Byte_Count (Size) /= Expected_Size then
+      elsif Exact_Size and then Byte_Count (Size) /= Expected_Size then
          return Sessions.Fail (S, Errors.Region_Invalid, Expected_Size, Byte_Count (Size));
       elsif Size < Smallest_Region then
          return Sessions.Fail (S, Errors.Region_Invalid, Smallest_Region, Byte_Count (Size));
@@ -38,13 +40,15 @@ package body Pictlib.Internal.Region_Reader is
    end Skip;
 
    function Read
-     (S : in out Sessions.Session; Item : out Regions.Region; Expected_Size : Byte_Count := 0)
-      return Results.Result
+     (S : in out Sessions.Session;
+      Item : out Regions.Region;
+      Exact_Size : Boolean := False;
+      Expected_Size : Byte_Count := 0) return Results.Result
    is
       Size : Interfaces.Unsigned_16;
       Rect : Geometry.Rect;
       Data : Streams.Byte_Array_Access;
-      Outcome : Results.Result := Read_Size (S, Size, Expected_Size);
+      Outcome : Results.Result := Read_Size (S, Size, Exact_Size, Expected_Size);
    begin
       Item := Regions.Rectangle ((others => 0));
       if Results.Succeeded (Outcome) then

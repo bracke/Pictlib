@@ -12,6 +12,7 @@ package body Pictlib.Encoding is
    use type Images.RGB_Color;
    use type Geometry.Fixed;
    use type Internal.Generation;
+   use all type Internal.Call_Guards.Guard;
 
    package Writers renames Internal.Writers;
 
@@ -355,6 +356,7 @@ package body Pictlib.Encoding is
       Object.First_Error := Errors.Make (Errors.No_Error);
       Object.Current_State := Ready;
       Object.Binds := Object.Binds + 1;
+      Object.Stops := Object.Stops + 1;
    end Reset;
 
    function State (Object : Encoder) return Encoder_State is (Object.Current_State);
@@ -452,7 +454,7 @@ package body Pictlib.Encoding is
          return Outcome;
       end if;
       Started.all := True;
-      Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes, Object.Binds'Access);
+      Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes, Object.Stops'Access);
       Outcome := Emit (Output, Writers.Picture_Count (Measure));
       Written := Writers.Count (Output);
       return Outcome;
@@ -480,22 +482,14 @@ package body Pictlib.Encoding is
       end if;
    end Left_Unfinished;
 
-   --  Caller code the guarded call ran rebound or cancelled the encoder.
-   function Rebound (Guard : Internal.Call_Guards.Guard'Class) return Boolean renames Internal.Call_Guards.Rebound;
-
    function Encode_Picture (Object : in out Encoder; Image : Images.Image_View) return Results.Result is
       --  The settings the picture is written with.
       Settings : Options := Object.Encode_Options;
       Colors : Palette;
       Layout : Layout_Kind;
       Outcome : Results.Result;
-      --  Whether the destination was written to: a failure before leaves the encoder Ready.
-      Started : aliased Boolean := False;
-      Guard : Write_Guard
-        (Ready, Object.Current_State'Access, Object.First_Error'Access, Started'Access, Object.Busy'Access,
-         Object.Binds'Access);
-      Written : Byte_Count := 0;
    begin
+      --  Nothing before the write runs caller code: a failure here leaves the encoder Ready.
       if Object.Current_State /= Ready then
          return Wrong_State (Object);
       elsif not Images.Is_Valid (Image) then
@@ -507,37 +501,48 @@ package body Pictlib.Encoding is
       Outcome :=
         Internal.Failures.Check_Frame_Size
           (Natural (Image.Descriptor.Width), Natural (Image.Descriptor.Height), Object.Encode_Limits);
-      if Results.Succeeded (Outcome) then
-         --  Only Auto's choice and an indexed palette need the colors; the other layouts write pixels as they are.
-         if Settings.Layout in Auto | Indexed_8 then
-            Survey (Image, Colors);
-         end if;
-         Choose_Layout (Image, Colors, Settings, Layout);
-         declare
-            Item : constant Plan := Plan_For (Image, Settings, Layout);
-         begin
-            Outcome := Check_Plan (Item, Colors, Object.Encode_Limits);
-            if Results.Succeeded (Outcome) then
-               Outcome := Write (Object, Image, Settings, Item, Colors, Started'Access, Written);
-            end if;
-         end;
-      end if;
-      --  The destination cancelled, reset or finalized the encoder under it: that stands. A rebinding set the
-      --  count; a cancelled encoder keeps what its destination took.
-      if Object.Current_State = Cancelled then
-         Object.Written := Written;
-      end if;
-      if Object.Current_State /= Ready or else Rebound (Guard) then
-         return Wrong_State (Object);
-      end if;
-      Object.Written := Written;
-      if Results.Succeeded (Outcome) then
-         Object.Layout := Layout;
-         Object.Current_State := Encoded;
-      elsif not Started then
+      if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
-      return Fail (Object, Outcome);
+      --  Only Auto's choice and an indexed palette need the colors; the other layouts write pixels as they are.
+      if Settings.Layout in Auto | Indexed_8 then
+         Survey (Image, Colors);
+      end if;
+      Choose_Layout (Image, Colors, Settings, Layout);
+      declare
+         Item : constant Plan := Plan_For (Image, Settings, Layout);
+      begin
+         Outcome := Check_Plan (Item, Colors, Object.Encode_Limits);
+         if not Results.Succeeded (Outcome) then
+            return Outcome;
+         end if;
+         declare
+            --  Whether the destination was written to: a failure before leaves the encoder Ready.
+            Started : aliased Boolean := False;
+            Guard : Write_Guard
+              (Ready, Object.Current_State'Access, Object.First_Error'Access, Started'Access, Object.Busy'Access,
+               Object.Binds'Access);
+            Written : Byte_Count := 0;
+         begin
+            Outcome := Write (Object, Image, Settings, Item, Colors, Started'Access, Written);
+            --  The destination cancelled, reset or finalized the encoder under it: that stands. A rebinding set
+            --  the count; an encoder cancelled and not rebound keeps what its destination took.
+            if Object.Current_State = Cancelled and then not Rebound (Guard) then
+               Object.Written := Written;
+            end if;
+            if Object.Current_State /= Ready or else Rebound (Guard) then
+               return Wrong_State (Object);
+            end if;
+            Object.Written := Written;
+            if Results.Succeeded (Outcome) then
+               Object.Layout := Layout;
+               Object.Current_State := Encoded;
+            elsif not Started then
+               return Outcome;
+            end if;
+            return Fail (Object, Outcome);
+         end;
+      end;
    end Encode_Picture;
 
    function Encode (Object : in out Encoder; Image : Images.Image_View) return Results.Result is
@@ -578,7 +583,7 @@ package body Pictlib.Encoding is
    begin
       if Object.Current_State in Ready | Encoded then
          Object.Current_State := Cancelled;
-         Object.Binds := Object.Binds + 1;
+         Object.Stops := Object.Stops + 1;
       end if;
    end Cancel;
 
@@ -590,5 +595,6 @@ package body Pictlib.Encoding is
       Object.First_Error := Errors.Make (Errors.No_Error);
       Object.Current_State := Created;
       Object.Binds := Object.Binds + 1;
+      Object.Stops := Object.Stops + 1;
    end Finalize;
 end Pictlib.Encoding;

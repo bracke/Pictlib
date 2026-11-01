@@ -505,7 +505,7 @@ package body Pictlib_Testing.Source_Policy is
       procedure Walk (Directory : String) is
          use Ada.Directories;
       begin
-         for Path of Tools.Files_Below (Directory, Enter => Entered'Access) loop
+         for Path of Tools.Files_Below (Directory, Enter => Entered'Access, Hidden_Files => True) loop
             if Ada.Characters.Handling.To_Lower (Extension (Path))
                  in "sh" | "bash" | "py" | "ps1" | "bat" | "cmd" | "pl"
               or else Simple_Name (Path) in "Makefile" | "makefile" | "GNUmakefile"

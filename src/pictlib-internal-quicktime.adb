@@ -251,7 +251,7 @@ package body Pictlib.Internal.QuickTime is
          return Part_Too_Long (S, Event, Within, Byte_Count (Header.Mask_Size));
       end if;
       --  A region takes exactly the bytes its size word gives, so that word must be maskSize.
-      Outcome := Region_Reader.Read (S, Mask, Expected_Size => Byte_Count (Header.Mask_Size));
+      Outcome := Region_Reader.Read (S, Mask, Exact_Size => True, Expected_Size => Byte_Count (Header.Mask_Size));
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;

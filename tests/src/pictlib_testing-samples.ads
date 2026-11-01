@@ -12,7 +12,7 @@ package Pictlib_Testing.Samples is
    --  (127.966, black; white if rounded) and (0, 218, 1) (128.08, white).
    type Kind is (Gradient, Three_Colors, Black_And_White, Gray_Ramp, Translucent, Luminance_Edges);
 
-   type Bytes_Access is access Pictlib.Streams.Byte_Array;
+   subtype Bytes_Access is Pictlib.Streams.Byte_Array_Access;
 
    --  Make: a tightly packed image of Width x Height pixels in Format.
    function Make

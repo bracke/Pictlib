@@ -2,7 +2,6 @@
 --  real-world vector picture rendered. Prints megapixels per second. Runs from anywhere below the pictlib tree.
 with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Tools;
-with Ada.Unchecked_Deallocation;
 with Ada.Calendar;
 with Ada.Directories;
 with Ada.Text_IO;
@@ -39,8 +38,6 @@ procedure Pictlib_Benchmark is
    end Report;
 
    procedure Free (Item : in out Pictlib.Streams.Byte_Array_Access) renames Pictlib_Testing.Files.Free;
-   procedure Free_Picture is new Ada.Unchecked_Deallocation
-     (Pictlib.Streams.Byte_Array, Pictlib_Testing.Samples.Bytes_Access);
 
    --  Render Data into a view of its frame, allocated once and kept in Storage across calls.
    function Render
@@ -78,11 +75,11 @@ procedure Pictlib_Benchmark is
          end if;
          --  Every round's picture but the last, which is rendered below.
          if Round < Rounds then
-            Free_Picture (Picture.Data);
+            Free (Picture.Data);
          end if;
       end loop;
       Report (Kind'Image & " encode", Rounds * Width * Height, Ada.Calendar.Clock - Started);
-      Encoded := Pictlib.Streams.Byte_Array_Access (Picture.Data);
+      Encoded := Picture.Data;
       Started := Ada.Calendar.Clock;
       for Round in 1 .. Rounds loop
          if not Render (Encoded, Storage) then

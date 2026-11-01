@@ -29,6 +29,8 @@ with Ada.Containers.Indefinite_Holders;
 with Ada.Containers.Indefinite_Vectors;
 with Ada.Directories;
 with Ada.Exceptions;
+with Ada.Finalization;
+with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Interfaces;
 with Pictlib;
@@ -136,6 +138,13 @@ procedure Pictlib_Fuzz is
       end if;
    end Check;
 
+   procedure Add_File (Name : String) is
+      Data : Pictlib_Testing.Files.Bytes_Access := Pictlib_Testing.Files.Load_Path (Name);
+   begin
+      Seeds.Append (Data.all);
+      Pictlib_Testing.Files.Free (Data);
+   end Add_File;
+
    procedure Add_Files (Directory : String) is
    begin
       if not Ada.Directories.Exists (Directory) then
@@ -147,12 +156,7 @@ procedure Pictlib_Fuzz is
          if Ada.Characters.Handling.To_Lower (Ada.Directories.Extension (Name)) in "pict" | "pct"
            and then Ada.Directories."<=" (Ada.Directories.Size (Name), 262_144)
          then
-            declare
-               Data : Pictlib_Testing.Files.Bytes_Access := Pictlib_Testing.Files.Load_Path (Name);
-            begin
-               Seeds.Append (Data.all);
-               Pictlib_Testing.Files.Free (Data);
-            end;
+            Add_File (Name);
          end if;
       end loop;
    end Add_Files;
@@ -177,6 +181,44 @@ procedure Pictlib_Fuzz is
 
    type Input_Access is access constant Bytes;
 
+   --  Text_IO is not safe to use from two tasks at once: the watchdog and the main loop take turns through this.
+   protected Console is
+      entry Seize;
+      procedure Release;
+   private
+      Busy : Boolean := False;
+   end Console;
+
+   protected body Console is
+      entry Seize when not Busy is
+      begin
+         Busy := True;
+      end Seize;
+
+      procedure Release is
+      begin
+         Busy := False;
+      end Release;
+   end Console;
+
+   --  Print Message, or report it as a failure, in turn with the other task.
+   procedure Say (Message : String; Failure : Boolean := False) is
+   begin
+      Console.Seize;
+      begin
+         if Failure then
+            Fail (Message);
+         else
+            Ada.Text_IO.Put_Line (Message);
+         end if;
+      exception
+         when others =>
+            Console.Release;
+            raise;
+      end;
+      Console.Release;
+   end Say;
+
    --  The input being exercised, so the watchdog can save one that never returns: CI cancels such a run, and
    --  nothing after the hung call would save it.
    protected Current is
@@ -184,11 +226,17 @@ procedure Pictlib_Fuzz is
       procedure Finish;
       --  The input, when one has run longer than Stuck_Seconds and was not handed out yet; else empty.
       procedure Take_Stuck (Input : out Bytes_Holders.Holder; Iteration : out Natural);
+      --  Whether the watchdog took iteration Iteration, the last one started, to save.
+      function Saved (Iteration : Positive) return Boolean;
+      --  What went wrong in the watchdog, reported once it has stopped.
+      procedure Note_Failure (Message : String);
+      function Failure return String;
    private
       Running : Input_Access;
       Number : Natural := 0;
       Started : Ada.Calendar.Time;
       Taken : Boolean := False;
+      Failures : Ada.Strings.Unbounded.Unbounded_String;
    end Current;
 
    protected body Current is
@@ -215,9 +263,36 @@ procedure Pictlib_Fuzz is
             Taken := True;
          end if;
       end Take_Stuck;
+
+      function Saved (Iteration : Positive) return Boolean is (Number = Iteration and then Taken);
+
+      procedure Note_Failure (Message : String) is
+      begin
+         Ada.Strings.Unbounded.Append (Failures, Message & "; ");
+      end Note_Failure;
+
+      function Failure return String is (Ada.Strings.Unbounded.To_String (Failures));
    end Current;
 
-   --  Saves an input still running after Stuck_Seconds, while it runs.
+   --  Watches Input for as long as it lives: declared around a call, it ends the watch however the call ends, so
+   --  the watchdog never reads an input that is gone.
+   type Watch (Input : Input_Access; Iteration : Positive) is new Ada.Finalization.Limited_Controlled
+     with null record;
+   overriding procedure Initialize (Item : in out Watch);
+   overriding procedure Finalize (Item : in out Watch);
+
+   overriding procedure Initialize (Item : in out Watch) is
+   begin
+      Current.Start (Item.Input, Item.Iteration);
+   end Initialize;
+
+   overriding procedure Finalize (Item : in out Watch) is
+   begin
+      Current.Finish;
+   end Finalize;
+
+   --  Saves an input still running after Stuck_Seconds, while it runs. A failure of its own is noted for the main
+   --  loop to report, so the watchdog goes on watching.
    task type Watchdog is
       entry Stop;
    end Watchdog;
@@ -234,15 +309,21 @@ procedure Pictlib_Fuzz is
             delay 1.0;
             Current.Take_Stuck (Input, Iteration);
             if Iteration > 0 then
-               Save (Stuck_Name (Iteration), Input.Element);
-               Ada.Text_IO.Put_Line ("still running after" & Stuck_Seconds'Image & " s: iteration" & Iteration'Image
-                                     & ", saved as " & Artifacts & "/" & Stuck_Name (Iteration));
+               begin
+                  Save (Stuck_Name (Iteration), Input.Element);
+                  Say ("still running after" & Stuck_Seconds'Image & " s: iteration" & Iteration'Image
+                       & ", saved as " & Artifacts & "/" & Stuck_Name (Iteration));
+               exception
+                  when Error : others =>
+                     Current.Note_Failure ("could not save the stuck input of iteration" & Iteration'Image & ": "
+                                           & Ada.Exceptions.Exception_Message (Error));
+               end;
             end if;
          end select;
       end loop;
    exception
       when Error : others =>
-         Ada.Text_IO.Put_Line ("the watchdog failed: " & Ada.Exceptions.Exception_Message (Error));
+         Current.Note_Failure ("the watchdog failed: " & Ada.Exceptions.Exception_Message (Error));
    end Watchdog;
 
    --  Pictures of the shapes, pen, pattern and text opcodes, assembled by hand from Inside Macintosh's layouts:
@@ -619,10 +700,11 @@ procedure Pictlib_Fuzz is
                Started := Ada.Calendar.Clock;
                Exercise (Data.all);
                Ada.Text_IO.Put_Line (Name & Duration'Image (Ada.Calendar.Clock - Started) & " s");
+               Pictlib_Testing.Files.Free (Data);
             end if;
          exception
             when Error : others =>
-               Current.Finish;
+               Pictlib_Testing.Files.Free (Data);
                Defects := Defects + 1;
                Fail ("DEFECT " & Name & ": " & Ada.Exceptions.Exception_Information (Error));
          end;
@@ -674,12 +756,14 @@ begin
    end if;
    Add_Files ("fixtures/external");
    Add_Files ("fixtures/real_world/libreoffice/pass");
-   --  The pictures that crashed or hung other readers: the most hostile real input there is.
-   Add_Files ("fixtures/real_world/libreoffice/fail");
+   --  The pictures that made LibreOffice throw or hang; its exploit reproductions are stored scrambled, and would
+   --  only seed the version check.
+   Add_File ("fixtures/real_world/libreoffice/fail/exception-1.pct");
+   Add_File ("fixtures/real_world/libreoffice/fail/hang-1.pct");
    --  The fixtures are most of what is fuzzed: without them the run would mutate three tiny encoder outputs and
    --  pass, having tested little.
    if Seeds.Is_Empty then
-      Fail ("no fixture seeds: fixtures/external and fixtures/real_world/libreoffice/pass hold no picture");
+      Fail ("no fixture seeds: fixtures/external and fixtures/real_world/libreoffice hold no picture");
       Pictlib_Testing.Tools.Finish_Report;
       return;
    end if;
@@ -691,44 +775,72 @@ begin
                          & Seed_Used'Image);
    declare
       Guard : Watchdog;
+
+      --  Save a slow or stuck input; a failure to is this tool's, not a defect of pictlib's.
+      procedure Keep (Name : String; Input : Bytes; Iteration : Positive) is
+      begin
+         Save (Name, Input);
+      exception
+         when Error : others =>
+            Say ("could not save the input of iteration" & Iteration'Image & ": "
+                 & Ada.Exceptions.Exception_Message (Error), Failure => True);
+      end Keep;
+
+      procedure Stop_Watchdog is
+      begin
+         if not Guard'Terminated then
+            Guard.Stop;
+         end if;
+         if Current.Failure'Length > 0 then
+            Fail (Current.Failure);
+         end if;
+      end Stop_Watchdog;
    begin
       for Iteration in 1 .. Iterations loop
          begin
             declare
                Input : aliased constant Bytes := Mutate (Seeds (1 + Random (Natural (Seeds.Length))));
                Started : constant Ada.Calendar.Time := Ada.Calendar.Clock;
+               Took : Duration;
             begin
-               Current.Start (Input'Unchecked_Access, Iteration);
-               Exercise (Input);
-               Current.Finish;
-               if Ada.Calendar.Clock - Started > Stuck_Seconds then
+               declare
+                  Watched : Watch (Input'Unchecked_Access, Iteration);
+                  pragma Unreferenced (Watched);
+               begin
+                  Exercise (Input);
+               end;
+               Took := Ada.Calendar.Clock - Started;
+               if Took > Stuck_Seconds then
                   Stuck := Stuck + 1;
-                  Save (Stuck_Name (Iteration), Input);
-               elsif Ada.Calendar.Clock - Started > Slow_Seconds then
+                  --  The watchdog saved it while it ran, unless it returned between two of its looks.
+                  if not Current.Saved (Iteration) then
+                     Keep (Stuck_Name (Iteration), Input, Iteration);
+                  end if;
+               elsif Took > Slow_Seconds then
                   Slow := Slow + 1;
-                  Save ("slow-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
+                  Keep ("slow-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input, Iteration);
                end if;
             exception
                when Error : others =>
                   Defects := Defects + 1;
-                  Fail ("DEFECT at iteration" & Iteration'Image & ": " & Ada.Exceptions.Exception_Information (Error));
+                  Say ("DEFECT at iteration" & Iteration'Image & ": " & Ada.Exceptions.Exception_Information (Error),
+                       Failure => True);
                   --  Reported first, so a failure to save the input cannot hide the defect.
-                  begin
-                     Save ("defect-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
-                  exception
-                     when Save_Error : others =>
-                        Fail ("could not save the input of iteration" & Iteration'Image & ": "
-                              & Ada.Exceptions.Exception_Message (Save_Error));
-                  end;
+                  Keep ("defect-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input, Iteration);
             end;
          exception
             --  Mutation itself failed: a fault of this tool, with no input to save.
             when Error : others =>
-               Fail ("mutation failed at iteration" & Iteration'Image & ": "
-                     & Ada.Exceptions.Exception_Information (Error));
+               Say ("mutation failed at iteration" & Iteration'Image & ": "
+                    & Ada.Exceptions.Exception_Information (Error), Failure => True);
          end;
       end loop;
-      Guard.Stop;
+      Stop_Watchdog;
+   exception
+      --  Whatever ends the loop, the block waits for the watchdog: it must have stopped.
+      when others =>
+         Stop_Watchdog;
+         raise;
    end;
    Ada.Text_IO.Put_Line (Iterations'Image & " inputs:" & Headers_Read'Image & " past the header," & Rendered'Image
                          & " rendered," & Partial'Image & " partial;" & Defects'Image & " defects," & Stuck'Image

@@ -58,6 +58,16 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Fixed
 
+- An encoder its destination reset and then cancelled reports 0 bytes
+  written, as after any rebinding, not the count of the picture it
+  abandoned (604 bytes in the test): a cancel steps a generation of its
+  own, which stops a write, while the guard sees only rebindings, as the
+  decoder's does.
+- After the picture's reading failed under it, the JPEG bridge's source
+  refuses jpeglib's further calls instead of reading on, perhaps from a
+  source the decoder was reset onto.
+- A text opcode's glyph cells are allocated after the textrender calls of
+  its declarations, so none can raise with them unreleased.
 - A `Cancel` from the decoder's source stops the source being asked for
   anything more, even the rest of the opcode being read: a source taking a
   byte a read that cancelled within a 10,000-byte opcode was read 9,445
@@ -329,6 +339,10 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Documentation
 
+- Doc comments no longer say text draws through `Drawing_Mode` or fails
+  on its mode; `Call_Guards` says its object decides what an unfinished
+  call leaves; `Decoding.Finalize` says it releases warnings too;
+  `docs/limits_and_safety.md` describes the fuzzer's watchdog.
 - The specification says a non-empty QuickTime matte alone is skipped
   leniently, the image drawn without it, and when a transfer mode is
   checked. The decoder's and encoder's doc comments say what a source or
@@ -395,6 +409,14 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Internal structure
 
+- The encoder checks its state and arguments before it guards the write,
+  as the decoder does; `Rebound` comes from `Call_Guards` through a use
+  clause instead of a renaming in each unit. A region read for a QuickTime
+  mask says `Exact_Size` rather than passing a size of 0 for "any". The
+  line walk uses `Divisions` rather than a copy of its floor division and
+  no longer shadows the package's 128-bit `Wide`; `Add` and `Wedge` swap
+  their rebuilt rows in as `Subtract` does, and the long-length data is
+  admitted once.
 - The decoder's and encoder's call guards extend one
   `Internal.Call_Guards.Guard`; both report a wrong state through
   `Failures.Wrong_State`, the decoder's failing helper is `Fail` like the
@@ -620,6 +642,16 @@ All tooling is Ada, in the `tests` crate:
   cleanly, so a failure can be read in CI's log; CI passes its fuzz seed in
   `PICTLIB_FUZZ_SEED`, which `pictlib_complete` reads when `--fuzz-seed` is
   not given, rather than in an argument holding a space.
+- `pictlib_fuzz`'s watchdog no longer reads an input that is gone: the
+  watch on an input ends however its run ends, through a guard object (an
+  input that raised stayed watched). A failure in the watchdog is reported
+  at the end instead of ending it and losing the summary; it is stopped
+  only while it runs; a stuck input it saved is not saved again; a failed
+  save of a slow input is not counted as a defect of pictlib; both tasks
+  print in turn. Of LibreOffice's failing pictures only the two that are
+  not scrambled seed it. `Samples` frees through the library's access
+  type, the replay frees what it loads, and the policy checks hidden files
+  again. CI pins every action to a commit.
 - `pictlib_fuzz` saves an input still running after 60 seconds while it
   runs, so one that never returns is kept, and CI uploads the inputs of a
   cancelled run too; it seeds from LibreOffice's failing pictures as well.

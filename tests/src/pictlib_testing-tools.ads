@@ -9,12 +9,14 @@ package Pictlib_Testing.Tools is
    --  @param Recursive Whether files in its subdirectories are included too.
    --  @param Enter When given, which subdirectories are walked, by simple name, hidden ones included; by default
    --  every one that is not hidden (a leading '.').
-   --  @return The absolute names of its ordinary files, hidden ones left out, sorted, so a tool walks the same
-   --  files in the same order on every file system; none when Directory does not exist.
+   --  @param Hidden_Files Whether hidden files are included too.
+   --  @return The absolute names of its ordinary files, sorted, so a tool walks the same files in the same order
+   --  on every file system; none when Directory does not exist.
    function Files_Below
      (Directory : String;
       Recursive : Boolean := True;
-      Enter : access function (Name : String) return Boolean := null) return Name_Vectors.Vector;
+      Enter : access function (Name : String) return Boolean := null;
+      Hidden_Files : Boolean := False) return Name_Vectors.Vector;
 
    --  Root.
    --  @return The pictlib tree the current directory is below, "" when it is below none.

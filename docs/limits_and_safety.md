@@ -55,7 +55,8 @@ repeats short chunks up to 64 KiB, as runaway origins, pens and text do.
 - An exception escaping pictlib is saved for replay and fails the run.
 - An input taking more than two seconds (slow) or a minute (stuck) is saved
   and reported; it fails the run only with `--fail-stuck`, since a loaded
-  machine can be that slow.
+  machine can be that slow. A watchdog saves a stuck input while it still
+  runs, so one that never returns is kept even when CI cancels the run.
 - Seeds are taken in file-name order, so a run's arguments reproduce it on
   any machine.
 - `pictlib_fuzz --replay FILE...` runs saved inputs through the same checks

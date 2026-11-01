@@ -162,11 +162,9 @@ package body Pictlib.Internal.Opcode_Reader is
       Length : Byte_Count;
       Paint : access Rendering.Painter) return Results.Result
    is
-      Outcome : constant Results.Result := Sessions.Admit_Data (S, Length);
    begin
-      if not Results.Succeeded (Outcome) then
-         return Outcome;
-      elsif Event.Op = Opcodes.Font_Name then
+      --  Each way of consuming the data admits it against the per-opcode budget before reading anything of it.
+      if Event.Op = Opcodes.Font_Name then
          --  Its structure is checked whatever the retention policy, so the policy never changes which pictures
          --  are malformed.
          return Consume_Font_Name (S, Event, Length, Paint);

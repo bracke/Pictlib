@@ -144,7 +144,7 @@ package Pictlib.Decoding is
    --  for nothing more, not even the rest of the opcode being read.
    procedure Cancel (Object : in out Decoder);
    --  Finalize.
-   --  @param Object Decoder; releases retained metadata and the source binding. Idempotent.
+   --  @param Object Decoder; releases retained metadata, warnings and the source binding. Idempotent.
    procedure Finalize (Object : in out Decoder);
 
 private

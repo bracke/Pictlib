@@ -180,18 +180,19 @@ package body Pictlib.Internal.Typesetting is
         (Transfer_Modes.Compose
            (Kind, (if Ink then Images.Black else Images.White), Under, P.Port.Colors, Bit_Source => True));
 
-      --  A text opcode holds at most 255 characters; their cells, some 20 KB, are on the heap all the same, as
-      --  a decoder may run in a task with a small stack.
-      Cells : Cell_Array_Access := new Cell_Array (1 .. Characters'Length);
-      Cell_Count : Natural := 0;
-      --  The cell Color_At paints.
-      Current : Positive := 1;
       Atlas_Width : constant Natural := Font.Atlas_Width;
       Atlas : access constant Textrender.Alpha_Buffer := Font.Atlas_Pixels;
       --  A metric points into the atlas only until a glyph request empties it, which textrender counts as a new
       --  generation: Cells (Run_First .. Cell_Count) were all taken in the generation Run_Generation.
       Run_First : Positive := 1;
       Run_Generation : Natural := Font.Atlas_Generation;
+      --  A text opcode holds at most 255 characters; their cells, some 20 KB, are on the heap all the same, as
+      --  a decoder may run in a task with a small stack. Allocated last, after every call that could raise
+      --  before the handler below covers it.
+      Cells : Cell_Array_Access := new Cell_Array (1 .. Characters'Length);
+      Cell_Count : Natural := 0;
+      --  The cell Color_At paints.
+      Current : Positive := 1;
 
       function Covered (X, Y : Integer) return Boolean is
         (Cells (Current).Drawable

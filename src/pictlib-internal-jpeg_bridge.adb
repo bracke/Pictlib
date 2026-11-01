@@ -22,7 +22,8 @@ package body Pictlib.Internal.JPEG_Bridge is
    Jpeglib_Fixed_Bytes : constant := 1_048_576;
    --  The largest MCU side: 8 pixels times jpeglib's largest sampling factor, 4.
    MCU_Side : constant := 32;
-   --  The most read from the picture for jpeglib at once: it asks for a byte at a time.
+   --  The most read from the picture for jpeglib at once: it asks for a byte at a time. The chunk is held in the
+   --  embedded source, on the stack: a fixed 4 KiB, not a buffer the picture sizes.
    Read_Chunk : constant := 4096;
    --  jpeglib's coefficients: 64 per block, 4 bytes each.
    Coefficient_Block_Bytes : constant := 64 * 4;
@@ -171,7 +172,10 @@ package body Pictlib.Internal.JPEG_Bridge is
    begin
       --  Only the bytes delivered are defined, as for any source: clearing the rest on every call would clear
       --  jpeglib's buffer over and over.
-      if Buffer'Length = 0 then
+      if not Results.Succeeded (Object.Failure) then
+         --  Once the picture's reading failed, the session may be bound to another source: nothing more is read.
+         return Failed (Object, Object.Failure);
+      elsif Buffer'Length = 0 then
          return (Result => Jpeglib.Errors.Make (Jpeglib.Errors.No_Error), Count => 0, End_Of_Input => Ended (Object));
       elsif Held_Count (Object) = 0 then
          if Object.Remaining = 0 then
@@ -206,7 +210,8 @@ package body Pictlib.Internal.JPEG_Bridge is
       From_Held : constant Natural :=
         (if Byte_Count (Count) < Byte_Count (Held_Count (Object)) then Natural (Count) else Held_Count (Object));
       Wanted : constant Byte_Count := Byte_Count'Min (Byte_Count (Count) - Byte_Count (From_Held), Object.Remaining);
-      Step : constant Results.Result := Sessions.Skip_Data (Object.S.all, Wanted);
+      Step : constant Results.Result :=
+        (if Results.Succeeded (Object.Failure) then Sessions.Skip_Data (Object.S.all, Wanted) else Object.Failure);
    begin
       if not Results.Succeeded (Step) then
          return Failed (Object, Step);

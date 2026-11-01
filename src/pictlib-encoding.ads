@@ -102,8 +102,9 @@ private
       --  True while Encode or Finish runs the destination, which may not Encode or Finish under it; it may Cancel,
       --  Reset, Initialize or Finalize the encoder.
       Busy : aliased Boolean := False;
-      --  Steps on every Initialize, Reset, Finalize and Cancel that cancels, so a call can tell the destination
-      --  rebound or cancelled the encoder; a write in progress stops when it moves.
+      --  Steps on every Initialize, Reset and Finalize, so a call can tell the destination rebound the encoder.
       Binds : aliased Internal.Generation := 0;
+      --  Steps with Binds and on every Cancel that cancels: a write in progress stops when it moves.
+      Stops : aliased Internal.Generation := 0;
    end record;
 end Pictlib.Encoding;

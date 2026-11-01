@@ -144,12 +144,12 @@ package body Pictlib.Internal.Coverage is
          end if;
       end;
       declare
-         Old : constant Span_List := Item.Rows (Y - Item.Top);
          Merged : Span_List;
          Pending : Regions.Span := (First, Last);
          Placed : Boolean := False;
       begin
-         for S of Old loop
+         --  Read in place and swapped in: the row is not copied.
+         for S of Item.Rows (Y - Item.Top) loop
             if S.Right < Pending.Left then
                Merged.Append (S);
             elsif Pending.Right < S.Left then
@@ -165,8 +165,8 @@ package body Pictlib.Internal.Coverage is
          if not Placed then
             Merged.Append (Pending);
          end if;
-         Item.Rows.Replace_Element (Y - Item.Top, Merged);
          Charge (Item, Natural (Merged.Length));
+         Item.Rows (Y - Item.Top).Move (Merged);
       end;
    end Add;
 
@@ -314,10 +314,10 @@ package body Pictlib.Internal.Coverage is
             exit when Item.Spent;
             declare
                Y : constant Integer := Item.Top + Index;
-               Old : constant Span_List := Item.Rows (Index);
                Kept : Span_List;
             begin
-               for S of Old loop
+               --  Read in place and swapped in: the row is not copied.
+               for S of Item.Rows (Index) loop
                   --  The span is charged before it is tested, so a spent shape tests no more of it.
                   Charge (Item, S.Right - S.Left);
                   exit when Item.Spent;
@@ -337,7 +337,7 @@ package body Pictlib.Internal.Coverage is
                      end if;
                   end;
                end loop;
-               Item.Rows.Replace_Element (Index, Kept);
+               Item.Rows (Index).Move (Kept);
             end;
          end loop;
       end;
@@ -467,32 +467,30 @@ package body Pictlib.Internal.Coverage is
       Kept_Top, Kept_Bottom : Integer;
       Low_X, High_X : in out Integer_Vectors.Vector)
    is
-      subtype Wide is Long_Long_Integer;
-      Dx : constant Wide := Wide (abs (To.H - From.H));
-      Dy : constant Wide := Wide (abs (To.V - From.V));
+      --  Steps of the path, in 64 bits: the products below stay under 2 ** 52 within reach.
+      subtype Long is Long_Long_Integer;
+      Dx : constant Long := Long (abs (To.H - From.H));
+      Dy : constant Long := Long (abs (To.V - From.V));
       Step_X : constant Integer := (if From.H < To.H then 1 else -1);
 
-      function Floor_Divide (Left, Right : Wide) return Wide is
-        (if Left >= 0 then Left / Right else -((-Left + Right - 1) / Right));
-
       --  The last column of shallow row R: the first N with 2 Dy (1 + N) >= Dx (1 + 2 R), and To's on the last.
-      function Last_Of (R : Wide) return Wide is
-        (if R >= Dy then Dx else Wide'Min (Dx, Floor_Divide (Dx * (1 + 2 * R) + 2 * Dy - 1, 2 * Dy) - 1));
+      function Last_Of (R : Long) return Long is
+        (if R >= Dy then Dx else Long'Min (Dx, Ceiling_Divide (Dx * (1 + 2 * R), 2 * Dy) - 1));
 
-      function Column (N : Wide) return Integer is (From.H + Step_X * Integer (N));
+      function Column (N : Long) return Integer is (From.H + Step_X * Integer (N));
    begin
       for Y in Kept_Top .. Kept_Bottom loop
          Charge (Item, 1);
          exit when Item.Spent;
          declare
-            R : constant Wide := Wide (abs (Y - From.V));
-            First, Last : Wide;
+            R : constant Long := Long (abs (Y - From.V));
+            First, Last : Long;
          begin
             if Dx >= Dy then
                First := (if R = 0 then 0 else Last_Of (R - 1) + 1);
                Last := Last_Of (R);
             else
-               First := Wide'Min (Dx, Wide'Max (0, Floor_Divide (2 * Dx * R - Dy, 2 * Dy) + 1));
+               First := Long'Min (Dx, Long'Max (0, Floor_Divide (2 * Dx * R - Dy, 2 * Dy) + 1));
                Last := First;
             end if;
             Low_X (Y - Kept_Top) := Integer'Min (Column (First), Column (Last));

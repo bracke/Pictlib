@@ -2,8 +2,8 @@ with Ada.Finalization;
 
 --  Guards a public call that runs caller code (a visitor, a source, a destination), which may raise, call back
 --  into the object, or have the task aborted. Busy is held for the call, so a nested call can be refused. Caller
---  code that rebinds the object (Binds moves) leaves it as that code chose; otherwise a call that ends in the
---  state it began in did not return, since every return moves it on, and its object decides what that leaves.
+--  code that rebinds the object (Binds moves) leaves it as that code chose; otherwise, however the call ends, its
+--  object's Left_Unfinished decides whether the call returned and what one that did not leaves behind.
 package Pictlib.Internal.Call_Guards is
    type Guard
      (Busy : not null access Boolean;
@@ -15,7 +15,7 @@ package Pictlib.Internal.Call_Guards is
    --  @return True when caller code the call ran rebound the object.
    function Rebound (Item : Guard'Class) return Boolean;
 
-   --  Left unfinished: what a call that ended without being rebound leaves; it must not raise.
+   --  Left unfinished: called as the guard ends unless the object was rebound; it must not raise.
    --  @param Item Guard of the call.
    procedure Left_Unfinished (Item : in out Guard) is abstract;
 

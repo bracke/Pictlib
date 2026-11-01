@@ -158,7 +158,7 @@ package Pictlib.Internal.Rendering is
       Value : Interfaces.Unsigned_16;
       Kind : out Transfer_Modes.Mode_Kind) return Results.Result;
 
-   --  Drawing mode: the mode a copy, an image or text draws in.
+   --  Drawing mode: the mode a copy or an image draws in.
    --  @param S Session whose strictness decides.
    --  @param Event The opcode, for diagnostics.
    --  @param Value Its transfer mode word.

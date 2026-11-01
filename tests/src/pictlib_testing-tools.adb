@@ -83,7 +83,8 @@ package body Pictlib_Testing.Tools is
    function Files_Below
      (Directory : String;
       Recursive : Boolean := True;
-      Enter : access function (Name : String) return Boolean := null) return Name_Vectors.Vector
+      Enter : access function (Name : String) return Boolean := null;
+      Hidden_Files : Boolean := False) return Name_Vectors.Vector
    is
       Result : Name_Vectors.Vector;
 
@@ -106,7 +107,7 @@ package body Pictlib_Testing.Tools is
                   if Entered (Name) then
                      Collect (Full_Name (Item));
                   end if;
-               elsif Kind (Item) = Ordinary_File and then Name (Name'First) /= '.' then
+               elsif Kind (Item) = Ordinary_File and then (Hidden_Files or else Name (Name'First) /= '.') then
                   Result.Append (Full_Name (Item));
                end if;
             end;

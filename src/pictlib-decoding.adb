@@ -14,6 +14,7 @@ package body Pictlib.Decoding is
    package Retained renames Pictlib.Internal.Sessions.Retained;
    use type Errors.Error_Code;
    use type Internal.Generation;
+   use all type Internal.Call_Guards.Guard;
 
    --  Everything known about the last picture goes; the options and limits stay.
    procedure Discard_Picture (Object : in out Decoder) is
@@ -87,8 +88,6 @@ package body Pictlib.Decoding is
          Guard.State.all := Stopped;
       end if;
    end Left_Unfinished;
-
-   function Rebound (Guard : Internal.Call_Guards.Guard'Class) return Boolean renames Internal.Call_Guards.Rebound;
 
    function Read_Header (Object : in out Decoder) return Results.Result is
    begin
