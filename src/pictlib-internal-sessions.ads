@@ -209,6 +209,12 @@ package Pictlib.Internal.Sessions is
    --  @param Value Big-endian long.
    --  @return Operation result.
    function Read_Long (S : in out Session; Value : out Interfaces.Unsigned_32) return Results.Result;
+   --  Read data length: the long length that starts a long-length opcode's data, admitted against the per-opcode
+   --  budget before any of what it counts is read.
+   --  @param S Session reading an opcode's data.
+   --  @param Length The bytes of data that follow.
+   --  @return Operation result, or Limit_Exceeded as Admit_Data.
+   function Read_Data_Length (S : in out Session; Length : out Byte_Count) return Results.Result;
    --  Read RGB: an RGBColor, three 16-bit components.
    --  @param S Session reading an opcode's data.
    --  @param Color The high byte of each component.

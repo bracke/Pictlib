@@ -1,8 +1,16 @@
 with Ada.Directories;
 with Ada.Streams.Stream_IO;
+with Ada.Unchecked_Deallocation;
 
 package body Pictlib_Testing.Files is
    function Load (Name : String) return Bytes_Access is (Load_Path ("fixtures/" & Name));
+
+   procedure Release is new Ada.Unchecked_Deallocation (Pictlib.Streams.Byte_Array, Bytes_Access);
+
+   procedure Free (Item : in out Bytes_Access) is
+   begin
+      Release (Item);
+   end Free;
 
    function Load_Path (Path : String) return Bytes_Access is
       use Ada.Streams.Stream_IO;

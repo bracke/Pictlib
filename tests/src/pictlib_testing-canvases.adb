@@ -1,7 +1,7 @@
 with Ada.Strings.Unbounded;
-with Ada.Unchecked_Deallocation;
 with Pictlib.Geometry;
 with AUnit.Assertions;
+with Pictlib_Testing.Files;
 with Pictlib_Testing.Recorders;
 
 package body Pictlib_Testing.Canvases is
@@ -50,8 +50,8 @@ package body Pictlib_Testing.Canvases is
      (Decoder : in out Pictlib.Decoding.Decoder;
       Storage : in out Pictlib.Streams.Byte_Array_Access) return Pictlib.Results.Result
    is
-      procedure Free is new Ada.Unchecked_Deallocation
-        (Pictlib.Streams.Byte_Array, Pictlib.Streams.Byte_Array_Access);
+      procedure Free (Item : in out Pictlib.Streams.Byte_Array_Access) 
+        renames Pictlib_Testing.Files.Free;
       Needed : constant Natural := Frame_Bytes (Decoder);
    begin
       if Pictlib.Streams."=" (Storage, null) or else Storage'Length < Needed then
@@ -222,6 +222,8 @@ package body Pictlib_Testing.Canvases is
       Low : Pictlib.Pixel_Count := 0;
       Top : Pictlib.Pixel_Count := High;
       Middle : Pictlib.Pixel_Count;
+      --  Some budget the search tried rendered Input: Top did.
+      Rendered : Boolean := False;
    begin
       while Low < Top loop
          Middle := (Low + Top) / 2;
@@ -229,6 +231,7 @@ package body Pictlib_Testing.Canvases is
                  (Budget with delta Max_Drawing_Work => Middle));
          if Pictlib.Results.Succeeded (Outcome) then
             Top := Middle;
+            Rendered := True;
          else
             Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
                     and then Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit,
@@ -237,6 +240,14 @@ package body Pictlib_Testing.Canvases is
             Low := Middle + 1;
          end if;
       end loop;
+      --  Every budget tried failed: High itself must render, or the answer is no least budget at all.
+      if not Rendered then
+         Render (Input, Decoder, View (Storage'Access, Width, Height), Outcome, Options,
+                 (Budget with delta Max_Drawing_Work => Top));
+         Assert (Pictlib.Results.Succeeded (Outcome),
+                 Label & ": failed with " & Outcome.First_Error.Code'Image & " even under a drawing budget of"
+                 & Top'Image);
+      end if;
       return Top;
    end Least_Drawing_Work;
 

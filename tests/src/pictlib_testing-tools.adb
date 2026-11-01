@@ -80,8 +80,16 @@ package body Pictlib_Testing.Tools is
 
    package Name_Sorting is new Name_Vectors.Generic_Sorting;
 
-   function Files_Below (Directory : String; Recursive : Boolean := True) return Name_Vectors.Vector is
+   function Files_Below
+     (Directory : String;
+      Recursive : Boolean := True;
+      Enter : access function (Name : String) return Boolean := null) return Name_Vectors.Vector
+   is
       Result : Name_Vectors.Vector;
+
+      function Entered (Name : String) return Boolean is
+        (Recursive and then Name not in "." | ".."
+         and then (if Enter = null then Name (Name'First) /= '.' else Enter (Name)));
 
       procedure Collect (Path : String) is
          use Ada.Directories;
@@ -94,13 +102,11 @@ package body Pictlib_Testing.Tools is
             declare
                Name : constant String := Simple_Name (Item);
             begin
-               if Name (Name'First) = '.' then
-                  null;
-               elsif Kind (Item) = Ada.Directories.Directory then
-                  if Recursive then
+               if Kind (Item) = Ada.Directories.Directory then
+                  if Entered (Name) then
                      Collect (Full_Name (Item));
                   end if;
-               elsif Kind (Item) = Ordinary_File then
+               elsif Kind (Item) = Ordinary_File and then Name (Name'First) /= '.' then
                   Result.Append (Full_Name (Item));
                end if;
             end;

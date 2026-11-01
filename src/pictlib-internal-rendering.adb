@@ -189,24 +189,26 @@ package body Pictlib.Internal.Rendering is
       Colorize : constant Boolean := Patterns.Kind (Source) = Patterns.Bit_Pattern;
       Hilited : constant Boolean := Take_Hilite (P);
       Kind : constant Transfer_Modes.Mode_Kind := (if Hilited then Transfer_Modes.Hilite else How.Mode);
+      --  The spans building made, which count against the session's allocation total.
+      Span_Bytes : constant Byte_Count :=
+        Checked_Arithmetic.Saturating_Multiply
+          (Byte_Count (Coverage.Work (Shape)), Accounting.Shape_Bytes_Per_Work_Unit);
    begin
       --  A shape's allowance is the lesser of the drawing work and the spans the allocation total admits, so a
-      --  spent shape names whichever of the two it crossed.
-      if not Coverage.Exhausted (Shape) then
-         Outcome := Accounting.Charge_Work (S, Checked_Arithmetic.Saturating_Add (Coverage.Work (Shape), Walked));
-      elsif Coverage.Work (Shape) > Accounting.Work_Left (S) then
+      --  spent shape names whichever of the two it crossed: the allocation total only when the work is within
+      --  what is left.
+      if Coverage.Exhausted (Shape) then
+         if Coverage.Work (Shape) <= Accounting.Work_Left (S) then
+            Outcome := Accounting.Admit_Aggregate (S, Span_Bytes);
+            if not Results.Succeeded (Outcome) then
+               return Outcome;
+            end if;
+         end if;
          return Accounting.Over_Work (S, Coverage.Work (Shape));
-      else
-         Outcome := Accounting.Admit_Aggregate
-           (S, Checked_Arithmetic.Saturating_Multiply
-                 (Byte_Count (Coverage.Work (Shape)), Accounting.Shape_Bytes_Per_Work_Unit));
-         return (if Results.Succeeded (Outcome) then Accounting.Over_Work (S, Coverage.Work (Shape)) else Outcome);
       end if;
-      --  The spans building made count against the session's allocation total.
+      Outcome := Accounting.Charge_Work (S, Checked_Arithmetic.Saturating_Add (Coverage.Work (Shape), Walked));
       if Results.Succeeded (Outcome) then
-         Outcome := Accounting.Admit_Aggregate
-           (S, Checked_Arithmetic.Saturating_Multiply
-                 (Byte_Count (Coverage.Work (Shape)), Accounting.Shape_Bytes_Per_Work_Unit));
+         Outcome := Accounting.Admit_Aggregate (S, Span_Bytes);
       end if;
       declare
          Sample, Color : Images.RGB_Color := Images.Black;

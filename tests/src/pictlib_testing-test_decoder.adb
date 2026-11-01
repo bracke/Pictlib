@@ -99,13 +99,14 @@ package body Pictlib_Testing.Test_Decoder is
       Again : access Pictlib.Streams.Source'Class;
       Done : Boolean := False;
       Nested : Pictlib.Results.Result := Pictlib.Results.Success;
+      --  Reads and skips asked of it after its move.
+      Calls_After : Natural := 0;
    end record;
    overriding function Read
      (Object : in out Raising; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result;
    overriding function Offset (Object : Raising) return Pictlib.Source_Offset is (Object.Inner.Offset);
    overriding function Skip
-     (Object : in out Raising; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result
-   is (Object.Inner.Skip (Count));
+     (Object : in out Raising; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result;
 
    Source_Raised : exception;
 
@@ -164,12 +165,13 @@ package body Pictlib_Testing.Test_Decoder is
       return (Step with delta Count => Step.Count + (if Object.On_Read then 0 else 1));
    end Skip;
 
-   overriding function Read
-     (Object : in out Raising; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result
-   is
+   --  The move, made once the source has delivered After bytes.
+   procedure Move_Once (Object : in out Raising) is
       use type Pictlib.Byte_Count;
    begin
-      if Pictlib.Byte_Count (Object.Inner.Offset) >= Object.After and then not Object.Done then
+      if Object.Done then
+         Object.Calls_After := Object.Calls_After + 1;
+      elsif Pictlib.Byte_Count (Object.Inner.Offset) >= Object.After then
          case Object.Move is
             when Raises => raise Source_Raised;
             when Reenters =>
@@ -186,8 +188,21 @@ package body Pictlib_Testing.Test_Decoder is
                Decoding.Finalize (Object.Target.all);
          end case;
       end if;
+   end Move_Once;
+
+   overriding function Read
+     (Object : in out Raising; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result is
+   begin
+      Move_Once (Object);
       return Object.Inner.Read (Buffer);
    end Read;
+
+   overriding function Skip
+     (Object : in out Raising; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result is
+   begin
+      Move_Once (Object);
+      return Object.Inner.Skip (Count);
+   end Skip;
 
    overriding function Read
      (Object : in out Overreporting; Buffer : out Pictlib.Streams.Byte_Array) return Pictlib.Streams.Source_Result
@@ -546,8 +561,9 @@ package body Pictlib_Testing.Test_Decoder is
             Faulty : aliased Raising;
             Storage : aliased Bytes := [1 .. 3 * 8 * 4 => 0];
          begin
-            Pictlib.Streams.Open (Faulty.Inner, Skipped'Access);
-            Faulty.After := 528;
+            --  A byte at a time, so the skip the move is made in has thousands of calls left.
+            Pictlib.Streams.Open (Faulty.Inner, Skipped'Access, Max_Transfer => 1);
+            Faulty.After := 600;
             Faulty.Move := Move;
             Faulty.Target := Inside'Unchecked_Access;
             Decoding.Initialize (Inside, Faulty'Access);
@@ -561,6 +577,9 @@ package body Pictlib_Testing.Test_Decoder is
                Assert (Outcome.First_Error.Code = Pictlib.Errors.Operation_Cancelled
                        and then Decoding.State (Inside) = Decoding.Cancelled,
                        "a source's Cancel mid-render was overwritten: " & Decoding.State (Inside)'Image);
+               --  Not even the rest of the opcode it was cancelled in is read.
+               Assert (Faulty.Calls_After = 0,
+                       "a cancelled render went on reading:" & Faulty.Calls_After'Image & " calls");
             end if;
          end;
       end loop;

@@ -6,9 +6,10 @@
 --  that stops, raises or rebinds its decoder at some opcode. An exception escaping pictlib is a defect and fails
 --  the run. What an input may cost is bounded by the limits, not the clock, so time only reports: an input taking
 --  longer than Slow_Seconds is slow, one taking longer than Stuck_Seconds stuck, and both are saved under
---  artifacts/fuzz for replay; a stuck input fails the run only with --fail-stuck, for a machine whose speed is
---  known. A failure must carry a fatal code and leave
---  the decoder Failed with it as its last error; a success must leave it in the state the call promises.
+--  artifacts/fuzz for replay, a stuck one while it still runs, so even one that never returns is kept; a stuck
+--  input fails the run only with --fail-stuck, for a machine whose speed is known. A failure must carry a fatal
+--  code and leave the decoder Failed with it as its last error; a success must leave it in the state the call
+--  promises.
 --  Arguments: [iterations] [seed], with --fail-stuck anywhere; seeds are taken in file-name order, so a pair is
 --  deterministic everywhere. With --replay FILE..., each saved input is run through the same checks instead,
 --  and its time printed.
@@ -24,6 +25,7 @@ with Project_Tools.Processes;
 with Ada.Calendar;
 with Ada.Characters.Handling;
 with Ada.Command_Line;
+with Ada.Containers.Indefinite_Holders;
 with Ada.Containers.Indefinite_Vectors;
 with Ada.Directories;
 with Ada.Exceptions;
@@ -52,6 +54,7 @@ procedure Pictlib_Fuzz is
    use type Pictlib.Streams.Byte_Array;
 
    subtype Bytes is Pictlib.Streams.Byte_Array;
+   package Bytes_Holders is new Ada.Containers.Indefinite_Holders (Bytes, Pictlib.Streams."=");
    package Byte_Vectors is new Ada.Containers.Indefinite_Vectors (Positive, Bytes, Pictlib.Streams."=");
 
    Slow_Seconds : constant Duration := 2.0;
@@ -144,7 +147,12 @@ procedure Pictlib_Fuzz is
          if Ada.Characters.Handling.To_Lower (Ada.Directories.Extension (Name)) in "pict" | "pct"
            and then Ada.Directories."<=" (Ada.Directories.Size (Name), 262_144)
          then
-            Seeds.Append (Pictlib_Testing.Files.Load_Path (Name).all);
+            declare
+               Data : Pictlib_Testing.Files.Bytes_Access := Pictlib_Testing.Files.Load_Path (Name);
+            begin
+               Seeds.Append (Data.all);
+               Pictlib_Testing.Files.Free (Data);
+            end;
          end if;
       end loop;
    end Add_Files;
@@ -163,6 +171,79 @@ procedure Pictlib_Fuzz is
       Ada.Directories.Create_Path (Artifacts);
       Pictlib_Testing.Files.Save_Path (Artifacts & "/" & Name, Input);
    end Save;
+
+   function Stuck_Name (Iteration : Positive) return String is
+     ("stuck-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict");
+
+   type Input_Access is access constant Bytes;
+
+   --  The input being exercised, so the watchdog can save one that never returns: CI cancels such a run, and
+   --  nothing after the hung call would save it.
+   protected Current is
+      procedure Start (Input : Input_Access; Iteration : Positive);
+      procedure Finish;
+      --  The input, when one has run longer than Stuck_Seconds and was not handed out yet; else empty.
+      procedure Take_Stuck (Input : out Bytes_Holders.Holder; Iteration : out Natural);
+   private
+      Running : Input_Access;
+      Number : Natural := 0;
+      Started : Ada.Calendar.Time;
+      Taken : Boolean := False;
+   end Current;
+
+   protected body Current is
+      procedure Start (Input : Input_Access; Iteration : Positive) is
+      begin
+         Running := Input;
+         Number := Iteration;
+         Started := Ada.Calendar.Clock;
+         Taken := False;
+      end Start;
+
+      procedure Finish is
+      begin
+         Running := null;
+      end Finish;
+
+      procedure Take_Stuck (Input : out Bytes_Holders.Holder; Iteration : out Natural) is
+      begin
+         Input := Bytes_Holders.Empty_Holder;
+         Iteration := 0;
+         if Running /= null and then not Taken and then Ada.Calendar.Clock - Started > Stuck_Seconds then
+            Input := Bytes_Holders.To_Holder (Running.all);
+            Iteration := Number;
+            Taken := True;
+         end if;
+      end Take_Stuck;
+   end Current;
+
+   --  Saves an input still running after Stuck_Seconds, while it runs.
+   task type Watchdog is
+      entry Stop;
+   end Watchdog;
+
+   task body Watchdog is
+      Input : Bytes_Holders.Holder;
+      Iteration : Natural;
+   begin
+      loop
+         select
+            accept Stop;
+            exit;
+         or
+            delay 1.0;
+            Current.Take_Stuck (Input, Iteration);
+            if Iteration > 0 then
+               Save (Stuck_Name (Iteration), Input.Element);
+               Ada.Text_IO.Put_Line ("still running after" & Stuck_Seconds'Image & " s: iteration" & Iteration'Image
+                                     & ", saved as " & Artifacts & "/" & Stuck_Name (Iteration));
+            end if;
+         end select;
+      end loop;
+   exception
+      when Error : others =>
+         Ada.Text_IO.Put_Line ("the watchdog failed: " & Ada.Exceptions.Exception_Message (Error));
+   end Watchdog;
 
    --  Pictures of the shapes, pen, pattern and text opcodes, assembled by hand from Inside Macintosh's layouts:
    --  one in version 1, one in version 2. Each must render compatibly, or it seeds nothing it claims to;
@@ -541,6 +622,7 @@ procedure Pictlib_Fuzz is
             end if;
          exception
             when Error : others =>
+               Current.Finish;
                Defects := Defects + 1;
                Fail ("DEFECT " & Name & ": " & Ada.Exceptions.Exception_Information (Error));
          end;
@@ -592,6 +674,8 @@ begin
    end if;
    Add_Files ("fixtures/external");
    Add_Files ("fixtures/real_world/libreoffice/pass");
+   --  The pictures that crashed or hung other readers: the most hostile real input there is.
+   Add_Files ("fixtures/real_world/libreoffice/fail");
    --  The fixtures are most of what is fuzzed: without them the run would mutate three tiny encoder outputs and
    --  pass, having tested little.
    if Seeds.Is_Empty then
@@ -605,40 +689,47 @@ begin
    Add_Encoded (Pictlib_Testing.Samples.Black_And_White, Pictlib.Encoding.Mono_1);
    Ada.Text_IO.Put_Line (Natural'Image (Natural (Seeds.Length)) & " seeds," & Iterations'Image & " iterations, seed"
                          & Seed_Used'Image);
-   for Iteration in 1 .. Iterations loop
-      begin
-         declare
-            Input : aliased constant Bytes := Mutate (Seeds (1 + Random (Natural (Seeds.Length))));
-            Started : constant Ada.Calendar.Time := Ada.Calendar.Clock;
+   declare
+      Guard : Watchdog;
+   begin
+      for Iteration in 1 .. Iterations loop
          begin
-            Exercise (Input);
-            if Ada.Calendar.Clock - Started > Stuck_Seconds then
-               Stuck := Stuck + 1;
-               Save ("stuck-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
-            elsif Ada.Calendar.Clock - Started > Slow_Seconds then
-               Slow := Slow + 1;
-               Save ("slow-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
-            end if;
+            declare
+               Input : aliased constant Bytes := Mutate (Seeds (1 + Random (Natural (Seeds.Length))));
+               Started : constant Ada.Calendar.Time := Ada.Calendar.Clock;
+            begin
+               Current.Start (Input'Unchecked_Access, Iteration);
+               Exercise (Input);
+               Current.Finish;
+               if Ada.Calendar.Clock - Started > Stuck_Seconds then
+                  Stuck := Stuck + 1;
+                  Save (Stuck_Name (Iteration), Input);
+               elsif Ada.Calendar.Clock - Started > Slow_Seconds then
+                  Slow := Slow + 1;
+                  Save ("slow-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
+               end if;
+            exception
+               when Error : others =>
+                  Defects := Defects + 1;
+                  Fail ("DEFECT at iteration" & Iteration'Image & ": " & Ada.Exceptions.Exception_Information (Error));
+                  --  Reported first, so a failure to save the input cannot hide the defect.
+                  begin
+                     Save ("defect-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
+                  exception
+                     when Save_Error : others =>
+                        Fail ("could not save the input of iteration" & Iteration'Image & ": "
+                              & Ada.Exceptions.Exception_Message (Save_Error));
+                  end;
+            end;
          exception
+            --  Mutation itself failed: a fault of this tool, with no input to save.
             when Error : others =>
-               Defects := Defects + 1;
-               Fail ("DEFECT at iteration" & Iteration'Image & ": " & Ada.Exceptions.Exception_Information (Error));
-               --  Reported first, so a failure to save the input cannot hide the defect.
-               begin
-                  Save ("defect-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict", Input);
-               exception
-                  when Save_Error : others =>
-                     Fail ("could not save the input of iteration" & Iteration'Image & ": "
-                           & Ada.Exceptions.Exception_Message (Save_Error));
-               end;
+               Fail ("mutation failed at iteration" & Iteration'Image & ": "
+                     & Ada.Exceptions.Exception_Information (Error));
          end;
-      exception
-         --  Mutation itself failed: a fault of this tool, with no input to save.
-         when Error : others =>
-            Fail ("mutation failed at iteration" & Iteration'Image & ": "
-                  & Ada.Exceptions.Exception_Information (Error));
-      end;
-   end loop;
+      end loop;
+      Guard.Stop;
+   end;
    Ada.Text_IO.Put_Line (Iterations'Image & " inputs:" & Headers_Read'Image & " past the header," & Rendered'Image
                          & " rendered," & Partial'Image & " partial;" & Defects'Image & " defects," & Stuck'Image
                          & " stuck," & Slow'Image & " slow");

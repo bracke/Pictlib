@@ -219,12 +219,16 @@ package body Pictlib_Testing.Test_QuickTime is
         Image (QuickTime ("jpeg", Image_Width, Image_Height, JPEG, Mode => 20), 8, 6);
       Short_Mask : aliased constant Bytes :=
         Image (QuickTime ("jpeg", Image_Width, Image_Height, JPEG, Mask => Region (0, 0, 3, 8) & Zeros (2)), 8, 6);
+      --  A region whose own size word claims far more than maskSize: refused before it is read.
+      Long_Mask : aliased constant Bytes :=
+        Image (QuickTime ("jpeg", Image_Width, Image_Height, JPEG, Mask => W (16#F000#) & Rect (0, 0, 3, 8)), 8, 6);
    begin
       Expect (Masked, 8, 6, Top_Rows'Access, "mask region");
       Expect (Clipped, 8, 6, Top_Rows'Access, "clip region");
       Expect (Copied, 8, 6, Identity'Access, "srcCopy");
       Canvases.Expect_Failure (Bad_Mode, 8, 6, Errors.Transfer_Mode_Invalid, "mode 20", 16#8200#);
       Canvases.Expect_Failure (Short_Mask, 8, 6, Errors.Region_Invalid, "maskSize disagrees", 16#8200#);
+      Canvases.Expect_Failure (Long_Mask, 8, 6, Errors.Region_Invalid, "a region longer than maskSize", 16#8200#);
    end Masks_And_Modes;
 
    --  A black placeholder BitMap after the image, as QuickTime writes for systems without the codec.

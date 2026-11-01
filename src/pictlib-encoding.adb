@@ -1,12 +1,11 @@
 with Ada.Containers.Hashed_Maps;
 with Ada.Containers.Vectors;
-with Ada.Finalization;
 with Interfaces;
 with Pictlib.Internal.Bytes;
+with Pictlib.Internal.Call_Guards;
 with Pictlib.Internal.Failures;
 with Pictlib.Internal.PackBits;
 with Pictlib.Internal.Pixels;
-with Pictlib.Internal.Writers;
 with Pictlib.Opcodes;
 
 package body Pictlib.Encoding is
@@ -74,7 +73,8 @@ package body Pictlib.Encoding is
                end if;
             end;
          end loop;
-         exit when Natural (Item.Colors.Length) > Largest_Colors and then not Item.Black_And_White;
+         --  More colors than an indexed picture holds are not all black or white.
+         exit when Natural (Item.Colors.Length) > Largest_Colors;
       end loop;
    end Survey;
 
@@ -128,12 +128,12 @@ package body Pictlib.Encoding is
      (Byte_Count (Item.Unpacked_Length) + Byte_Count (Internal.PackBits.Worst_Case (Item.Unpacked_Length)));
 
    --  Every write after a failure is refused by the writer, which writes nothing more; the first failure is kept.
-   procedure Step (Outcome : in out Results.Result; Item : Results.Result) is
+   procedure Accumulate (Outcome : in out Results.Result; Item : Results.Result) is
    begin
       if Results.Succeeded (Outcome) then
          Outcome := Item;
       end if;
-   end Step;
+   end Accumulate;
 
    --  picSize, picFrame, the version opcode, an extended version 2 HeaderOp, DefHilite and a clip of the frame.
    procedure Put_Header
@@ -144,40 +144,40 @@ package body Pictlib.Encoding is
       Outcome : in out Results.Result) is
    begin
       Writers.Start_Picture (Out_Bytes);
-      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Picture_Size mod 16#1_0000#)));
-      Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
-      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Version_Op)));
-      Step (Outcome, Writers.Put_Word (Out_Bytes, Internal.Version_2_Word));
+      Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Natural (Picture_Size mod 16#1_0000#)));
+      Accumulate (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
+      Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Version_Op)));
+      Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Internal.Version_2_Word));
       --  HeaderOp: its version, reserved, the resolution, the frame, reserved.
-      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Header_Op)));
-      Step (Outcome, Writers.Put_Word (Out_Bytes, Internal.Extended_Header_Version));
-      Step (Outcome, Writers.Put_Word (Out_Bytes, 0));
-      Step (Outcome, Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Horizontal_Resolution)));
-      Step (Outcome, Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Vertical_Resolution)));
-      Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
-      Step (Outcome, Writers.Put_Long (Out_Bytes, 0));
-      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Default_Hilite)));
+      Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Header_Op)));
+      Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Internal.Extended_Header_Version));
+      Accumulate (Outcome, Writers.Put_Word (Out_Bytes, 0));
+      Accumulate (Outcome, Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Horizontal_Resolution)));
+      Accumulate (Outcome, Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Vertical_Resolution)));
+      Accumulate (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
+      Accumulate (Outcome, Writers.Put_Long (Out_Bytes, 0));
+      Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Default_Hilite)));
       --  A rectangular region: its size word and box.
-      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Clip)));
-      Step (Outcome, Writers.Put_Word (Out_Bytes, Internal.Smallest_Region));
-      Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
+      Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Clip)));
+      Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Internal.Smallest_Region));
+      Accumulate (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
    end Put_Header;
 
    --  An Indexed_8 picture's color table: ctSeed, ctFlags, ctSize, then each entry's value, which is its index, and
    --  its components widened to 16 bits, in the order the colors first appear.
    procedure Put_Color_Table (Out_Bytes : in out Writers.Writer; Colors : Palette; Outcome : in out Results.Result) is
    begin
-      Step (Outcome, Writers.Put_Long (Out_Bytes, 0));
-      Step (Outcome, Writers.Put_Word (Out_Bytes, 0));
-      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Colors.Colors.Length) - 1));
+      Accumulate (Outcome, Writers.Put_Long (Out_Bytes, 0));
+      Accumulate (Outcome, Writers.Put_Word (Out_Bytes, 0));
+      Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Natural (Colors.Colors.Length) - 1));
       for Index in 0 .. Natural (Colors.Colors.Length) - 1 loop
          declare
             Color : constant Images.RGB_Color := Colors.Colors (Index);
          begin
-            Step (Outcome, Writers.Put_Word (Out_Bytes, Index));
-            Step (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Red)));
-            Step (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Green)));
-            Step (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Blue)));
+            Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Index));
+            Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Red)));
+            Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Green)));
+            Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Widen_Component * Natural (Color.Blue)));
          end;
       end loop;
    end Put_Color_Table;
@@ -193,43 +193,43 @@ package body Pictlib.Encoding is
    is
       procedure Put_Pixmap_Tail (Pack, Pixel_Type, Pixel_Size, Component_Count, Component_Size : Natural) is
       begin
-         Step (Outcome, Writers.Put_Word (Out_Bytes, 0));
-         Step (Outcome, Writers.Put_Word (Out_Bytes, Pack));
-         Step (Outcome, Writers.Put_Long (Out_Bytes, 0));
-         Step (Outcome, Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Horizontal_Resolution)));
-         Step (Outcome, Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Vertical_Resolution)));
-         Step (Outcome, Writers.Put_Word (Out_Bytes, Pixel_Type));
-         Step (Outcome, Writers.Put_Word (Out_Bytes, Pixel_Size));
-         Step (Outcome, Writers.Put_Word (Out_Bytes, Component_Count));
-         Step (Outcome, Writers.Put_Word (Out_Bytes, Component_Size));
+         Accumulate (Outcome, Writers.Put_Word (Out_Bytes, 0));
+         Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Pack));
+         Accumulate (Outcome, Writers.Put_Long (Out_Bytes, 0));
+         Accumulate (Outcome, Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Horizontal_Resolution)));
+         Accumulate (Outcome, Writers.Put_Long (Out_Bytes, Interfaces.Unsigned_32 (Settings.Vertical_Resolution)));
+         Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Pixel_Type));
+         Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Pixel_Size));
+         Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Component_Count));
+         Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Component_Size));
          for Index in 1 .. 3 loop  --  planeBytes, pmTable, pmReserved
-            Step (Outcome, Writers.Put_Long (Out_Bytes, 0));
+            Accumulate (Outcome, Writers.Put_Long (Out_Bytes, 0));
          end loop;
       end Put_Pixmap_Tail;
    begin
       case Item.Layout is
          when Direct_32 =>
-            Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Direct_Bits_Rect)));
-            Step (Outcome, Writers.Put_Long (Out_Bytes, Direct_Base_Address));
-            Step (Outcome, Writers.Put_Word (Out_Bytes, Internal.Pixmap_Flag + Item.Stored));
-            Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
+            Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Direct_Bits_Rect)));
+            Accumulate (Outcome, Writers.Put_Long (Out_Bytes, Direct_Base_Address));
+            Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Internal.Pixmap_Flag + Item.Stored));
+            Accumulate (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
             Put_Pixmap_Tail (Pack => Pack_Component_Planes, Pixel_Type => Direct_Pixels, Pixel_Size => 32,
                              Component_Count => Item.Components, Component_Size => 8);
          when Indexed_8 =>
-            Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Pack_Bits_Rect)));
-            Step (Outcome, Writers.Put_Word (Out_Bytes, Internal.Pixmap_Flag + Item.Stored));
-            Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
+            Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Pack_Bits_Rect)));
+            Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Internal.Pixmap_Flag + Item.Stored));
+            Accumulate (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
             Put_Pixmap_Tail (Pack => Pack_Default, Pixel_Type => Indexed_Pixels, Pixel_Size => 8, Component_Count => 1,
                              Component_Size => 8);
             Put_Color_Table (Out_Bytes, Colors, Outcome);
          when others =>
-            Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Pack_Bits_Rect)));
-            Step (Outcome, Writers.Put_Word (Out_Bytes, Item.Stored));
-            Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
+            Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.Pack_Bits_Rect)));
+            Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Item.Stored));
+            Accumulate (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));
       end case;
-      Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));  --  srcRect
-      Step (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));  --  dstRect
-      Step (Outcome, Writers.Put_Word (Out_Bytes, 0));           --  srcCopy
+      Accumulate (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));  --  srcRect
+      Accumulate (Outcome, Writers.Put_Rect (Out_Bytes, Item.Frame));  --  dstRect
+      Accumulate (Outcome, Writers.Put_Word (Out_Bytes, 0));           --  srcCopy
    end Put_Bits_Header;
 
    --  One row as it is stored before packing.
@@ -296,15 +296,15 @@ package body Pictlib.Encoding is
          exit when not Results.Succeeded (Outcome);
          Fill_Row (Image, Settings, Item, Colors, Y, Row.all);
          if not Item.Packed then
-            Step (Outcome, Writers.Put (Out_Bytes, Row.all));
+            Accumulate (Outcome, Writers.Put (Out_Bytes, Row.all));
          else
             Internal.PackBits.Pack (Row.all, Packed.all, Packed_Length);
             if Item.Stored > Internal.Byte_Count_Row_Bytes then
-               Step (Outcome, Writers.Put_Word (Out_Bytes, Packed_Length));
+               Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Packed_Length));
             else
-               Step (Outcome, Writers.Put_Byte (Out_Bytes, Packed_Length));
+               Accumulate (Outcome, Writers.Put_Byte (Out_Bytes, Packed_Length));
             end if;
-            Step (Outcome, Writers.Put (Out_Bytes, Packed (1 .. Packed_Length)));
+            Accumulate (Outcome, Writers.Put (Out_Bytes, Packed (1 .. Packed_Length)));
          end if;
       end loop;
       Internal.Bytes.Free (Row);
@@ -331,8 +331,8 @@ package body Pictlib.Encoding is
       Put_Header (Out_Bytes, Settings, Item, Picture_Size, Outcome);
       Put_Bits_Header (Out_Bytes, Settings, Item, Colors, Outcome);
       Put_Rows (Out_Bytes, Image, Settings, Item, Colors, Outcome);
-      Step (Outcome, Writers.Align (Out_Bytes));
-      Step (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.End_Picture)));
+      Accumulate (Outcome, Writers.Align (Out_Bytes));
+      Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.End_Picture)));
       return Outcome;
    end Write_Picture;
 
@@ -360,8 +360,7 @@ package body Pictlib.Encoding is
    function State (Object : Encoder) return Encoder_State is (Object.Current_State);
 
    function Wrong_State (Object : Encoder) return Results.Result is
-     (Results.Failure
-        (if Object.Current_State = Cancelled then Errors.Operation_Cancelled else Errors.Invalid_State));
+     (Internal.Failures.Wrong_State (Object.Current_State = Cancelled));
 
    function Fail (Object : in out Encoder; Outcome : Results.Result) return Results.Result is
    begin
@@ -459,41 +458,30 @@ package body Pictlib.Encoding is
       return Outcome;
    end Write;
 
-   --  Guards a call that runs the destination, caller code which may raise, or the task be aborted. Busy is held
-   --  for the call. A call that used the destination and left the encoder in From, the state it began in, did not
-   --  return, since every return moves it on, and leaves it Failed with Destination_Write_Failed, so no second
-   --  picture follows a part of the first.
+   --  Guards a call that runs the destination, as Call_Guards describes: one that used the destination and did
+   --  not return leaves the encoder Failed with Destination_Write_Failed, so no second picture follows a part of
+   --  the first.
    type Write_Guard
      (From : Encoder_State;
       State : not null access Encoder_State;
       Error : not null access Errors.Error;
       Started : not null access constant Boolean;
       Busy : not null access Boolean;
-      Binds : not null access constant Internal.Generation) is new Ada.Finalization.Limited_Controlled with record
-      Binds_At_Start : Internal.Generation := 0;
-   end record;
+      Binds : not null access constant Internal.Generation) is new Internal.Call_Guards.Guard (Busy, Binds)
+   with null record;
 
-   --  Caller code the guarded call ran rebound or cancelled the encoder.
-   function Rebound (Guard : Write_Guard'Class) return Boolean is (Guard.Binds.all /= Guard.Binds_At_Start);
+   overriding procedure Left_Unfinished (Guard : in out Write_Guard);
 
-   overriding procedure Initialize (Guard : in out Write_Guard);
-   overriding procedure Finalize (Guard : in out Write_Guard);
-
-   overriding procedure Initialize (Guard : in out Write_Guard) is
+   overriding procedure Left_Unfinished (Guard : in out Write_Guard) is
    begin
-      Guard.Busy.all := True;
-      Guard.Binds_At_Start := Guard.Binds.all;
-   end Initialize;
-
-   overriding procedure Finalize (Guard : in out Write_Guard) is
-   begin
-      Guard.Busy.all := False;
-      --  A destination that rebound the encoder left it as it chose.
-      if Guard.Started.all and then Guard.State.all = Guard.From and then not Rebound (Guard) then
+      if Guard.Started.all and then Guard.State.all = Guard.From then
          Guard.State.all := Failed;
          Guard.Error.all := Errors.Make (Errors.Destination_Write_Failed);
       end if;
-   end Finalize;
+   end Left_Unfinished;
+
+   --  Caller code the guarded call ran rebound or cancelled the encoder.
+   function Rebound (Guard : Internal.Call_Guards.Guard'Class) return Boolean renames Internal.Call_Guards.Rebound;
 
    function Encode_Picture (Object : in out Encoder; Image : Images.Image_View) return Results.Result is
       --  The settings the picture is written with.

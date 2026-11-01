@@ -102,7 +102,7 @@ package Pictlib_Testing.Canvases is
       Strictness : Pictlib.Strictness_Mode := Pictlib.Compatible);
 
    --  The least drawing budget Input renders under, found by bisection up to High; every budget below it must
-   --  fail on the drawing limit, so the search never stops on another error.
+   --  fail on the drawing limit, so the search never stops on another error, and High itself must render.
    function Least_Drawing_Work
      (Input : aliased Pictlib.Streams.Byte_Array;
       Width, Height : Positive;

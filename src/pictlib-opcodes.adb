@@ -94,19 +94,14 @@ is
          when 3 => "invert",
          when others => "fill");
 
+   --  Verbs 5 .. 7 never reach it: Name calls them Reserved first.
    function Shape_Opcode_Name (Op : Opcode; Shape : String) return String
      with Pre => Shape'Length <= 8
    is
       Verb : constant Natural := Natural (Op mod 8);
       Same : constant Boolean := Op mod 16 >= 8;
    begin
-      if Verb > 4 then
-         return "Reserved";
-      elsif Same then
-         return Verb_Name (Verb) & "Same" & Shape;
-      else
-         return Verb_Name (Verb) & Shape;
-      end if;
+      return Verb_Name (Verb) & (if Same then "Same" else "") & Shape;
    end Shape_Opcode_Name;
 
    function Name (Op : Opcode) return String is

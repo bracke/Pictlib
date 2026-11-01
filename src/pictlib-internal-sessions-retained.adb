@@ -56,6 +56,11 @@ package body Pictlib.Internal.Sessions.Retained is
          Bytes.Free (Data);
       end if;
       return Outcome;
+   exception
+      --  Storing the item may run out of memory: the payload is released, and the exception passes through.
+      when others =>
+         Bytes.Free (Data);
+         raise;
    end Retain;
 
    function Retain_Bytes (S : in out Session; Info : Metadata.Item_Info; Data : Streams.Byte_Array)

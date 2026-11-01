@@ -37,19 +37,16 @@ procedure Pictlib_Generate is
    Ppmtopict : constant String := Processes.Locate_Command ("ppmtopict");
 
    procedure Read_Arguments is
-      Index : Positive := 1;
    begin
-      while Index <= Ada.Command_Line.Argument_Count loop
-         if Ada.Command_Line.Argument (Index) = "--output" and then Index < Ada.Command_Line.Argument_Count then
+      if not Pictlib_Testing.Tools.Arguments_Known ([new String'("--check")], [new String'("--output")]) then
+         return;
+      end if;
+      for Index in 1 .. Ada.Command_Line.Argument_Count loop
+         if Ada.Command_Line.Argument (Index) = "--check" then
+            Check_Only := True;
+         elsif Ada.Command_Line.Argument (Index) = "--output" then
             --  Relative to where the tool was run, before it moves to the tests directory.
             Target := +Ada.Directories.Full_Name (Ada.Command_Line.Argument (Index + 1));
-            Index := Index + 2;
-         elsif Ada.Command_Line.Argument (Index) = "--check" then
-            Check_Only := True;
-            Index := Index + 1;
-         else
-            Fail ("usage: pictlib_generate [--output DIR] [--check]");
-            return;
          end if;
       end loop;
    end Read_Arguments;

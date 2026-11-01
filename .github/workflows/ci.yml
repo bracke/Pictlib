@@ -27,7 +27,7 @@ jobs:
           path: pictlib
 
       - name: Check out sibling crates (jpeglib, textrender, project_tools and their pins)
-        uses: bracke/project_tools/.github/actions/checkout-ada-siblings@main
+        uses: bracke/project_tools/.github/actions/checkout-ada-siblings@5ed5f4dcfa10301345933d45e5f78ac0573d8cff # main, 2026-10
         with:
           root: pictlib
 
@@ -64,7 +64,7 @@ jobs:
         run: alr --non-interactive exec -- bin/pictlib_complete$EXE --without-conformance
 
       - name: Keep the fuzzer's defect, slow and stuck inputs
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz-inputs-${{ matrix.os }}
@@ -82,7 +82,7 @@ jobs:
         with:
           path: pictlib
 
-      - uses: bracke/project_tools/.github/actions/checkout-ada-siblings@main
+      - uses: bracke/project_tools/.github/actions/checkout-ada-siblings@5ed5f4dcfa10301345933d45e5f78ac0573d8cff # main, 2026-10
         with:
           root: pictlib
 

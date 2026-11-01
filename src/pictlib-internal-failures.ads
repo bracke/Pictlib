@@ -97,4 +97,10 @@ package Pictlib.Internal.Failures is
       elsif Height > Natural (Budget.Max_Frame_Height)
       then Over_Limit (Frame_Height_Limit, Byte_Count (Budget.Max_Frame_Height), Byte_Count (Height), Source)
       else Results.Success);
+
+   --  Wrong state: what a decoder's or encoder's call in a state it cannot run in returns.
+   --  @param Cancelled True when the object is Cancelled.
+   --  @return Operation_Cancelled after Cancel, Invalid_State otherwise.
+   function Wrong_State (Cancelled : Boolean) return Results.Result is
+     (Results.Failure (if Cancelled then Errors.Operation_Cancelled else Errors.Invalid_State));
 end Pictlib.Internal.Failures;

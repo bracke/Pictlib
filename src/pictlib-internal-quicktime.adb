@@ -242,7 +242,6 @@ package body Pictlib.Internal.QuickTime is
       Mask : in out Regions.Region;
       Has_Mask : out Boolean) return Results.Result
    is
-      Before : constant Byte_Count := Used (S, Within);
       Outcome : Results.Result;
    begin
       Has_Mask := False;
@@ -251,11 +250,10 @@ package body Pictlib.Internal.QuickTime is
       elsif Byte_Count (Header.Mask_Size) > Left (S, Within) then
          return Part_Too_Long (S, Event, Within, Byte_Count (Header.Mask_Size));
       end if;
-      Outcome := Region_Reader.Read (S, Mask);
+      --  A region takes exactly the bytes its size word gives, so that word must be maskSize.
+      Outcome := Region_Reader.Read (S, Mask, Expected_Size => Byte_Count (Header.Mask_Size));
       if not Results.Succeeded (Outcome) then
          return Outcome;
-      elsif Used (S, Within) - Before /= Byte_Count (Header.Mask_Size) then
-         return Sessions.Fail (S, Errors.Region_Invalid, Byte_Count (Header.Mask_Size), Used (S, Within) - Before);
       end if;
       Has_Mask := True;
       Regions.Translate (Mask, -P.Port.Origin_H, -P.Port.Origin_V);

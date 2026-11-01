@@ -263,6 +263,17 @@ package body Pictlib.Internal.Sessions is
       return Bytes.Read_U32_BE (S.Stream, Value);
    end Read_Long;
 
+   function Read_Data_Length (S : in out Session; Length : out Byte_Count) return Results.Result is
+      Value : Interfaces.Unsigned_32;
+      Outcome : Results.Result := Read_Long (S, Value);
+   begin
+      Length := Byte_Count (Value);
+      if Results.Succeeded (Outcome) then
+         Outcome := Admit_Data (S, Length);
+      end if;
+      return Outcome;
+   end Read_Data_Length;
+
    function Read_Bounds (S : in out Session; Value : out Geometry.Rect) return Results.Result is
       Outcome : constant Results.Result := Admit_Data (S, 8);
    begin

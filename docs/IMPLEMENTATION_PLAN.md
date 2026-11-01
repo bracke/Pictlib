@@ -155,7 +155,8 @@ passes.
 open items below. `pictlib_complete` runs every gate: the source policy
 (`pictlib_check`), the AUnit suite, the real-world corpus
 (`pictlib_real_world`: LibreOffice's PICT filter test files at a pinned commit,
-pass and fail, CVE reproductions among them), mutation fuzzing (`pictlib_fuzz`;
+pass and fail; its CVE reproductions are stored scrambled, so they reach only
+the version check), mutation fuzzing (`pictlib_fuzz`;
 300 000 inputs found no defect), the SPARK proof profile (`pictlib_prove`) and
 encoder conformance (`pictlib_conformance`). The stress suite covers reset
 reuse, independent decoders in four tasks and a matrix of every limit kind; the
@@ -168,7 +169,9 @@ Open:
   compared with real QuickDraw: that needs classic Mac OS under emulation, with
   its ROM and system software, which this environment lacks.
 - Netpbm `picttoppm` was not available as a third independent reader.
-- The CI workflow has not run on GitHub yet.
+- `pictlib_generate --check`, which catches drift in the external-oracle
+  fixtures, runs by hand only: it needs exactly ImageMagick 7.1.1-43 and Netpbm
+  11.5.2, which no CI image ships.
 - Task 19a, rendering at an extended header's native resolution.
 
 26. Real-world corpus with provenance, external oracle matrix, fuzz harness and seed corpus;

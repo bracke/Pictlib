@@ -453,42 +453,50 @@ package body Pictlib.Internal.Coverage is
 
    package Integer_Vectors is new Ada.Containers.Vectors (Natural, Integer);
 
-   --  Walk the path from From to To, a pixel a step, charging each: rows Kept_Top .. Kept_Bottom record their
-   --  leftmost and rightmost columns in Low_X and High_X, indexed from Kept_Top.
+   --  The path from From to To is the one Bresenham's walk takes, a pixel a step, its x and y steps each decided
+   --  on the error before either: rows Kept_Top .. Kept_Bottom record their leftmost and rightmost columns in
+   --  Low_X and High_X, indexed from Kept_Top, a unit a row. Each row's columns are found directly, so a line
+   --  that is mostly outside the window costs only the rows that reach it.
+   --  Along a shallow path (Dx >= Dy) every step moves a column: row R holds the columns after the last of row
+   --  R - 1 up to the first column N at which the error, Dx * (1 + R) - Dy * (1 + N), is at most Dx / 2. Along
+   --  a steep one every step moves a row, and row R's one column is the number of columns C whose error first
+   --  reaches -Dy / 2 in an earlier row: those with Dy * (1 + 2 C) <= 2 Dx R.
    procedure Walk
      (Item : in out Shape;
       From, To : Point;
       Kept_Top, Kept_Bottom : Integer;
       Low_X, High_X : in out Integer_Vectors.Vector)
    is
-      X : Integer := From.H;
-      Y : Integer := From.V;
-      Dx : constant Integer := abs (To.H - From.H);
-      Dy : constant Integer := -abs (To.V - From.V);
+      subtype Wide is Long_Long_Integer;
+      Dx : constant Wide := Wide (abs (To.H - From.H));
+      Dy : constant Wide := Wide (abs (To.V - From.V));
       Step_X : constant Integer := (if From.H < To.H then 1 else -1);
-      Step_Y : constant Integer := (if From.V < To.V then 1 else -1);
-      Error : Integer := Dx + Dy;
+
+      function Floor_Divide (Left, Right : Wide) return Wide is
+        (if Left >= 0 then Left / Right else -((-Left + Right - 1) / Right));
+
+      --  The last column of shallow row R: the first N with 2 Dy (1 + N) >= Dx (1 + 2 R), and To's on the last.
+      function Last_Of (R : Wide) return Wide is
+        (if R >= Dy then Dx else Wide'Min (Dx, Floor_Divide (Dx * (1 + 2 * R) + 2 * Dy - 1, 2 * Dy) - 1));
+
+      function Column (N : Wide) return Integer is (From.H + Step_X * Integer (N));
    begin
-      loop
-         if Y in Kept_Top .. Kept_Bottom then
-            Low_X (Y - Kept_Top) := Integer'Min (Low_X (Y - Kept_Top), X);
-            High_X (Y - Kept_Top) := Integer'Max (High_X (Y - Kept_Top), X);
-         end if;
+      for Y in Kept_Top .. Kept_Bottom loop
          Charge (Item, 1);
-         exit when Item.Spent or else (X = To.H and then Y = To.V);
-         --  Both steps are decided on the error before either: deciding the second on the error the first
-         --  changed overshoots a shallow line's end, which the walk then never meets.
+         exit when Item.Spent;
          declare
-            Twice : constant Integer := 2 * Error;
+            R : constant Wide := Wide (abs (Y - From.V));
+            First, Last : Wide;
          begin
-            if Twice >= Dy then
-               Error := Error + Dy;
-               X := X + Step_X;
+            if Dx >= Dy then
+               First := (if R = 0 then 0 else Last_Of (R - 1) + 1);
+               Last := Last_Of (R);
+            else
+               First := Wide'Min (Dx, Wide'Max (0, Floor_Divide (2 * Dx * R - Dy, 2 * Dy) + 1));
+               Last := First;
             end if;
-            if Twice <= Dx then
-               Error := Error + Dx;
-               Y := Y + Step_Y;
-            end if;
+            Low_X (Y - Kept_Top) := Integer'Min (Column (First), Column (Last));
+            High_X (Y - Kept_Top) := Integer'Max (Column (First), Column (Last));
          end;
       end loop;
    end Walk;
@@ -663,15 +671,23 @@ package body Pictlib.Internal.Coverage is
       if Item.Spent then
          return;
       end if;
-      for Index in 0 .. Natural (Item.Rows.Length) - 1 loop
-         exit when Item.Spent;
-         declare
-            Kept : Span_List;
-         begin
-            Regions.Subtract (Item.Rows (Index), Row (Other, Item.Top + Index), Kept);
-            Item.Rows.Replace_Element (Index, Kept);
-            Charge (Item, Natural (Kept.Length) + 1);
-         end;
-      end loop;
+      declare
+         --  One scratch list for every row, its buffer swapped with the row's: nothing is copied.
+         Kept : Span_List;
+      begin
+         for Index in 0 .. Natural (Item.Rows.Length) - 1 loop
+            exit when Item.Spent;
+            declare
+               Y : constant Integer := Item.Top + Index;
+            begin
+               --  A row Other does not reach keeps all it has.
+               if Y in First_Row (Other) .. Last_Row (Other) then
+                  Regions.Subtract (Item.Rows (Index), Other.Rows (Y - Other.Top), Kept);
+                  Item.Rows (Index).Move (Kept);
+               end if;
+               Charge (Item, Natural (Item.Rows (Index).Length) + 1);
+            end;
+         end loop;
+      end;
    end Subtract;
 end Pictlib.Internal.Coverage;

@@ -13,7 +13,11 @@ package Pictlib.Internal.Region_Reader is
    --  Read.
    --  @param S Session positioned at a region.
    --  @param Item The region; rectangular and empty on failure.
-   --  @return Success, Region_Invalid for malformed scanlines, or Limit_Exceeded above the region or allocation
-   --  budgets.
-   function Read (S : in out Sessions.Session; Item : out Regions.Region) return Results.Result;
+   --  @param Expected_Size The size the region must give itself, or 0 for any: one that disagrees is refused
+   --  before anything past its size word is read.
+   --  @return Success, Region_Invalid for malformed scanlines or a size other than Expected_Size, or
+   --  Limit_Exceeded above the region or allocation budgets.
+   function Read
+     (S : in out Sessions.Session; Item : out Regions.Region; Expected_Size : Byte_Count := 0)
+      return Results.Result;
 end Pictlib.Internal.Region_Reader;

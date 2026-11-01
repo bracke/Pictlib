@@ -340,7 +340,11 @@ package body Pictlib.Internal.Drawing is
          when Opcodes.Text_Face =>
             Outcome := Sessions.Read_Count_Byte (S, State.Face);
          when Opcodes.Text_Mode =>
-            Outcome := Sessions.Read_Word (S, State.Mode);
+            --  Checked when read, as PnMode is, whether or not text is drawn in it.
+            Outcome := Sessions.Read_Word (S, Value);
+            if Results.Succeeded (Outcome) then
+               Outcome := Rendering.Mode (S, Event, Value, State.Mode);
+            end if;
          when Opcodes.Space_Extra =>
             declare
                Long : Interfaces.Unsigned_32;
@@ -379,14 +383,11 @@ package body Pictlib.Internal.Drawing is
       if Event.Op = Opcodes.Compressed_QuickTime then
          --  Its data is a long length, then the image; rendering reads the image instead of retaining it.
          declare
-            Length : Interfaces.Unsigned_32;
+            Length : Byte_Count;
          begin
-            Outcome := Sessions.Read_Long (S, Length);
+            Outcome := Sessions.Read_Data_Length (S, Length);
             if Results.Succeeded (Outcome) then
-               Outcome := Sessions.Admit_Data (S, Byte_Count (Length));
-            end if;
-            if Results.Succeeded (Outcome) then
-               Outcome := QuickTime.Draw (P, S, Event, Byte_Count (Length));
+               Outcome := QuickTime.Draw (P, S, Event, Length);
             end if;
          end;
          return Outcome;

@@ -6,6 +6,9 @@ with Pictlib.Streams;
 --  Picture bytes out: big-endian values, rectangles and version 2 alignment, either to a destination or, for
 --  a dry run that measures the picture, nowhere.
 package Pictlib.Internal.Writers is
+   --  A borrowed destination, as a writer and an encoder hold it.
+   type Destination_Access is access all Streams.Destination'Class;
+
    type Writer is limited private;
 
    --  Start. The writer calls nothing of Output but Write.
@@ -66,7 +69,6 @@ package Pictlib.Internal.Writers is
    function Align (Object : in out Writer) return Results.Result;
 
 private
-   type Destination_Access is access all Streams.Destination'Class;
    type Generation_Access is access constant Generation;
 
    type Writer is limited record

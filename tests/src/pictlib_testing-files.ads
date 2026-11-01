@@ -10,6 +10,8 @@ package Pictlib_Testing.Files is
    function Load (Name : String) return Bytes_Access;
    --  Load path: the whole of the file at Path.
    function Load_Path (Path : String) return Bytes_Access;
+   --  Free: release a buffer Load, Load_Path or a tool allocated; null after.
+   procedure Free (Item : in out Bytes_Access);
    --  Save path: create or replace the file at Path with Data, byte for byte.
    procedure Save_Path (Path : String; Data : Pictlib.Streams.Byte_Array);
 

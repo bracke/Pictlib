@@ -220,11 +220,11 @@ package body Pictlib.Internal.Opcode_Reader is
             end;
          when Opcodes.Long_Length_Data =>
             declare
-               Length : Interfaces.Unsigned_32;
+               Length : Byte_Count;
             begin
-               Outcome := Sessions.Read_Long (S, Length);
+               Outcome := Sessions.Read_Data_Length (S, Length);
                if Results.Succeeded (Outcome) then
-                  Outcome := Consume_Length_Prefixed (S, Event, Byte_Count (Length), Paint);
+                  Outcome := Consume_Length_Prefixed (S, Event, Length, Paint);
                end if;
                return Outcome;
             end;

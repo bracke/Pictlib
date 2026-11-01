@@ -171,7 +171,9 @@ are retained, never interpreted.
   colors under dark source pixels; an invert verb after `HiliteMode` highlights its whole shape
   instead of inverting it; `DefHilite` resets the highlight to black. `grayishTextOr`
   acts as `srcOr`. Unknown modes fail with `Transfer_Mode_Invalid` in `Strict` and act as copy
-  with a warning otherwise.
+  with a warning otherwise. A mode is checked when the opcode that holds it is read: `PnMode` and
+  `TxMode` whether or not anything is drawn in it, a copy's or an image's with that drawing (a
+  QuickTime image's placeholder copy, which is not drawn, is not checked).
 - A real QuickDraw reference renderer was not available when these rules were written; comparing
   them against one remains open (it needs classic Mac OS under emulation), and the rules change
   only through this document.
@@ -289,10 +291,11 @@ are retained, never interpreted.
   what it will need), and a progressive or hierarchical JPEG of more than 8192 blocks
   (`jpeglib` decodes these through stack buffers sized by the image, which no budget bounds) are
   treated like another codec, below. A hierarchical JPEG's coefficients count twice against
-  `jpeglib`'s share, since a continuation frame's are held beside the first frame's. Any other codec, a non-empty matte (an alpha
-  image of its own), and a matrix other than positive scaling plus translation are
-  `Unsupported_Feature` in `Strict`; otherwise the image is skipped (the matte ignored) with an
-  `Approximated_Rendering` warning.
+  `jpeglib`'s share, since a continuation frame's are held beside the first frame's. Any other
+  codec and a matrix other than positive scaling plus translation are `Unsupported_Feature` in
+  `Strict`; otherwise the image is skipped with an `Approximated_Rendering` warning. A non-empty
+  matte (an alpha image of its own) is `Unsupported_Feature` in `Strict` too; otherwise the matte
+  alone is skipped, with that warning, and the image is drawn without it.
 - The image's `srcRect` (in image coordinates, clamped to the image) is mapped through the matrix
   to a local destination rectangle (coordinates rounded to the nearest pixel), drawn nearest-
   neighbor like a copy with the opcode's transfer mode, clipped by the clip region and the mask
@@ -445,7 +448,9 @@ again after `Reset` or `Initialize`. The same holds for the source: while `Read_
 `Enumerate` or `Render` runs it, a nested call of any of them fails with `Invalid_State`, and a
 `Cancel`, `Reset`, `Initialize` or `Finalize` it makes stands: the call returns what one in the
 state it left gets (`Operation_Cancelled` after `Cancel`), and what the source delivered for the
-binding it replaced is dropped, so a reset decoder reads its new source from the start.
+binding it replaced is dropped, so a reset decoder reads its new source from the start. After a
+`Cancel` the decoder asks its source for nothing more, not even the rest of the opcode it was
+reading, and what the source delivered for the call it cancelled is dropped.
 `Initialize` and `Reset` ask the source's `Offset` where the picture begins; an exception from it
 propagates and leaves the decoder `Stopped`, its earlier picture discarded and bound to nothing,
 until `Reset` or `Initialize`.

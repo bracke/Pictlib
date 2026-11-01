@@ -119,7 +119,7 @@ procedure Pictlib_Conformance is
    --  The first PNG embedded in an SVG file, as a data URI, written to Target.
    type String_Access is access String;
    procedure Free is new Ada.Unchecked_Deallocation (String, String_Access);
-   procedure Free is new Ada.Unchecked_Deallocation (Pictlib.Streams.Byte_Array, Pictlib.Streams.Byte_Array_Access);
+   procedure Free (Item : in out Pictlib.Streams.Byte_Array_Access) renames Pictlib_Testing.Files.Free;
 
    function Extract_PNG (SVG_File, Target : String) return Boolean is
       use Ada.Streams.Stream_IO;

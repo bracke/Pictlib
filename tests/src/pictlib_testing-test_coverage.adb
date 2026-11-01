@@ -1,4 +1,6 @@
 with AUnit.Assertions;
+with Pictlib;
+with Pictlib.Internal.Coverage;
 with Pictlib.Internal.Regions;
 with Pictlib_Testing.Random;
 
@@ -53,6 +55,7 @@ package body Pictlib_Testing.Test_Coverage is
    end Random_Spans;
 
    procedure Span_Operations (T : in out AUnit.Test_Cases.Test_Case'Class);
+   procedure Line_Path (T : in out AUnit.Test_Cases.Test_Case'Class);
 
    overriding function Name (T : Test) return AUnit.Message_String is
       pragma Unreferenced (T);
@@ -64,6 +67,7 @@ package body Pictlib_Testing.Test_Coverage is
       use AUnit.Test_Cases.Registration;
    begin
       Register_Routine (T, Span_Operations'Access, "coverage.span_operations");
+      Register_Routine (T, Line_Path'Access, "coverage.line_path");
    end Register_Tests;
 
    --  Intersect and Subtract agree with column sets on 2,000 random pairs, and keep their result canonical.
@@ -94,4 +98,93 @@ package body Pictlib_Testing.Test_Coverage is
          end;
       end loop;
    end Span_Operations;
+
+   --  A 1 x 1 pen's line covers the pixels of Bresenham's walk, stepped here a pixel at a time as an independent
+   --  oracle (its x and y steps each decided on the error before either): every line between points of an 11 x 11
+   --  grid, and 90 random long ones through a small window, which must cost only the rows they reach.
+   procedure Line_Path (T : in out AUnit.Test_Cases.Test_Case'Class) is
+      pragma Unreferenced (T);
+      package Coverage renames Pictlib.Internal.Coverage;
+      use type Pictlib.Pixel_Count;
+      Window : constant Coverage.Area := (Top => -10, Left => -10, Bottom => 20, Right => 20);
+      type Grid is array (Window.Top .. Window.Bottom - 1, Window.Left .. Window.Right - 1) of Boolean;
+
+      function Walked (From, To : Coverage.Point) return Grid is
+         Result : Grid := [others => [others => False]];
+         X : Long_Long_Integer := Long_Long_Integer (From.H);
+         Y : Long_Long_Integer := Long_Long_Integer (From.V);
+         Dx : constant Long_Long_Integer := Long_Long_Integer (abs (To.H - From.H));
+         Dy : constant Long_Long_Integer := -Long_Long_Integer (abs (To.V - From.V));
+         Step_X : constant Long_Long_Integer := (if From.H < To.H then 1 else -1);
+         Step_Y : constant Long_Long_Integer := (if From.V < To.V then 1 else -1);
+         Error : Long_Long_Integer := Dx + Dy;
+         Twice : Long_Long_Integer;
+      begin
+         loop
+            if Y in Long_Long_Integer (Grid'First (1)) .. Long_Long_Integer (Grid'Last (1))
+              and then X in Long_Long_Integer (Grid'First (2)) .. Long_Long_Integer (Grid'Last (2))
+            then
+               Result (Integer (Y), Integer (X)) := True;
+            end if;
+            exit when X = Long_Long_Integer (To.H) and then Y = Long_Long_Integer (To.V);
+            Twice := 2 * Error;
+            if Twice >= Dy then
+               Error := Error + Dy;
+               X := X + Step_X;
+            end if;
+            if Twice <= Dx then
+               Error := Error + Dx;
+               Y := Y + Step_Y;
+            end if;
+         end loop;
+         return Result;
+      end Walked;
+
+      function Covered (Item : Coverage.Shape) return Grid is
+         Result : Grid := [others => [others => False]];
+      begin
+         for Y in Grid'Range (1) loop
+            for S of Coverage.Row (Item, Y) loop
+               for X in S.Left .. S.Right - 1 loop
+                  Result (Y, X) := True;
+               end loop;
+            end loop;
+         end loop;
+         return Result;
+      end Covered;
+
+      procedure Check (From, To : Coverage.Point) is
+         Item : Coverage.Shape;
+      begin
+         Coverage.Start (Item, Window);
+         Coverage.Line (Item, From, To, 1, 1);
+         Assert (Covered (Item) = Walked (From, To),
+                 "the line from" & From.H'Image & "," & From.V'Image & " to" & To.H'Image & "," & To.V'Image
+                 & " left Bresenham's path");
+         --  A few units for each row of the window, however long the line: its buffer, its path, its span.
+         Assert (Coverage.Work (Item) <= 8 * Pictlib.Pixel_Count (Window.Bottom - Window.Top),
+                 "the line from" & From.H'Image & "," & From.V'Image & " to" & To.H'Image & "," & To.V'Image
+                 & " cost" & Coverage.Work (Item)'Image);
+      end Check;
+
+      Generator : Pictlib_Testing.Random.Generator := Pictlib_Testing.Random.Seeded;
+      function Far return Integer is (Pictlib_Testing.Random.Next (Generator, 2 * 1_000_000) - 1_000_000);
+      function Near return Integer is (Pictlib_Testing.Random.Next (Generator, 30) - 10);
+   begin
+      for From_V in -5 .. 5 loop
+         for From_H in -5 .. 5 loop
+            for To_V in -5 .. 5 loop
+               for To_H in -5 .. 5 loop
+                  Check ((From_H, From_V), (To_H, To_V));
+               end loop;
+            end loop;
+         end loop;
+      end loop;
+      for Trial in 1 .. 30 loop
+         --  Long and shallow, long and steep, and long both ways, each crossing the window.
+         Check ((Far, Near), (Far, Near));
+         Check ((Near, Far), (Near, Far));
+         Check ((-1_000_000, -1_000_000 + Near), (1_000_000, 1_000_000 + Near));
+      end loop;
+   end Line_Path;
 end Pictlib_Testing.Test_Coverage;

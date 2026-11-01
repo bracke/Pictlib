@@ -11,7 +11,6 @@ with Ada.Characters.Handling;
 with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Directories;
 with Ada.Exceptions;
-with Ada.Unchecked_Deallocation;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Pictlib;
@@ -38,7 +37,11 @@ procedure Pictlib_Real_World is
    Defects : Natural := 0;
 
    subtype Bytes_Access is Pictlib.Streams.Byte_Array_Access;
-   procedure Free is new Ada.Unchecked_Deallocation (Pictlib.Streams.Byte_Array, Pictlib.Streams.Byte_Array_Access);
+   procedure Free (Item : in out Pictlib.Streams.Byte_Array_Access) renames Pictlib_Testing.Files.Free;
+
+   --  How far a component of a reference raster, another decoder's rendering of a vector picture, may differ:
+   --  fixtures/real_world/README.md states it.
+   Reference_Tolerance : constant := 2;
 
    --  With --opcodes, each picture's opcodes are counted and printed.
    Count_Opcodes : constant Boolean := Project_Tools.Processes.Has_Argument ("--opcodes");
@@ -122,7 +125,7 @@ procedure Pictlib_Real_World is
                      for X in 0 .. Width - 1 loop
                         if Pictlib_Testing.Canvases.Difference
                              (Pictlib_Testing.Canvases.Pixel (View, X, Y), Pictlib_Testing.Files.Pixel (Raster, X, Y))
-                           > Pictlib_Testing.Canvases.JPEG_Decoder_Tolerance
+                           > Reference_Tolerance
                         then
                            Wrong := Wrong + 1;
                         end if;

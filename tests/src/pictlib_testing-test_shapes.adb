@@ -173,6 +173,8 @@ package body Pictlib_Testing.Test_Shapes is
 
    Odd_Polygon : aliased constant Bytes := Pic (4, 4, W (16#71#) & W (11) & Rect (0, 0, 4, 4) & B (0));
    Bad_Pen_Mode : aliased constant Bytes := Pic (4, 4, Pen_Mode (20) & Op_Rect (16#31#, 0, 0, 1, 1));
+   --  A text mode no text is drawn in: checked when read, as a pen mode is.
+   Bad_Text_Mode : aliased constant Bytes := Pic (4, 4, W (16#05#) & W (20) & Op_Rect (16#31#, 0, 0, 1, 1));
    Bad_Pattern : aliased constant Bytes := Pic (4, 4, W (16#14#) & W (3) & Zeros (8));
    Reserved_Shape : aliased constant Bytes := Pic (4, 1, Op_Rect (16#35#, 0, 0, 1, 4));
 
@@ -417,6 +419,7 @@ package body Pictlib_Testing.Test_Shapes is
       Canvases.Expect_Failure (Bad_Pen_Mode, 4, 4, Errors.Transfer_Mode_Invalid, "pen mode 20", 16#08#);
       Canvases.Expect_Raster (Bad_Pen_Mode, 4, 4, "BWWW/WWWW/WWWW/WWWW", "pen mode 20, lenient",
                               (Strictness => Pictlib.Compatible, others => <>));
+      Canvases.Expect_Failure (Bad_Text_Mode, 4, 4, Errors.Transfer_Mode_Invalid, "text mode 20", 16#05#);
       Canvases.Expect_Failure (Bad_Pattern, 4, 4, Errors.Pattern_Invalid, "pattern type 3", 16#14#);
    end Clipping_And_Limits;
 end Pictlib_Testing.Test_Shapes;

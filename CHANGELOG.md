@@ -58,6 +58,24 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Fixed
 
+- A `Cancel` from the decoder's source stops the source being asked for
+  anything more, even the rest of the opcode being read: a source taking a
+  byte a read that cancelled within a 10,000-byte opcode was read 9,445
+  times more, and the opcode then drawn.
+- A QuickTime mask whose region gives itself a size other than `maskSize` is
+  refused with `Region_Invalid` as soon as its size word is read; one that
+  claimed more failed with `Source_Unexpected_End` or a region limit after
+  reading up to 64 KiB past the opcode.
+- `TxMode` is checked when read, as `PnMode` is: an unknown text mode in a
+  picture that draws no text is `Transfer_Mode_Invalid` in `Strict` too.
+- A line costs a unit for each row it can reach, its columns there found
+  directly, instead of a unit for every pixel of its whole length: a line
+  millions of pixels long crossing a small canvas no longer spends the
+  drawing budget on what lies outside it.
+- A text opcode's glyph cells, some 20 KB, are on the heap rather than the
+  stack; a kept metadata item's buffer is released if storing it raises; the
+  writer's over-limit report saturates; JPEG data is read from the picture
+  4 KiB at a time instead of a byte at a time.
 - A `Reset` or `Initialize` whose source's `Offset` raises discards the
   earlier picture too: `Header` and `Last_Error` no longer report it.
 - The encoder stops writing the moment a destination rebinds or cancels it,
@@ -311,6 +329,13 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Documentation
 
+- The specification says a non-empty QuickTime matte alone is skipped
+  leniently, the image drawn without it, and when a transfer mode is
+  checked. The decoder's and encoder's doc comments say what a source or
+  destination may call, and when a decoder is `Stopped`; QuickTime's `Draw`
+  lists every code it returns. ROBUST-001 and the plan say the scrambled CVE
+  files reach only the version check; the plan no longer says CI has not
+  run, and says `pictlib_generate --check` runs by hand.
 - The specification describes text cells stretched to their ink, the work
   of copying a region shape, the font file bytes a load is charged, and
   `Font_Unavailable`; `Warning_Record_Limit` is documented as never crossed.
@@ -370,6 +395,15 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Internal structure
 
+- The decoder's and encoder's call guards extend one
+  `Internal.Call_Guards.Guard`; both report a wrong state through
+  `Failures.Wrong_State`, the decoder's failing helper is `Fail` like the
+  encoder's, and the encoder's result accumulator is `Accumulate`. One
+  `Destination_Access`, one long-length read (`Sessions.Read_Data_Length`),
+  one span charge in `Rendering.Fill`, and `Coverage.Subtract` reuses one
+  scratch list instead of copying every row. A branch of
+  `Opcodes.Shape_Opcode_Name` that could not run is a precondition, and the
+  view check and the encoder's color survey test each condition once.
 - `Pictlib.Decoding` names its internals only privately, and they are
   `Internal.Decoder_Core`, which discards its own picture. Decoder, encoder,
   writer and picture stream share one `Internal.Generation`; each guard
@@ -569,9 +603,9 @@ All tooling is Ada, in the `tests` crate:
   compares them with the committed ones byte for byte; it clears stale
   staging first and reports a failure partway. `pictlib_conformance`,
   `pictlib_generate` and `pictlib_prove` print the versions of the external
-  programs they run; CI installs `gnatprove^15`, fuzzes from its run number
-  (`pictlib_complete --fuzz-seed`) and keeps the fuzzer's inputs when it
-  fails.
+  programs they run; CI installs `gnatprove=15.1.0`, fuzzes from its run
+  number (`PICTLIB_FUZZ_SEED`) and keeps the fuzzer's inputs when it fails
+  or is cancelled.
 - `pictlib_fuzz` fails without its fixture seeds and refuses seed 0 and no
   iterations; the generator draws from its high bits. `pictlib_check` runs
   every policy step and the suite whatever one of them raises, requires the
@@ -586,6 +620,14 @@ All tooling is Ada, in the `tests` crate:
   cleanly, so a failure can be read in CI's log; CI passes its fuzz seed in
   `PICTLIB_FUZZ_SEED`, which `pictlib_complete` reads when `--fuzz-seed` is
   not given, rather than in an argument holding a space.
+- `pictlib_fuzz` saves an input still running after 60 seconds while it
+  runs, so one that never returns is kept, and CI uploads the inputs of a
+  cancelled run too; it seeds from LibreOffice's failing pictures as well.
+  `Canvases.Least_Drawing_Work` fails when no budget it tried rendered,
+  rather than returning its upper bound; `pictlib_generate` validates its
+  arguments like the other tools; the tools share one `Files.Free` and one
+  directory walker; the real-world reference check names its own tolerance;
+  CI pins the sibling-checkout action to a commit.
 - `pictlib_check`, `pictlib_conformance`, `pictlib_benchmark` and
   `pictlib_prove` refuse unknown arguments, so a misspelt `--require` cannot
   pass with the decoders skipped. `pictlib_fuzz --replay` names files from

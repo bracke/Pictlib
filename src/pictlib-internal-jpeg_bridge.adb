@@ -22,7 +22,7 @@ package body Pictlib.Internal.JPEG_Bridge is
    Jpeglib_Fixed_Bytes : constant := 1_048_576;
    --  The largest MCU side: 8 pixels times jpeglib's largest sampling factor, 4.
    MCU_Side : constant := 32;
-   --  The most jpeglib is handed at once.
+   --  The most read from the picture for jpeglib at once: it asks for a byte at a time.
    Read_Chunk : constant := 4096;
    --  jpeglib's coefficients: 64 per block, 4 bytes each.
    Coefficient_Block_Bytes : constant := 64 * 4;
@@ -129,13 +129,24 @@ package body Pictlib.Internal.JPEG_Bridge is
       return Results.Success;
    end Check_Header;
 
-   --  The image data, read straight from the picture through S, at most Remaining bytes; a failure of the
-   --  picture's own reading is kept in Failure, as jpeglib sees only that its source failed.
+   --  The image data, read straight from the picture through S a chunk at a time into Held, at most Remaining
+   --  bytes more; a failure of the picture's own reading is kept in Failure, as jpeglib sees only that its source
+   --  failed.
    type Embedded_Source (S : not null access Sessions.Session) is limited new Jpeglib.Streams.Source with record
+      --  Bytes of the data not read from the picture yet.
       Remaining : Byte_Count := 0;
+      --  Held (First .. Last) is read and not yet handed to jpeglib.
+      Held : Streams.Byte_Array (1 .. Read_Chunk);
+      First : Positive := 1;
+      Last : Natural := 0;
       Taken : Jpeglib.Source_Offset := 0;
       Failure : Results.Result := Results.Success;
    end record;
+
+   function Held_Count (Object : Embedded_Source'Class) return Natural is (Object.Last - Object.First + 1);
+
+   function Ended (Object : Embedded_Source'Class) return Boolean is
+     (Object.Remaining = 0 and then Held_Count (Object) = 0);
 
    overriding function Read
      (Object : in out Embedded_Source; Buffer : out Jpeglib.Streams.Byte_Array)
@@ -156,42 +167,55 @@ package body Pictlib.Internal.JPEG_Bridge is
      (Object : in out Embedded_Source; Buffer : out Jpeglib.Streams.Byte_Array)
       return Jpeglib.Streams.Source_Result
    is
-      Count : constant Natural :=
-        Natural (Byte_Count'Min (Byte_Count (Natural'Min (Buffer'Length, Read_Chunk)), Object.Remaining));
-      Chunk : Streams.Byte_Array (1 .. Count);
-      Step : Results.Result;
+      Count : Natural;
    begin
       --  Only the bytes delivered are defined, as for any source: clearing the rest on every call would clear
       --  jpeglib's buffer over and over.
-      if Count = 0 then
-         return (Result => Jpeglib.Errors.Make (Jpeglib.Errors.No_Error), Count => 0, End_Of_Input => True);
+      if Buffer'Length = 0 then
+         return (Result => Jpeglib.Errors.Make (Jpeglib.Errors.No_Error), Count => 0, End_Of_Input => Ended (Object));
+      elsif Held_Count (Object) = 0 then
+         if Object.Remaining = 0 then
+            return (Result => Jpeglib.Errors.Make (Jpeglib.Errors.No_Error), Count => 0, End_Of_Input => True);
+         end if;
+         declare
+            Fill : constant Natural := Natural (Byte_Count'Min (Read_Chunk, Object.Remaining));
+            Step : constant Results.Result := Sessions.Read_Into (Object.S.all, Object.Held (1 .. Fill));
+         begin
+            if not Results.Succeeded (Step) then
+               return Failed (Object, Step);
+            end if;
+            Object.First := 1;
+            Object.Last := Fill;
+            Object.Remaining := Object.Remaining - Byte_Count (Fill);
+         end;
       end if;
-      Step := Sessions.Read_Into (Object.S.all, Chunk);
-      if not Results.Succeeded (Step) then
-         return Failed (Object, Step);
-      end if;
-      for Index in Chunk'Range loop
-         Buffer (Buffer'First + Index - 1) := Jpeglib.Byte (Chunk (Index));
+      Count := Natural'Min (Buffer'Length, Held_Count (Object));
+      for Index in 0 .. Count - 1 loop
+         Buffer (Buffer'First + Index) := Jpeglib.Byte (Object.Held (Object.First + Index));
       end loop;
-      Object.Remaining := Object.Remaining - Byte_Count (Count);
+      Object.First := Object.First + Count;
       Object.Taken := Object.Taken + Jpeglib.Source_Offset (Count);
       return (Result => Jpeglib.Errors.Make (Jpeglib.Errors.No_Error), Count => Jpeglib.Byte_Count (Count),
-              End_Of_Input => Object.Remaining = 0);
+              End_Of_Input => Ended (Object));
    end Read;
 
    overriding function Skip (Object : in out Embedded_Source; Count : Jpeglib.Byte_Count)
      return Jpeglib.Streams.Source_Result
    is
-      Wanted : constant Byte_Count := Byte_Count'Min (Byte_Count (Count), Object.Remaining);
+      --  What is held first, then from the picture.
+      From_Held : constant Natural :=
+        (if Byte_Count (Count) < Byte_Count (Held_Count (Object)) then Natural (Count) else Held_Count (Object));
+      Wanted : constant Byte_Count := Byte_Count'Min (Byte_Count (Count) - Byte_Count (From_Held), Object.Remaining);
       Step : constant Results.Result := Sessions.Skip_Data (Object.S.all, Wanted);
    begin
       if not Results.Succeeded (Step) then
          return Failed (Object, Step);
       end if;
+      Object.First := Object.First + From_Held;
       Object.Remaining := Object.Remaining - Wanted;
-      Object.Taken := Object.Taken + Jpeglib.Source_Offset (Wanted);
-      return (Result => Jpeglib.Errors.Make (Jpeglib.Errors.No_Error), Count => Jpeglib.Byte_Count (Wanted),
-              End_Of_Input => Object.Remaining = 0);
+      Object.Taken := Object.Taken + Jpeglib.Source_Offset (Byte_Count (From_Held) + Wanted);
+      return (Result => Jpeglib.Errors.Make (Jpeglib.Errors.No_Error),
+              Count => Jpeglib.Byte_Count (Byte_Count (From_Held) + Wanted), End_Of_Input => Ended (Object));
    end Skip;
 
    --  Decode the JPEG, read straight from the picture, at most Item.Data_Size bytes, into Pixels, which is set

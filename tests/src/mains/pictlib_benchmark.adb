@@ -17,7 +17,6 @@ with Pictlib_Testing.Samples;
 
 procedure Pictlib_Benchmark is
    use type Ada.Calendar.Time;
-   use type Pictlib.Streams.Byte_Array_Access;
 
    Width : constant := 1024;
    Height : constant := 768;
@@ -39,7 +38,7 @@ procedure Pictlib_Benchmark is
       end if;
    end Report;
 
-   procedure Free is new Ada.Unchecked_Deallocation (Pictlib.Streams.Byte_Array, Pictlib.Streams.Byte_Array_Access);
+   procedure Free (Item : in out Pictlib.Streams.Byte_Array_Access) renames Pictlib_Testing.Files.Free;
    procedure Free_Picture is new Ada.Unchecked_Deallocation
      (Pictlib.Streams.Byte_Array, Pictlib_Testing.Samples.Bytes_Access);
 

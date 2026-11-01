@@ -1,4 +1,5 @@
 with Pictlib.Internal.Sessions.Accounting;
+with Ada.Unchecked_Deallocation;
 with Pictlib.Internal.Failures;
 with Pictlib.Errors;
 with Pictlib.Fonts;
@@ -84,10 +85,7 @@ package body Pictlib.Internal.Typesetting is
             return Outcome;
          end if;
       end if;
-      Outcome := Rendering.Drawing_Mode (S, Event, State.Mode, Hilited, Kind);
-      if not Results.Succeeded (Outcome) then
-         return Outcome;
-      end if;
+      Kind := (if Hilited then Transfer_Modes.Hilite else State.Mode);
 
       declare
          --  Every textrender call below is made under the process-wide textrender lock, which the calls that
@@ -110,6 +108,9 @@ package body Pictlib.Internal.Typesetting is
       Glyph_Left, Glyph_Top : Integer := 0;
       Left, Right, Top, Bottom : Integer := 0;
    end record;
+   type Cell_Array is array (Positive range <>) of Cell;
+   type Cell_Array_Access is access Cell_Array;
+   procedure Free is new Ada.Unchecked_Deallocation (Cell_Array, Cell_Array_Access);
 
    --  The cell of a glyph drawn at Pen, Advance wide, on Baseline, emboldened by Bold columns.
    function Cell_At
@@ -179,8 +180,9 @@ package body Pictlib.Internal.Typesetting is
         (Transfer_Modes.Compose
            (Kind, (if Ink then Images.Black else Images.White), Under, P.Port.Colors, Bit_Source => True));
 
-      --  A text opcode holds at most 255 characters, so the cells fit the stack.
-      Cells : array (1 .. Characters'Length) of Cell;
+      --  A text opcode holds at most 255 characters; their cells, some 20 KB, are on the heap all the same, as
+      --  a decoder may run in a task with a small stack.
+      Cells : Cell_Array_Access := new Cell_Array (1 .. Characters'Length);
       Cell_Count : Natural := 0;
       --  The cell Color_At paints.
       Current : Positive := 1;
@@ -333,6 +335,11 @@ package body Pictlib.Internal.Typesetting is
       if Results.Succeeded (Outcome) and then Has (State.Face, Text.Underline) then
          Outcome := Paint_Underline;
       end if;
+      Free (Cells);
       return Outcome;
+   exception
+      when others =>
+         Free (Cells);
+         raise;
    end Draw_Characters;
 end Pictlib.Internal.Typesetting;

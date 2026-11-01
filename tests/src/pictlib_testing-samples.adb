@@ -1,8 +1,9 @@
 with Ada.Unchecked_Deallocation;
+with Pictlib_Testing.Files;
 
 package body Pictlib_Testing.Samples is
    procedure Free is new Ada.Unchecked_Deallocation (Pictlib.Streams.Byte_Array, Bytes_Access);
-   procedure Free is new Ada.Unchecked_Deallocation (Pictlib.Streams.Byte_Array, Pictlib.Streams.Byte_Array_Access);
+   procedure Free (Item : in out Pictlib.Streams.Byte_Array_Access) renames Pictlib_Testing.Files.Free;
 
    function Color (Item : Kind; X, Y : Natural) return Pictlib.Images.RGB_Color is
    begin

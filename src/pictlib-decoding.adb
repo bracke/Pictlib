@@ -1,5 +1,5 @@
-with Ada.Finalization;
 with Pictlib.Geometry;
+with Pictlib.Internal.Call_Guards;
 with Pictlib.Internal.Container;
 with Pictlib.Internal.Failures;
 with Pictlib.Internal.Opcode_Reader;
@@ -58,50 +58,37 @@ package body Pictlib.Decoding is
    function State (Object : Decoder) return Decoder_State is (Object.Current_State);
 
    function Wrong_State (Object : Decoder) return Results.Result is
-     (Results.Failure
-        (if Object.Current_State = Cancelled then Errors.Operation_Cancelled else Errors.Invalid_State));
+     (Internal.Failures.Wrong_State (Object.Current_State = Cancelled));
 
-   function Finish (Object : in out Decoder; Outcome : Results.Result) return Results.Result is
+   --  Outcome, a failure of which ends decoding: the decoder is then Failed with it as its last error.
+   function Fail (Object : in out Decoder; Outcome : Results.Result) return Results.Result is
    begin
       if not Results.Succeeded (Outcome) then
          Object.First_Error := Outcome.First_Error;
          Object.Current_State := Failed;
       end if;
       return Outcome;
-   end Finish;
+   end Fail;
 
-   --  Guards a call that reads the picture: caller code it runs (a visitor, the source) may raise, or the task be
-   --  aborted. However the call ends, Busy, when given, is cleared; a call that leaves the decoder in From,
-   --  the state it began in, did not return, since every return moves it on, and leaves it Stopped, its stream
-   --  partly read, until Reset or Initialize.
-   --  A call whose caller code rebound the decoder (Binds moved) left it as that code chose.
+   --  Guards a call that reads the picture, as Call_Guards describes: one that did not return leaves the decoder
+   --  Stopped, its stream partly read, until Reset or Initialize.
    type Call_Guard
      (From : Decoder_State;
       State : not null access Decoder_State;
       Busy : not null access Boolean;
-      Binds : not null access constant Internal.Generation) is new Ada.Finalization.Limited_Controlled with record
-      Binds_At_Start : Internal.Generation := 0;
-   end record;
+      Binds : not null access constant Internal.Generation) is new Internal.Call_Guards.Guard (Busy, Binds)
+   with null record;
 
-   --  Caller code the guarded call ran rebound the decoder.
-   function Rebound (Guard : Call_Guard'Class) return Boolean is (Guard.Binds.all /= Guard.Binds_At_Start);
+   overriding procedure Left_Unfinished (Guard : in out Call_Guard);
 
-   overriding procedure Initialize (Guard : in out Call_Guard);
-   overriding procedure Finalize (Guard : in out Call_Guard);
-
-   overriding procedure Initialize (Guard : in out Call_Guard) is
+   overriding procedure Left_Unfinished (Guard : in out Call_Guard) is
    begin
-      Guard.Busy.all := True;
-      Guard.Binds_At_Start := Guard.Binds.all;
-   end Initialize;
-
-   overriding procedure Finalize (Guard : in out Call_Guard) is
-   begin
-      Guard.Busy.all := False;
-      if Guard.State.all = Guard.From and then not Rebound (Guard) then
+      if Guard.State.all = Guard.From then
          Guard.State.all := Stopped;
       end if;
-   end Finalize;
+   end Left_Unfinished;
+
+   function Rebound (Guard : Internal.Call_Guards.Guard'Class) return Boolean renames Internal.Call_Guards.Rebound;
 
    function Read_Header (Object : in out Decoder) return Results.Result is
    begin
@@ -123,7 +110,7 @@ package body Pictlib.Decoding is
          elsif Results.Succeeded (Outcome) then
             Object.Current_State := Header_Read;
          end if;
-         return Finish (Object, Outcome);
+         return Fail (Object, Outcome);
       end;
    end Read_Header;
 
@@ -209,7 +196,7 @@ package body Pictlib.Decoding is
             if Object.Current_State /= Header_Read then
                return Wrong_State (Object);
             elsif not Results.Succeeded (Outcome) then
-               return Finish (Object, Outcome);
+               return Fail (Object, Outcome);
             elsif Kind = Ended_By_Input then
                Object.Current_State := Finished;
                return Results.Success;
@@ -229,7 +216,7 @@ package body Pictlib.Decoding is
                   elsif Results.Succeeded (Trailing) then
                      Object.Current_State := Finished;
                   end if;
-                  return Finish (Object, Trailing);
+                  return Fail (Object, Trailing);
                end;
             end if;
          end;
@@ -278,24 +265,21 @@ package body Pictlib.Decoding is
       Frame : constant Geometry.Rect := Object.Inner.Info.Frame;
       Budget : Limits.Limit_Set renames Object.Inner.Session.Budget;
       Pixels : constant Pixel_Count := Frame_Pixels (Object);
+      Frame_Sized : constant Boolean :=
+        Integer (Output.Descriptor.Width) = Geometry.Width (Frame)
+        and then Integer (Output.Descriptor.Height) = Geometry.Height (Frame);
    begin
-      if Integer (Output.Descriptor.Width) = Geometry.Width (Frame)
-        and then Integer (Output.Descriptor.Height) = Geometry.Height (Frame)
-        and then not Images.Is_Valid (Output)
-      then
-         --  The frame's size, but not a valid view: the least a valid view of its size and format holds, against
-         --  what it holds.
-         return Internal.Failures.Invalid_View (Output.Descriptor);
-      elsif not Images.Is_Valid (Output)
-        or else Integer (Output.Descriptor.Width) /= Geometry.Width (Frame)
-        or else Integer (Output.Descriptor.Height) /= Geometry.Height (Frame)
-      then
+      if not Frame_Sized then
          return Results.Failure
            (Errors.Make
               (Errors.Invalid_Argument,
                (Expected => Byte_Count (Pixels),
                 Actual => Byte_Count (Output.Descriptor.Width) * Byte_Count (Output.Descriptor.Height),
                 others => <>)));
+      elsif not Images.Is_Valid (Output) then
+         --  The frame's size, but not a valid view: the least a valid view of its size and format holds, against
+         --  what it holds.
+         return Internal.Failures.Invalid_View (Output.Descriptor);
       elsif Output.Descriptor.Accessible_Bytes > Budget.Max_Output_Bytes then
          return Internal.Failures.Over_Limit
            (Output_Byte_Limit, Budget.Max_Output_Bytes, Output.Descriptor.Accessible_Bytes);
@@ -317,7 +301,7 @@ package body Pictlib.Decoding is
            (if Results.Succeeded (Frame_Checked) then Check_View (Object, Output) else Results.Success);
       begin
          if not Results.Succeeded (Frame_Checked) then
-            return Finish (Object, Frame_Checked);
+            return Fail (Object, Frame_Checked);
          elsif not Results.Succeeded (View_Checked) then
             --  The picture is untouched and can still be rendered.
             return View_Checked;
@@ -367,7 +351,7 @@ package body Pictlib.Decoding is
          if Results.Succeeded (Outcome) then
             Object.Current_State := Finished;
          end if;
-         return Finish (Object, Outcome);
+         return Fail (Object, Outcome);
       end;
    end Render;
 
@@ -396,6 +380,8 @@ package body Pictlib.Decoding is
    begin
       if Object.Current_State in Ready | Header_Read then
          Object.Current_State := Cancelled;
+         --  So a call the source cancelled from reads not even the rest of its opcode.
+         Internal.Picture_Stream.Stop (Object.Inner.Session.Stream.all);
       end if;
    end Cancel;
 

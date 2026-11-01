@@ -5,6 +5,7 @@ with Pictlib.Limits;
 with Pictlib.Results;
 with Pictlib.Streams;
 private with Pictlib.Internal;
+private with Pictlib.Internal.Writers;
 
 --  Forward-only raster PICT encoder. One image becomes one extended version 2 picture: the optional 512-byte
 --  file header, picSize, picFrame, VersionOp, HeaderOp, DefHilite, a clip of the frame, one bits opcode and
@@ -90,17 +91,16 @@ package Pictlib.Encoding is
    procedure Finalize (Object : in out Encoder);
 
 private
-   type Destination_Access is access all Streams.Destination'Class;
-
    type Encoder is limited record
       Current_State : aliased Encoder_State := Created;
-      Output : Destination_Access := null;
+      Output : Internal.Writers.Destination_Access := null;
       Encode_Options : Options;
       Encode_Limits : Limits.Limit_Set := Limits.Default_Limits;
       Layout : Layout_Kind := Auto;
       Written : Byte_Count := 0;
       First_Error : aliased Errors.Error := Errors.Make (Errors.No_Error);
-      --  True while Encode or Finish runs the destination, which may not call into the encoder under it.
+      --  True while Encode or Finish runs the destination, which may not Encode or Finish under it; it may Cancel,
+      --  Reset, Initialize or Finalize the encoder.
       Busy : aliased Boolean := False;
       --  Steps on every Initialize, Reset, Finalize and Cancel that cancels, so a call can tell the destination
       --  rebound or cancelled the encoder; a write in progress stops when it moves.

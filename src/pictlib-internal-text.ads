@@ -1,9 +1,9 @@
 with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Finalization;
 with Ada.Strings.Unbounded;
-with Interfaces;
 with Pictlib.Fonts;
 with Pictlib.Geometry;
+with Pictlib.Internal.Transfer_Modes;
 with Textrender;
 
 --  Text state of the port, the Mac Roman character set, and the TrueType renderers text is drawn with.
@@ -22,8 +22,8 @@ package Pictlib.Internal.Text is
    type Text_State is record
       Font : Fonts.Font_ID := 0;
       Face : Byte := 0;
-      --  srcOr, QuickDraw's default text mode.
-      Mode : Interfaces.Unsigned_16 := 1;
+      --  srcOr, QuickDraw's default text mode; TxMode's word is classified when read.
+      Mode : Transfer_Modes.Mode_Kind := Transfer_Modes.Or_Mode;
       --  0 is the default size, 12.
       Size : Natural := 0;
       Space_Extra : Geometry.Fixed := 0;

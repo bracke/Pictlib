@@ -18,6 +18,10 @@ package Pictlib.Internal.Picture_Stream is
    --  Unbind.
    --  @param Object Reader to release; it reads nothing until bound again.
    procedure Unbind (Object : in out Reader);
+   --  Stop.
+   --  @param Object Reader that reads nothing more until bound again; what it consumed still counts, and a reply
+   --  its source gives to a call made before is dropped, as after a rebinding.
+   procedure Stop (Object : in out Reader);
 
    --  Fill lookahead.
    --  @param Object Reader whose look-ahead buffer is filled.
@@ -74,7 +78,7 @@ private
       Consumed : Byte_Count := 0;
       Picture_Origin : Byte_Count := 0;
       Max_Bytes : Byte_Count := 0;
-      --  Steps on every Bind and Unbind, so a call into the source can tell the reader was rebound under it.
+      --  Steps on every Bind, Unbind and Stop, so a call into the source can tell the reader was rebound under it.
       Bound : Generation := 0;
    end record;
 end Pictlib.Internal.Picture_Stream;

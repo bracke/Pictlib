@@ -10,15 +10,17 @@ private with Pictlib.Internal;
 private with Pictlib.Internal.Decoder_Core;
 
 --  Forward-only PICT decoder. Initialize binds a borrowed source; Read_Header reads the container;
---  Enumerate walks the opcode stream once. Calls in the wrong state fail with Invalid_State (Operation_Cancelled
---  after Cancel) and leave the state unchanged. Reset rebinds a source for another picture.
+--  Enumerate walks the opcode stream once, or Render draws it into a caller's view. Calls in the wrong state fail
+--  with Invalid_State (Operation_Cancelled after Cancel) and leave the state unchanged. Reset rebinds a source
+--  for another picture.
 package Pictlib.Decoding is
    type Decoder_State is
      (Created,      --  not initialized, or finalized
       Ready,        --  bound to a source
       Header_Read,  --  the container was read; the opcode stream is next
       Finished,     --  the end opcode was reached
-      Stopped,      --  the visitor stopped enumeration early, or caller code raised mid-picture
+      Stopped,      --  the visitor stopped enumeration early, caller code raised mid-picture, or the source's
+                    --  Offset raised in Initialize or Reset
       Failed,       --  a failure ended decoding; Last_Error reports it
       Cancelled);
 
@@ -137,7 +139,9 @@ package Pictlib.Decoding is
 
    --  Cancel.
    --  @param Object Decoder; in Ready or Header_Read it becomes Cancelled, and later operations fail with
-   --  Operation_Cancelled until Reset or Initialize; in any other state nothing changes.
+   --  Operation_Cancelled until Reset or Initialize (a call nested in a running one fails with Invalid_State all
+   --  the same); in any other state nothing changes. A source that cancels the decoder reading from it is asked
+   --  for nothing more, not even the rest of the opcode being read.
    procedure Cancel (Object : in out Decoder);
    --  Finalize.
    --  @param Object Decoder; releases retained metadata and the source binding. Idempotent.

@@ -1,5 +1,6 @@
 with Pictlib.Errors;
 with Pictlib.Internal.Bytes;
+with Pictlib.Internal.Checked_Arithmetic;
 with Pictlib.Internal.Failures;
 with Pictlib.Internal.Replies;
 
@@ -45,7 +46,7 @@ package body Pictlib.Internal.Writers is
       elsif Byte_Count (Data'Length) > Object.Max_Bytes - Object.Total then
          Object.Failure :=
            Failures.Over_Limit
-             (Output_Byte_Limit, Object.Max_Bytes, Object.Total + Data'Length,
+             (Output_Byte_Limit, Object.Max_Bytes, Checked_Arithmetic.Saturating_Add (Object.Total, Data'Length),
               Destination => Destination_Offset (Object.Total));
          return Object.Failure;
       elsif Object.Output = null then

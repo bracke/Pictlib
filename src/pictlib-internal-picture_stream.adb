@@ -30,10 +30,16 @@ package body Pictlib.Internal.Picture_Stream is
       Object.Bound := Object.Bound + 1;
    end Unbind;
 
+   procedure Stop (Object : in out Reader) is
+   begin
+      Object.Input := null;
+      Object.Bound := Object.Bound + 1;
+   end Stop;
+
    function Buffered (Object : Reader) return Natural is (Object.Last - Object.First + 1);
 
-   --  The reader was rebound or unbound while its source ran, by caller code the source called: what the source
-   --  delivered belongs to no picture this reader reads, and is neither kept nor counted.
+   --  The reader was rebound, unbound or stopped while its source ran, by caller code the source called: what the
+   --  source delivered belongs to no picture this reader reads, and is neither kept nor counted.
    Rebound_Reply : constant Streams.Source_Result :=
      (Error => Errors.Make (Errors.Invalid_State), Count => 0, End_Of_Input => False);
 

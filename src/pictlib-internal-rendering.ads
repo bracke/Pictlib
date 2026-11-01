@@ -28,7 +28,8 @@ package Pictlib.Internal.Rendering is
    --  @return True when Value is within Reach.
    function Within_Reach (Value : Integer) return Boolean is (Value in -Reach .. Reach);
 
-   --  The origin stays a 16-bit coordinate inside Reach, so every point read after it is within reach.
+   --  The origin stays this far inside Reach, one 16-bit coordinate's span, so every point read after it is
+   --  within reach.
    Origin_Reach : constant := Reach - 2 ** 15;
 
    --  Origin within reach.

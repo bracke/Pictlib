@@ -207,6 +207,8 @@ package body Pictlib_Testing.Source_Policy is
       return (if Feed = 0 then Text'Last else Feed - 1);
    end End_Of_Line;
 
+   --  The file as text, every line ended by LF whatever the platform wrote: unlike Project_Tools.Files'
+   --  Read_Raw_File, so the checks below match the same text on a checkout with CRLF line ends.
    function Read_Whole (Path : String) return String is
       File : Ada.Text_IO.File_Type;
       Text : Unbounded_String;
@@ -497,28 +499,20 @@ package body Pictlib_Testing.Source_Policy is
 
    procedure Check_Tooling (Root : String) is
       --  Directories of the tree that hold no source of its own.
-      function Skipped (Name : String) return Boolean is
-        (Name in "." | ".." | ".git" | "alire" | "obj" | "lib" | "bin" | "artifacts" | "config");
+      function Entered (Name : String) return Boolean is
+        (Name not in ".git" | "alire" | "obj" | "lib" | "bin" | "artifacts" | "config");
 
       procedure Walk (Directory : String) is
          use Ada.Directories;
-         Search : Search_Type;
-         Item : Directory_Entry_Type;
       begin
-         Start_Search (Search, Directory, "*");
-         while More_Entries (Search) loop
-            Get_Next_Entry (Search, Item);
-            if Kind (Item) = Ada.Directories.Directory and then not Skipped (Simple_Name (Item)) then
-               Walk (Full_Name (Item));
-            elsif Kind (Item) = Ordinary_File
-              and then (Ada.Characters.Handling.To_Lower (Extension (Simple_Name (Item)))
-                          in "sh" | "bash" | "py" | "ps1" | "bat" | "cmd" | "pl"
-                        or else Simple_Name (Item) in "Makefile" | "makefile" | "GNUmakefile")
+         for Path of Tools.Files_Below (Directory, Enter => Entered'Access) loop
+            if Ada.Characters.Handling.To_Lower (Extension (Path))
+                 in "sh" | "bash" | "py" | "ps1" | "bat" | "cmd" | "pl"
+              or else Simple_Name (Path) in "Makefile" | "makefile" | "GNUmakefile"
             then
-               Fail (Full_Name (Item) & ": a script; tooling is an Ada tool of the tests crate");
+               Fail (Path & ": a script; tooling is an Ada tool of the tests crate");
             end if;
          end loop;
-         End_Search (Search);
       end Walk;
 
       Workflow : constant String := Root & "/.github/workflows/ci.yml";
