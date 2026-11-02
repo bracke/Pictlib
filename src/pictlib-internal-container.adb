@@ -110,9 +110,13 @@ package body Pictlib.Internal.Container is
          if Results.Succeeded (Outcome)
            and then (Info.Horizontal_Resolution <= 0 or else Info.Vertical_Resolution <= 0)
          then
-            --  Leniently the resolution is 72 dpi.
-            Info.Horizontal_Resolution := Geometry.Fixed_72;
-            Info.Vertical_Resolution := Geometry.Fixed_72;
+            --  Leniently a non-positive resolution is 72 dpi; a good one beside it is kept.
+            if Info.Horizontal_Resolution <= 0 then
+               Info.Horizontal_Resolution := Geometry.Fixed_72;
+            end if;
+            if Info.Vertical_Resolution <= 0 then
+               Info.Vertical_Resolution := Geometry.Fixed_72;
+            end if;
             return Sessions.Reject_Or_Warn
               (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility, Header_Op_Context);
          end if;

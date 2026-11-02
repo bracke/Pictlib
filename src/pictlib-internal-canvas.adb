@@ -60,21 +60,25 @@ package body Pictlib.Internal.Canvas is
    procedure Fill (Target : in out Canvas; Color : Images.RGB_Color) is
       Row_Bytes : constant Natural :=
         Target.Width * Natural (Images.Bytes_Per_Pixel (Target.View.Descriptor.Format));
-      Storage : Streams.Byte_Array renames Target.View.Storage.all;
-      First : constant Positive := Position (Target, 0, 0);
    begin
+      --  A canvas not bound to a view has no pixels, and no storage to name.
       if Target.Width = 0 or else Target.Height = 0 then
          return;
       end if;
       for X in 0 .. Target.Width - 1 loop
          Put (Target, X, 0, Color);
       end loop;
-      for Y in 1 .. Target.Height - 1 loop
-         declare
-            Start : constant Positive := Position (Target, 0, Y);
-         begin
-            Storage (Start .. Start + Row_Bytes - 1) := Storage (First .. First + Row_Bytes - 1);
-         end;
-      end loop;
+      declare
+         Storage : Streams.Byte_Array renames Target.View.Storage.all;
+         First : constant Positive := Position (Target, 0, 0);
+      begin
+         for Y in 1 .. Target.Height - 1 loop
+            declare
+               Start : constant Positive := Position (Target, 0, Y);
+            begin
+               Storage (Start .. Start + Row_Bytes - 1) := Storage (First .. First + Row_Bytes - 1);
+            end;
+         end loop;
+      end;
    end Fill;
 end Pictlib.Internal.Canvas;

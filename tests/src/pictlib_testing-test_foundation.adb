@@ -141,18 +141,44 @@ package body Pictlib_Testing.Test_Foundation is
          return Pictlib.Results.Succeeded (Outcome) and then Pictlib.Decoding.Metadata_Count (Decoder) = 1;
       end Metadata_Works;
 
+      --  Black ink, all of it in "Hi"'s line at the pen (2, 15), in two glyphs apart; text.* checks the exact
+      --  pixels.
       function Text_Works return Boolean is
+         function Ink (X, Y : Natural) return Boolean is (Canvases.Pixel (Output, X, Y) = Pictlib.Images.Black);
+         function Column_Inked (X : Natural) return Boolean is (for some Y in 0 .. 19 => Ink (X, Y));
+         First : Natural := 24;
+         Last : Natural := 0;
       begin
-         return Renders (Written, 24, 20, Output)
-           and then (for some Y in 0 .. 19 =>
-                       (for some X in 0 .. 23 => Canvases.Pixel (Output, X, Y) /= Pictlib.Images.White));
+         if not Renders (Written, 24, 20, Output) then
+            return False;
+         end if;
+         for Y in 0 .. 19 loop
+            for X in 0 .. 23 loop
+               if Canvases.Pixel (Output, X, Y) /= Pictlib.Images.White
+                 and then not (Ink (X, Y) and then Y in 3 .. 17 and then X >= 2)
+               then
+                  return False;
+               end if;
+            end loop;
+         end loop;
+         for X in 0 .. 23 loop
+            if Column_Inked (X) then
+               First := Natural'Min (First, X);
+               Last := Natural'Max (Last, X);
+            end if;
+         end loop;
+         return First < Last and then (for some X in First .. Last => not Column_Inked (X));
       end Text_Works;
 
+      --  libjpeg's own decoding of the fixture, within what two conforming decoders may differ by.
       function JPEG_Works return Boolean is
+         Reference : constant Files.Raster := Files.Load_Raster ("external/small_decoded.ppm");
       begin
-         --  The fixture is not one color: a drawn image differs between its top and bottom rows.
          return Renders (Compressed, 8, 6, Output)
-           and then (for some X in 0 .. 7 => Canvases.Pixel (Output, X, 0) /= Canvases.Pixel (Output, 0, 5));
+           and then (for all Y in 0 .. 5 =>
+                       (for all X in 0 .. 7 =>
+                          Canvases.Difference (Canvases.Pixel (Output, X, Y), Files.Pixel (Reference, X, Y))
+                            <= Canvases.JPEG_Decoder_Tolerance));
       end JPEG_Works;
 
       --  Read back by pictlib's own decoder: enough to show the feature works, while the independent evidence that

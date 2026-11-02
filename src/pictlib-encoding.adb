@@ -73,6 +73,7 @@ package body Pictlib.Encoding is
                   Item.Colors.Append (Color);
                end if;
             end;
+            exit when Natural (Item.Colors.Length) > Largest_Colors;
          end loop;
          --  More colors than an indexed picture holds are not all black or white.
          exit when Natural (Item.Colors.Length) > Largest_Colors;
@@ -504,8 +505,19 @@ package body Pictlib.Encoding is
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
-      --  Only Auto's choice and an indexed palette need the colors; the other layouts write pixels as they are.
-      if Settings.Layout in Auto | Indexed_8 then
+      --  A layout given is checked against the rowBytes a PixMap can state before any pixel is surveyed.
+      if Settings.Layout /= Auto then
+         declare
+            Given : constant Plan := Plan_For (Image, Settings, Settings.Layout);
+         begin
+            if Given.Stored > Largest_Row_Bytes then
+               return Invalid (Largest_Row_Bytes, Byte_Count (Given.Stored));
+            end if;
+         end;
+      end if;
+      --  Only an indexed palette and Auto's choice, unless alpha decides it, need the colors; the other layouts
+      --  write pixels as they are.
+      if Settings.Layout = Indexed_8 or else (Settings.Layout = Auto and then not Alpha_Kept (Image, Settings)) then
          Survey (Image, Colors);
       end if;
       Choose_Layout (Image, Colors, Settings, Layout);

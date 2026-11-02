@@ -45,6 +45,10 @@ package body Pictlib_Testing.Test_Container is
    Zero_Resolution : aliased constant Bytes :=
      W (0) & Rect (0, 0, 10, 20) & W (16#0011#) & W (16#02FF#) & W (16#0C00#)
      & W (-2) & W (0) & L (0) & L (72 * 16#1_0000#) & Rect (0, 0, 10, 20) & L (0) & W (16#00FF#);
+   --  A good horizontal resolution beside a zero vertical one.
+   Half_Resolution : aliased constant Bytes :=
+     W (0) & Rect (0, 0, 10, 20) & W (16#0011#) & W (16#02FF#) & W (16#0C00#)
+     & W (-2) & W (0) & L (144 * 16#1_0000#) & L (0) & Rect (0, 0, 10, 20) & L (0) & W (16#00FF#);
    Unknown_Header_Version : aliased constant Bytes :=
      W (0) & Rect (0, 0, 10, 20) & W (16#0011#) & W (16#02FF#) & W (16#0C00#) & W (7) & Zeros (22) & W (16#00FF#);
    No_Header_Op : aliased constant Bytes :=
@@ -203,6 +207,13 @@ package body Pictlib_Testing.Test_Container is
               and then Decoding.Header (Decoder).Horizontal_Resolution = Pictlib.Geometry.Fixed_72,
               "a compatible decoder did not fall back to 72 dpi");
       Assert (Recorders.Has_Warning (Decoder, Pictlib.Errors.Compatibility_Issue), "the fallback was not reported");
+      --  Only the bad one falls back: a good resolution beside it is kept.
+      Read_Only_Header (Half_Resolution, Decoder, Outcome, (Strictness => Pictlib.Compatible, others => <>));
+      Assert (Pictlib.Results.Succeeded (Outcome)
+              and then Decoding.Header (Decoder).Horizontal_Resolution = 144 * Pictlib.Geometry.Fixed_One
+              and then Decoding.Header (Decoder).Vertical_Resolution = Pictlib.Geometry.Fixed_72
+              and then Recorders.Count_Warnings (Decoder, Pictlib.Errors.Compatibility_Issue) = 1,
+              "a zero vertical resolution changed the horizontal one too");
       declare
          Item : constant Pictlib.Errors.Warning :=
            Recorders.Warning_With (Decoder, Pictlib.Errors.Compatibility_Issue);
@@ -316,6 +327,12 @@ package body Pictlib_Testing.Test_Container is
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
               and then Outcome.First_Error.Context.Limit = Pictlib.Retained_Metadata_Byte_Limit,
               "a file header over the metadata budget was retained");
+      --  Leniently, the header over the budget is dropped with a warning and the picture read on.
+      Read_Only_Header (V1_In_File, Decoder, Outcome, (Retain with delta Strictness => Pictlib.Compatible),
+                        (Pictlib.Limits.Default_Limits with delta Max_Retained_Metadata_Bytes => 511));
+      Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.Metadata_Count (Decoder) = 0
+              and then Recorders.Has_Warning (Decoder, Pictlib.Errors.Data_Loss),
+              "a file header over the metadata budget, leniently: " & Outcome.First_Error.Code'Image);
    end File_Header_Retention;
 
    procedure Header_Edges (T : in out AUnit.Test_Cases.Test_Case'Class) is

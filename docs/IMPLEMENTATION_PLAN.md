@@ -169,6 +169,11 @@ Open:
   compared with real QuickDraw: that needs classic Mac OS under emulation, with
   its ROM and system software, which this environment lacks.
 - Netpbm `picttoppm` was not available as a third independent reader.
+- Shapes, patterns and transfer modes have no external pixel oracle beyond
+  the real-world `tdf92789` reference: ImageMagick 7.1.1 draws no vector
+  opcodes (a picture of a filled rect and oval comes back blank), and
+  LibreOffice renders a picture only placed and antialiased on an A4 page.
+  Their expected rasters are worked out by hand from the specification.
 - `pictlib_generate --check`, which catches drift in the external-oracle
   fixtures, runs by hand only: it needs exactly ImageMagick 7.1.1-43 and Netpbm
   11.5.2, which no CI image ships.

@@ -80,17 +80,19 @@ package Pictlib.Internal.Pixmaps is
    --  @return Operation result.
    function Skip_Pixels (S : in out Sessions.Session; Header : Bits_Header) return Results.Result;
 
-   type Pattern_Kind is (Color_Pattern, Dither_Pattern);
+   --  What a PixPat holds after pat1Data: a color tile (patType 1) or an RGB color to dither (patType 2). Not
+   --  Patterns.Pattern_Kind, which is what a pattern draws as.
+   type PixPat_Type is (Tile_Pixpat, Dither_Pixpat);
 
    --  Classify pattern, for enumeration and rendering alike.
    --  @param S Session, positioned after pat1Data.
    --  @param Pattern_Type A PixPat's patType.
-   --  @param Kind Color_Pattern for type 1, Dither_Pattern for type 2.
+   --  @param Kind Tile_Pixpat for type 1, Dither_Pixpat for type 2.
    --  @return Success, or Pattern_Invalid for any other type.
    function Classify_Pattern
      (S : Sessions.Session;
       Pattern_Type : Interfaces.Unsigned_16;
-      Kind : out Pattern_Kind) return Results.Result;
+      Kind : out PixPat_Type) return Results.Result;
 
    --  Read pattern header: a type 1 PixPat's rowBytes, bounds, PixMap tail and color table, laid out and checked
    --  alike for enumeration and rendering, so both agree where the opcode ends.
@@ -126,11 +128,16 @@ package Pictlib.Internal.Pixmaps is
    --  @return Success, or the failure: bad PackBits fail in every mode (Recover_When_Safe keeps the rows before
    --  them as a partial picture); a lenient session repairs a bad color index with a warning.
    function Read_Row (S : in out Sessions.Session; Decoder : in out Row_Decoder; Row : Natural) return Results.Result;
+   --  Row width.
+   --  @param Decoder A started decoder.
+   --  @return The pixels in each of its rows: its header's width.
+   function Row_Width (Decoder : Row_Decoder) return Natural;
    --  Pixel.
    --  @param Decoder Decoder holding the last row read.
-   --  @param Column Pixel column from 0, within the bounds width.
+   --  @param Column Pixel column from 0.
    --  @return The pixel's color.
-   function Pixel (Decoder : Row_Decoder; Column : Natural) return Images.RGB_Color;
+   function Pixel (Decoder : Row_Decoder; Column : Natural) return Images.RGB_Color
+     with Pre => Column < Row_Width (Decoder);
    --  Finish.
    --  @param Decoder Decoder whose buffers are released.
    procedure Finish (Decoder : in out Row_Decoder);
@@ -155,4 +162,6 @@ private
       Buffers : Row_Buffers;
       Bad_Index_Reported : Boolean := False;
    end record;
+
+   function Row_Width (Decoder : Row_Decoder) return Natural is (Decoder.Header.Width);
 end Pictlib.Internal.Pixmaps;

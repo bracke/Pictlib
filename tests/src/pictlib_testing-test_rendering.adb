@@ -23,6 +23,7 @@ package body Pictlib_Testing.Test_Rendering is
    use type Pictlib.Opcode_Ordinal;
    use type Pictlib.Row_Index;
    use type Pictlib.Streams.Byte_Array;
+   use type Pictlib.Images.RGB_Color;
 
    package Decoding renames Pictlib.Decoding;
 
@@ -315,12 +316,95 @@ package body Pictlib_Testing.Test_Rendering is
          Assert (Storage (1 .. 2 * Size) = First_Two, Format'Image & ": wrong bytes");
          Assert (Storage (4 * Size + 1 .. Stride) = [16#EE#, 16#EE#, 16#EE#], Format'Image & ": row padding written");
       end Check;
+      --  Blue rows, red ORed over blue and white, green blended over all three: spans, fills and modes that read
+      --  the pixels already there, over three rows.
+      Mixed : aliased constant Bytes :=
+        Pic (4, 3,
+             RGB (16#1A#, 0, 0, 16#FFFF#) & Op_Rect (16#31#, 0, 0, 2, 4)
+             & RGB (16#1A#, 16#FFFF#, 0, 0) & Pen_Mode (16#09#) & Op_Rect (16#31#, 1, 1, 3, 3)
+             & RGB (16#1F#, 16#8000#, 16#8000#, 16#8000#) & RGB (16#1A#, 0, 16#FFFF#, 0) & Pen_Mode (32)
+             & Op_Rect (16#31#, 0, 2, 3, 4));
+
+      --  Mixed rendered into a padded view of Format.
+      function Rendered (Format : Pictlib.Pixel_Format) return Bytes is
+         Size : constant Natural := Natural (Pictlib.Images.Bytes_Per_Pixel (Format));
+         Stride : constant Natural := 4 * Size + 3;
+         Storage : aliased Bytes := [1 .. 2 * Stride + 4 * Size => 16#EE#];
+         Decoder : Decoding.Decoder;
+         Outcome : Pictlib.Results.Result;
+      begin
+         Canvases.Render (Mixed, Decoder, Canvases.View (Storage'Access, 4, 3, Format, Stride), Outcome);
+         Assert (Pictlib.Results.Succeeded (Outcome), Format'Image & ": the mixed picture failed");
+         for Row in 0 .. 1 loop
+            Assert (Storage (Row * Stride + 4 * Size + 1 .. (Row + 1) * Stride) = [16#EE#, 16#EE#, 16#EE#],
+                    Format'Image & ": the padding of row" & Row'Image & " was written");
+         end loop;
+         return Storage;
+      end Rendered;
+
+      Reference : constant Bytes := Rendered (Pictlib.RGB_24);
+
+      --  Reference's pixels laid out in Format, alpha opaque, with Rendered's padding.
+      function Laid_Out (Format : Pictlib.Pixel_Format) return Bytes is
+         Size : constant Natural := Natural (Pictlib.Images.Bytes_Per_Pixel (Format));
+         Stride : constant Natural := 4 * Size + 3;
+         Result : Bytes := [1 .. 2 * Stride + 4 * Size => 16#EE#];
+      begin
+         for Row in 0 .. 2 loop
+            for Column in 0 .. 3 loop
+               declare
+                  From : constant Positive := Reference'First + Row * 15 + Column * 3;
+                  R : constant Pictlib.Byte := Reference (From);
+                  G : constant Pictlib.Byte := Reference (From + 1);
+                  B : constant Pictlib.Byte := Reference (From + 2);
+                  To : constant Positive := Result'First + Row * Stride + Column * Size;
+               begin
+                  case Format is
+                     when Pictlib.RGB_24 => Result (To .. To + 2) := [R, G, B];
+                     when Pictlib.BGR_24 => Result (To .. To + 2) := [B, G, R];
+                     when Pictlib.RGBA_32 => Result (To .. To + 3) := [R, G, B, 16#FF#];
+                     when Pictlib.BGRA_32 => Result (To .. To + 3) := [B, G, R, 16#FF#];
+                     when Pictlib.ARGB_32 => Result (To .. To + 3) := [16#FF#, R, G, B];
+                  end case;
+               end;
+            end loop;
+         end loop;
+         return Result;
+      end Laid_Out;
+
+      --  The distinct colors of Reference, so a picture that drew too little is not taken for a match.
+      function Colors return Natural is
+         Seen : array (1 .. 12) of Pictlib.Images.RGB_Color;
+         Count : Natural := 0;
+      begin
+         for Row in 0 .. 2 loop
+            for Column in 0 .. 3 loop
+               declare
+                  From : constant Positive := Reference'First + Row * 15 + Column * 3;
+                  Color : constant Pictlib.Images.RGB_Color :=
+                    (Reference (From), Reference (From + 1), Reference (From + 2));
+               begin
+                  if (for all Index in 1 .. Count => Seen (Index) /= Color) then
+                     Count := Count + 1;
+                     Seen (Count) := Color;
+                  end if;
+               end;
+            end loop;
+         end loop;
+         return Count;
+      end Colors;
    begin
       Check (Pictlib.RGB_24, [16#FF#, 0, 0, 0, 16#FF#, 0]);
       Check (Pictlib.BGR_24, [0, 0, 16#FF#, 0, 16#FF#, 0]);
       Check (Pictlib.RGBA_32, [16#FF#, 0, 0, 16#FF#, 0, 16#FF#, 0, 16#FF#]);
       Check (Pictlib.BGRA_32, [0, 0, 16#FF#, 16#FF#, 0, 16#FF#, 0, 16#FF#]);
       Check (Pictlib.ARGB_32, [16#FF#, 16#FF#, 0, 0, 16#FF#, 0, 16#FF#, 0]);
+      --  Every format holds the same picture, row by row, as RGB_24 does: what is drawn over a pixel reads it back
+      --  in the view's own layout.
+      Assert (Colors >= 5, "the mixed picture drew only" & Colors'Image & " colors");
+      for Format in Pictlib.BGR_24 .. Pictlib.Pixel_Format'Last loop
+         Assert (Rendered (Format) = Laid_Out (Format), Format'Image & ": not the picture RGB_24 renders");
+      end loop;
    end Output_Formats;
 
    procedure Malformed_Pixels (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -372,6 +456,9 @@ package body Pictlib_Testing.Test_Rendering is
                  and then Recorders.Count_Warnings (Lenient, Errors.Recovery_Applied) = 1,
                  "a table's entries past 255 warned" & Recorders.Count_Warnings (Lenient, Errors.Recovery_Applied)'Image
                  & " times");
+         --  Every pixel is index 0, the entry kept: red.
+         Assert (Canvases.Picture_Of (Canvases.View (Storage'Access, 4, 2)) = "RRRR/RRRR",
+                 "a table with entries past 255 drew " & Canvases.Picture_Of (Canvases.View (Storage'Access, 4, 2)));
       end;
       --  Both recoveries name the opcode whose data they were in.
       Expect_Named (Undefined_Index);
@@ -449,6 +536,16 @@ package body Pictlib_Testing.Test_Rendering is
       Canvases.Expect_Failure (Unpacked_Bitmap, 8, 2, Errors.Limit_Exceeded, "output bytes",
                                Budget => (Defaults with delta Max_Output_Bytes => 47),
                                Limit => Pictlib.Output_Byte_Limit, State => Decoding.Header_Read);
+      --  A frame of exactly the canvas pixels allowed, into a view of exactly the output bytes allowed, renders.
+      declare
+         At_Limits : aliased Bytes := [1 .. 48 => 16#EE#];
+      begin
+         Canvases.Render (Unpacked_Bitmap, Decoder, Canvases.View (At_Limits'Access, 8, 2), Outcome,
+                          Budget => (Defaults with delta Max_Canvas_Pixels => 16, Max_Output_Bytes => 48));
+         Assert (Pictlib.Results.Succeeded (Outcome)
+                 and then Canvases.Picture_Of (Canvases.View (At_Limits'Access, 8, 2)) = Bitmap_2x8_Raster,
+                 "a picture exactly at the canvas and output limits: " & Outcome.First_Error.Code'Image);
+      end;
       Canvases.Expect_Failure (Unpacked_Bitmap, 8, 2, Errors.Limit_Exceeded, "drawing work", 16#98#,
                                Budget => (Defaults with delta Max_Drawing_Work => 15),
                                Limit => Pictlib.Drawing_Work_Limit);

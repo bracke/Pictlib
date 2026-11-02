@@ -35,7 +35,7 @@ package body Pictlib.Internal.Opcode_Reader is
 
    function Skip_Pixel_Pattern (S : in out Session) return Results.Result is
       Pattern_Type : Interfaces.Unsigned_16;
-      Kind : Pixmaps.Pattern_Kind;
+      Kind : Pixmaps.PixPat_Type;
       --  The rows are laid out, and checked, as rendering decodes them, so both agree where the opcode ends.
       Header : Pixmaps.Bits_Header;
       Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
@@ -50,13 +50,13 @@ package body Pictlib.Internal.Opcode_Reader is
          return Outcome;
       end if;
       case Kind is
-         when Pixmaps.Color_Pattern =>
+         when Pixmaps.Tile_Pixpat =>
             Outcome := Pixmaps.Read_Pattern_Header (S, Header, For_Decoding => False);
             if not Results.Succeeded (Outcome) then
                return Outcome;
             end if;
             return Pixmaps.Skip_Pixels (S, Header);
-         when Pixmaps.Dither_Pattern =>
+         when Pixmaps.Dither_Pixpat =>
             return Sessions.Skip_Data (S, RGB_Color_Bytes);
       end case;
    end Skip_Pixel_Pattern;

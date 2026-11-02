@@ -135,7 +135,7 @@ package body Pictlib.Internal.Patterns is
       Work : out Pixel_Count) return Results.Result
    is
       Pattern_Type : Interfaces.Unsigned_16 := 0;
-      Kind : Pixmaps.Pattern_Kind;
+      Kind : Pixmaps.PixPat_Type;
       Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
    begin
       --  Every PixPat costs a unit, whatever its type.
@@ -150,9 +150,9 @@ package body Pictlib.Internal.Patterns is
       end if;
       if Results.Succeeded (Outcome) then
          case Kind is
-            when Pixmaps.Color_Pattern =>
+            when Pixmaps.Tile_Pixpat =>
                Outcome := Read_Color_Tile (S, Event, Item, Allowance, Work);
-            when Pixmaps.Dither_Pattern =>
+            when Pixmaps.Dither_Pixpat =>
                --  A dither pattern: in true color, its RGB color.
                Outcome := Sessions.Read_RGB (S, Item.Color);
                if Results.Succeeded (Outcome) then

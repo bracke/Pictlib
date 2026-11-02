@@ -217,6 +217,9 @@ package body Pictlib_Testing.Test_Stress is
    begin
       Decode ((Defaults with delta Max_Frame_Width => 47), Retained, False, Pictlib.Frame_Width_Limit);
       Decode ((Defaults with delta Max_Frame_Height => 23), Retained, False, Pictlib.Frame_Height_Limit);
+      --  Each limit is the most allowed: a picture exactly at it is accepted.
+      Decode ((Defaults with delta Max_Frame_Width => 48), Retained, False, Pictlib.No_Limit);
+      Decode ((Defaults with delta Max_Frame_Height => 24), Retained, False, Pictlib.No_Limit);
       Decode ((Defaults with delta Max_Canvas_Pixels => 100), Retained, True, Pictlib.Canvas_Pixel_Limit);
       Decode ((Defaults with delta Max_Picture_Bytes => 100), Retained, False, Pictlib.Picture_Byte_Limit);
       Decode ((Defaults with delta Max_Opcodes => 4), Retained, False, Pictlib.Opcode_Count_Limit);

@@ -54,6 +54,10 @@ package body Pictlib_Testing.Test_Encoding is
       --  What Flush does: succeed, fail, or raise.
       Flush_Fails, Flush_Raises : Boolean := False;
       Writes_After : Natural := 0;
+      --  At Fail_At, reply without failing instead: taking nothing, or claiming a byte more than was written.
+      Stalls, Overclaims : Boolean := False;
+      --  Where the Fail_At-th write began.
+      Failed_At : Pictlib.Destination_Offset := 0;
    end record;
 
    Destination_Raised : exception;
@@ -66,7 +70,18 @@ package body Pictlib_Testing.Test_Encoding is
      return Pictlib.Streams.Destination_Result is
    begin
       Object.Calls := Object.Calls + 1;
-      if Object.Calls = Object.Fail_At and then Object.Target /= null then
+      if Object.Calls = Object.Fail_At then
+         Object.Failed_At := Object.Inner.Offset;
+      end if;
+      if Object.Calls = Object.Fail_At and then Object.Stalls then
+         return (Error => Pictlib.Errors.Make (Pictlib.Errors.No_Error), Count => 0);
+      elsif Object.Calls = Object.Fail_At and then Object.Overclaims then
+         declare
+            Step : constant Pictlib.Streams.Destination_Result := Object.Inner.Write (Buffer);
+         begin
+            return (Step with delta Count => Pictlib."+" (Step.Count, 1));
+         end;
+      elsif Object.Calls = Object.Fail_At and then Object.Target /= null then
          case Object.Move is
             when 1 => Encoding.Cancel (Object.Target.all);
             when 2 => Encoding.Finalize (Object.Target.all);
@@ -417,6 +432,12 @@ package body Pictlib_Testing.Test_Encoding is
       Picture := Encode (Samples.Gradient, 4096, 1, (Layout => Encoding.Direct_32, others => <>));
       Assert (Picture.Outcome.First_Error.Code = Pictlib.Errors.Invalid_Argument,
               "rowBytes above 16#3FFE# was written");
+      --  An indexed image too wide for a PixMap is refused as too wide, whatever its colors: its pixels are not
+      --  surveyed first.
+      Picture := Encode (Samples.Gradient, 16_383, 2, (Layout => Encoding.Indexed_8, others => <>));
+      Assert (Picture.Outcome.First_Error.Code = Pictlib.Errors.Invalid_Argument
+              and then Picture.Outcome.First_Error.Context.Expected = 16#3FFE#,
+              "an indexed image too wide was refused with " & Picture.Outcome.First_Error.Code'Image);
       Picture := Encode (Samples.Gradient, 4, 4, (Horizontal_Resolution => 0, others => <>));
       Assert (Picture.Outcome.First_Error.Code = Pictlib.Errors.Invalid_Argument, "a zero resolution was written");
       Picture := Encode (Samples.Gradient, 40, 4, Budget => (Defaults with delta Max_Frame_Width => 39));
@@ -523,6 +544,36 @@ package body Pictlib_Testing.Test_Encoding is
          Encoding.Cancel (Encoder);
          Assert (Encoding.State (Encoder) = Encoding.Failed, "cancelling a failed encoder changed it");
       end;
+      --  A destination that takes nothing of a write, or claims more than it was given, fails the encoder with
+      --  Destination_Zero_Progress or Internal_Invariant_Failed, naming where that write began, and is written
+      --  no more.
+      for Overclaims in Boolean loop
+         declare
+            Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
+            Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
+            Output : aliased Flaky;
+            Encoder : Encoding.Encoder;
+            Outcome : Pictlib.Results.Result;
+            Code : constant Pictlib.Errors.Error_Code :=
+              (if Overclaims then Pictlib.Errors.Internal_Invariant_Failed
+               else Pictlib.Errors.Destination_Zero_Progress);
+         begin
+            Pictlib.Streams.Open (Output.Inner, Storage);
+            Output.Fail_At := 40;
+            Output.Stalls := not Overclaims;
+            Output.Overclaims := Overclaims;
+            Encoding.Initialize (Encoder, Output'Access);
+            Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 37, 23));
+            Assert (Outcome.First_Error.Code = Code and then Encoding.State (Encoder) = Encoding.Failed
+                    and then Encoding.Last_Error (Encoder).Code = Code,
+                    Code'Image & ": the encoder returned " & Outcome.First_Error.Code'Image & " and is "
+                    & Encoding.State (Encoder)'Image);
+            Assert (Pictlib."=" (Outcome.First_Error.Context.Destination, Output.Failed_At),
+                    Code'Image & ": reported at" & Outcome.First_Error.Context.Destination'Image & ", not"
+                    & Output.Failed_At'Image);
+            Assert (Output.Writes_After = 0, Code'Image & ": written" & Output.Writes_After'Image & " times more");
+         end;
+      end loop;
       --  A destination that raises part-way propagates its exception and fails the encoder, so no second picture
       --  can follow the part of the first it took.
       declare

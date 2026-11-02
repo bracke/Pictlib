@@ -297,6 +297,23 @@ package body Pictlib_Testing.Test_Enumeration is
       Assert (Recorders.Warning_With (Decoder, Pictlib.Errors.Data_Loss).Context.Has_Opcode
               and then Recorders.Warning_With (Decoder, Pictlib.Errors.Data_Loss).Context.Ordinal > 0,
               "dropped metadata did not name its opcode");
+      --  Over the item budget, leniently: the first item kept whole, the next dropped with a warning naming the
+      --  fontName that did not fit.
+      declare
+         Item_Decoder : Decoding.Decoder;
+         Item_Events : Recorders.Recorder;
+      begin
+         Recorders.Decode (V2_Picture, Item_Decoder, Item_Events, Outcome,
+                           (Strictness => Pictlib.Compatible, others => <>), One_Item);
+         Assert (Pictlib.Results.Succeeded (Outcome), "a compatible decoder failed over the item budget");
+         Assert (Decoding.Metadata_Count (Item_Decoder) = 1,
+                 "the item budget kept" & Decoding.Metadata_Count (Item_Decoder)'Image);
+         Expect_Item (Item_Decoder, 1, Pictlib.Metadata.Long_Comment, 16#00A1#, Text ("abc"), Comment_Kind => 100);
+         Assert (Recorders.Warning_With (Item_Decoder, Pictlib.Errors.Data_Loss).Context.Has_Opcode
+                 and then Recorders.Warning_With (Item_Decoder, Pictlib.Errors.Data_Loss).Context.Op = 16#002C#
+                 and then Recorders.Warning_With (Item_Decoder, Pictlib.Errors.Data_Loss).Context.Ordinal > 0,
+                 "the item dropped over the item budget was not reported at its fontName");
+      end;
       --  A 3 GB reserved payload, retained, with the byte budgets raised past it: the allocation budget as set
       --  stops it, before the most one buffer holds.
       declare

@@ -58,6 +58,14 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Fixed
 
+- A non-positive resolution in an extended header falls back to 72 dpi
+  alone; the other, when it is positive, is kept (a zero vertical
+  resolution reset a 144 dpi horizontal one).
+- The encoder refuses a given layout too wide for a PixMap before it
+  surveys any pixel, so an indexed image too wide is refused as too wide,
+  not as having too many colors; it no longer surveys colors when alpha
+  decides `Auto`'s layout, and stops a survey within the row that
+  overflows the palette.
 - A region's or a font name's payload is released when building the region,
   or registering or retaining the name, raises (out of memory), as every
   other payload already was.
@@ -342,6 +350,9 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Documentation
 
+- The specification says a malformed pattern tile is judged before its
+  size, and which resolution falls back; the plan says why shapes have no
+  external pixel oracle.
 - Doc comments no longer say text draws through `Drawing_Mode` or fails
   on its mode; `Call_Guards` says its object decides what an unfinished
   call leaves; `Decoding.Finalize` says it releases warnings too;
@@ -412,6 +423,11 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Internal structure
 
+- A row of a pixmap no longer copies its header, color table and all;
+  1–4 bit pixels are unpacked by shifting. `Pixmaps.PixPat_Type` names
+  what follows a PixPat's pat1Data, no longer a second `Pattern_Kind`;
+  `Pixmaps.Pixel` requires a column within the row; `Canvas.Fill` names
+  its storage only once it knows the canvas is bound.
 - The encoder checks its state and arguments before it guards the write,
   as the decoder does; `Rebound` comes from `Call_Guards` through a use
   clause instead of a renaming in each unit. A region read for a QuickTime
@@ -645,6 +661,15 @@ All tooling is Ada, in the `tests` crate:
   cleanly, so a failure can be read in CI's log; CI passes its fuzz seed in
   `PICTLIB_FUZZ_SEED`, which `pictlib_complete` reads when `--fuzz-seed` is
   not given, rather than in an argument holding a space.
+- Tests: every output format renders the same three-row picture,
+  read-back modes included, as RGB_24 does (a red/blue swap in reading a
+  BGRA view back is caught); the encoder fails on a destination that takes
+  nothing or claims too much, naming where; metadata over the item budget,
+  and a file header over the byte budget, are dropped with a warning
+  leniently; pictures exactly at the frame, canvas and output limits are
+  accepted; the text and JPEG capability probes check what they drew
+  against the expected ink and libjpeg's decoding; the origin-at-bound and
+  color-table tests check the pixels they claim.
 - `pictlib_fuzz`'s watchdog reports a failed save at once, rather than at
   the end of a run that may never end, and leaves the input to the main
   loop to save; stopping it cannot raise; a missing seed file is reported,

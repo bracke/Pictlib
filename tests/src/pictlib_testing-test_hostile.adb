@@ -61,15 +61,18 @@ package body Pictlib_Testing.Test_Hostile is
       Runaway_Origin : aliased constant Bytes := Pic (4, 4, Repeat (Origin (32_767, 32_767), 600));
       --  70,000 DHText steps of 255 move the text origin past any picture.
       Runaway_Text : aliased constant Bytes := Pic (4, 4, Repeat (W (16#29#) & B (255) & B (0), 70_000));
-      --  511 steps of -32768 put the origin at its bound; any 16-bit point is still within reach after it.
+      --  511 steps of -32768 put the origin at its bound; any 16-bit point is still within reach after it. Moved
+      --  back to where it began, a line drawn on the canvas shows the picture was not left behind.
       Origin_At_Bound : aliased constant Bytes :=
-        Pic (4, 4, Repeat (Origin (-32_768, 0), 511) & W (16#20#) & W (0) & W (-32_768) & W (0) & W (32_767));
+        Pic (4, 4, Repeat (Origin (-32_768, 0), 511) & W (16#20#) & W (0) & W (-32_768) & W (0) & W (32_767)
+                   & Repeat (Origin (32_767, 0), 511) & Repeat (Origin (1, 0), 511)
+                   & W (16#20#) & W (1) & W (0) & W (1) & W (3));
       Origin_Past_Bound : aliased constant Bytes := Pic (4, 4, Repeat (Origin (-32_768, 0), 512));
       Storage : aliased Bytes := [1 .. 3 * 16 => 0];
       Decoder : Pictlib.Decoding.Decoder;
       Outcome : Pictlib.Results.Result;
    begin
-      Canvases.Expect_Raster (Origin_At_Bound, 4, 4, "WWWW/WWWW/WWWW/WWWW", "a line after the origin at its bound");
+      Canvases.Expect_Raster (Origin_At_Bound, 4, 4, "WWWW/BBBB/WWWW/WWWW", "a line after the origin at its bound");
       Canvases.Expect_Failure (Origin_Past_Bound, 4, 4, Errors.Opcode_Invalid, "origin past its bound", 16#0C#);
       Canvases.Expect_Lenient (Origin_Past_Bound, 4, 4, "WWWW/WWWW/WWWW/WWWW", Errors.Partial_Picture,
                                "origin past its bound, recovered", Pictlib.Recover_When_Safe);

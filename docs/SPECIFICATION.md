@@ -61,7 +61,7 @@ are retained, never interpreted.
   Header version `-1` (a long) carries fixed-point picture bounds stored left, top, right,
   bottom — the order Netpbm's `ppmtopict` writes — and four reserved bytes (version 2); `-2` carries `hRes`, `vRes`
   (Fixed, 72 dpi default; a non-positive one fails with `Header_Invalid` in `Strict` and is read as
-  72 dpi with a warning otherwise) and an integer source rectangle (extended version 2). Opcodes are two
+  72 dpi with a warning otherwise, the other kept when it is positive) and an integer source rectangle (extended version 2). Opcodes are two
   bytes and every opcode starts on an even offset from the start of the opcode stream, so odd
   data lengths are followed by one pad byte, skipped whatever its value in every mode: a writer
   that leaves it out cannot be told from one that does not, so there is no lenient guess. End
@@ -144,7 +144,9 @@ are retained, never interpreted.
     limit on reading them hides it. Otherwise its rows are read past and, once the pattern is
     charged, an `Approximated_Rendering` warning is recorded and its 1-bit pattern stands in; a
     skip or charge that fails records no warning.
-    Either diagnostic gives the bound as Expected and the tile's pixels as Actual.
+    Either diagnostic gives the bound as Expected and the tile's pixels as Actual. A tile whose
+    rows cannot hold its width is malformed, as any PixMap is (`Pixmap_Invalid`), and that is
+    judged first, whatever its size.
   - A pattern opcode that fails, in reading or in its charge, leaves that pattern QuickDraw's
     default (white background, black pen and fill); since a failure ends rendering, nothing draws
     with it.

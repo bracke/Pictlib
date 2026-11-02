@@ -10,6 +10,7 @@ with Pictlib.Opcodes;
 
 package body Pictlib.Internal.Pixmaps is
    package Accounting renames Pictlib.Internal.Sessions.Accounting;
+   use type Interfaces.Unsigned_8;
    use type Interfaces.Unsigned_16;
    use type PackBits.Unpack_Status;
 
@@ -391,13 +392,13 @@ package body Pictlib.Internal.Pixmaps is
    function Classify_Pattern
      (S : Sessions.Session;
       Pattern_Type : Interfaces.Unsigned_16;
-      Kind : out Pattern_Kind) return Results.Result is
+      Kind : out PixPat_Type) return Results.Result is
    begin
-      Kind := Color_Pattern;
+      Kind := Tile_Pixpat;
       case Pattern_Type is
          when Color_Pattern_Type => return Results.Success;
          when Dither_Pattern_Type =>
-            Kind := Dither_Pattern;
+            Kind := Dither_Pixpat;
             return Results.Success;
          when others =>
             return Sessions.Fail (S, Errors.Pattern_Invalid, Dither_Pattern_Type, Byte_Count (Pattern_Type));
@@ -475,13 +476,14 @@ package body Pictlib.Internal.Pixmaps is
          when Bitmap_Bits | Indexed_Bits =>
             declare
                Depth : constant Natural := Header.Fields.Pixel_Size;
-               Mask : constant Natural := 2 ** Depth - 1;
+               Mask : constant Interfaces.Unsigned_8 := 2 ** Depth - 1;
             begin
                for X in 0 .. Width - 1 loop
                   declare
                      Bit : constant Natural := X * Depth;
-                     Value : constant Natural := Natural (Data (First + Bit / 8));
-                     Index : constant Natural := (Value / 2 ** (8 - Depth - Bit mod 8)) mod (Mask + 1);
+                     Index : constant Natural :=
+                       Natural (Interfaces.Shift_Right (Interfaces.Unsigned_8 (Data (First + Bit / 8)),
+                                                        8 - Depth - Bit mod 8) and Mask);
                   begin
                      if Header.Encoding = Bitmap_Bits then
                         Decoder.Buffers.Colors (X) := (if Index = 1 then Images.Black else Images.White);
@@ -542,7 +544,8 @@ package body Pictlib.Internal.Pixmaps is
    end Convert;
 
    function Read_Row (S : in out Sessions.Session; Decoder : in out Row_Decoder; Row : Natural) return Results.Result is
-      Header : constant Bits_Header := Decoder.Header;
+      --  Not copied: the header holds the whole color table, and this runs once a row.
+      Header : Bits_Header renames Decoder.Header;
       Outcome : Results.Result;
    begin
       if Header.Layout = Unpacked then
