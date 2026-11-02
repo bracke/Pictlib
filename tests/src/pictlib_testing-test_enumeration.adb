@@ -10,6 +10,7 @@ with Pictlib.Pictures;
 with Pictlib.Results;
 with Pictlib.Streams;
 with Pictlib_Testing.Builders;
+with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Recorders;
 
 package body Pictlib_Testing.Test_Enumeration is
@@ -271,6 +272,25 @@ package body Pictlib_Testing.Test_Enumeration is
       Assert (Pictlib.Results.Succeeded (Outcome) and then Decoding.Metadata_Count (Decoder) = 0,
               "nothing was to be retained");
       Check_Events (Events, V2_Expected, "v2, no retention");
+
+      --  A LongComment longer than the picture byte budget allows, cut short by the input well inside that
+      --  budget: kept or not, it ends the picture alike, as a truncation a recovering render keeps drawn.
+      declare
+         Cut_Comment : aliased constant Pictlib.Streams.Byte_Array :=
+           Builders.V2_Prefix (0, 0, 4, 4) & W (16#00A1#) & W (100) & W (2_000) & Zeros (100);
+         Storage : aliased Pictlib.Streams.Byte_Array := [1 .. 3 * 16 => 0];
+         Small : constant Pictlib.Limits.Limit_Set :=
+           (Pictlib.Limits.Default_Limits with delta Max_Picture_Bytes => 1_000);
+      begin
+         for Kept in Boolean loop
+            Canvases.Render
+              (Cut_Comment, Decoder, Canvases.View (Storage'Access, 4, 4), Outcome,
+               (Strictness => Pictlib.Recover_When_Safe, Retention => (others => Kept), others => <>), Small);
+            Assert (Pictlib.Results.Succeeded (Outcome)
+                    and then Recorders.Has_Warning (Decoder, Pictlib.Errors.Partial_Picture),
+                    "a cut comment, retention " & Kept'Image & ", ended with " & Outcome.First_Error.Code'Image);
+         end loop;
+      end;
    end Full_Metadata;
 
    procedure Metadata_Budgets (T : in out AUnit.Test_Cases.Test_Case'Class) is
@@ -336,8 +356,8 @@ package body Pictlib_Testing.Test_Enumeration is
                  "a payload past one buffer named" & Outcome.First_Error.Context.Expected'Image
                  & ", not the allocation budget");
       end;
-      --  A retained payload the picture byte limit cannot hold is refused as that, before anything is allocated
-      --  for it: an allocation budget below it is never reached.
+      --  A retained payload the picture byte limit cannot hold is skipped as one not retained, reaching that limit
+      --  a byte past it, before anything is allocated for it: an allocation budget below it is never reached.
       declare
          Long : aliased constant Bytes := V2_Body (W (16#8100#) & L (5_000) & Zeros (5_000));
          Retain_Reserved : Decoding.Options;
@@ -351,8 +371,9 @@ package body Pictlib_Testing.Test_Enumeration is
          Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
                  and then Outcome.First_Error.Context.Limit = Pictlib.Picture_Byte_Limit
                  and then Outcome.First_Error.Context.Expected = 1_000
-                 and then Outcome.First_Error.Context.Actual > 5_000,
-                 "a payload past the picture byte limit reported " & Outcome.First_Error.Context.Limit'Image);
+                 and then Outcome.First_Error.Context.Actual = 1_001,
+                 "a payload past the picture byte limit reported " & Outcome.First_Error.Context.Limit'Image
+                 & Outcome.First_Error.Context.Actual'Image);
       end;
       Check_Events (Events, V2_Expected, "v2, dropped metadata");
 

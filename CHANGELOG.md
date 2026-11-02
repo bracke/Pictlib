@@ -384,6 +384,11 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   warning, as the strict failure does. Polygon points and edges are held in
   vectors reserved to the size the allocation total counts, where
   appending alone could grow them to twice that.
+- A retained payload longer than the picture byte budget has left is
+  skipped as an unretained one is, so retention no longer turns a
+  truncated, recoverable picture into a `Limit_Exceeded` failure. A
+  region's scanlines and points are reserved exactly, and its walk's merge
+  buffer too, so a region stays within the 6 bytes a byte counted.
 
 ### Documentation
 
@@ -489,6 +494,9 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   only on failure.
 - The specification says a `Cancel` a source's `Offset` makes during
   `Initialize` or `Reset` does not stand.
+- The specification says how retention meets the picture byte budget, what
+  a region's allocation rate covers, and that only `Embedded_Image_Failed`
+  is recovered as a partial picture, an unsupported JPEG being skipped.
 
 ### Internal structure
 
@@ -850,3 +858,7 @@ All tooling is Ada, in the `tests` crate:
   when its assertions passed. Tests for the warning's jpeglib code, a
   `Cancel` from `Offset` during `Reset`, and the opcodes around
   `stress.large_inputs`'s NOPs.
+- `pictlib_real_world` records a file it cannot read and goes on;
+  `pictlib_conformance` fails a case it cannot write or read and runs the
+  rest; `test_external` loads its raster before the picture it would leak.
+  A test renders a cut comment with retention on and off.

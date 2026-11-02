@@ -322,7 +322,8 @@ are retained, never interpreted.
   share; a frame of more components than it decodes, and its other unsupported features, to
   `Unsupported_Feature`; its own invariants to `Internal_Invariant_Failed`; and malformed JPEG data,
   malformed metadata included, to `Embedded_Image_Failed`. Only `Embedded_Image_Failed`, the first
-  and the last of these, is ever recovered.
+  and the last of these, is ever recovered as a partial picture; an unsupported JPEG is skipped
+  leniently instead, as another codec is.
 - `jpeglib`'s share is what `Max_Allocation_Bytes` leaves once the pixels are admitted, but no more
   than 8 times the image's RGB bytes over its extent rounded up to 32-pixel MCUs (8 pixels times the
   largest sampling factor, 4), plus 1 MiB. Its coefficient and output limits are that share and the
@@ -556,7 +557,8 @@ byte count (a word count when `rowBytes > 250`). `rowBytes` above `16#3FFE#` can
 Retained: file header bytes (optional), comments, font names, QuickTime payloads (optional),
 unknown/reserved opcode payloads (optional, off by default). All retained items share one count
 (`Max_Metadata_Items`) and one byte budget (`Max_Retained_Metadata_Bytes`); overflow fails with `Limit_Exceeded` in `Strict` and drops with a `Data_Loss` warning
-otherwise.
+otherwise. A payload longer than the picture byte budget has left is never kept: it is skipped as
+an item not retained is, so retention never changes how a picture's own bytes end it.
 
 ## 9. Resource limits and security
 
@@ -594,7 +596,7 @@ and storage that is no single allocation at fixed rates:
 | a retained metadata item or font name | its bytes twice, the buffer it is read into and the copy kept, plus 128 |
 | a polygon read | 8 per point |
 | a polygon drawn | 8 per point again, for the copy drawn, plus 152 per edge when it is filled |
-| a region read | 6 per byte of it, for its scanlines and inversion points |
+| a region read | 6 per byte of it, for its scanlines and inversion points and, while it is walked, its active points |
 | a region shape drawn | 12 per unit of its region's size, for the copy moved to the origin |
 | building a shape | 256 per unit of shape work, the spans it can make; building stops at what the total still admits |
 | a QuickTime image | its pixels, and `jpeglib`'s share for its own buffers |

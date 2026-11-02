@@ -41,14 +41,22 @@ package body Pictlib.Internal.Sessions.Retained is
       --  fail; a kept item is then admitted against the allocation budgets, which keeping can cross.
       Outcome : Results.Result := (if In_Opcode then Admit_Data (S, Length) else Results.Success);
       Data : Streams.Byte_Array_Access;
+      --  Skipped as if not retained, so the picture fails just as it would then.
+      function Skipped return Results.Result is
+        (if In_Opcode then Skip_Data (S, Length) else Streams.Skip_Exact (S.Stream, Length));
    begin
-      if Results.Succeeded (Outcome) then
-         Outcome := Admit_Item (S, Length, Keep);
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      --  More than the picture can still hold is never kept: skipping it ends at the input's end or the budget,
+      --  whichever comes first, as for an item not retained.
+      elsif Length > Picture_Stream.Remaining_Budget (S.Stream) then
+         return Skipped;
       end if;
+      Outcome := Admit_Item (S, Length, Keep);
       if not Results.Succeeded (Outcome) then
          return Outcome;
       elsif not Keep then
-         return (if In_Opcode then Skip_Data (S, Length) else Streams.Skip_Exact (S.Stream, Length));
+         return Skipped;
       end if;
       Outcome := Read_Payload (S, Length, Data, In_Opcode);
       if Results.Succeeded (Outcome) then

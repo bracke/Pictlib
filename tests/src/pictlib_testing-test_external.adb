@@ -13,8 +13,9 @@ package body Pictlib_Testing.Test_External is
 
    --  Render Picture_Name and require the pixels of Source_Name, each component within Tolerance.
    procedure Expect_Source (Picture_Name, Source_Name : String; Tolerance : Natural := 0) is
-      Picture : Files.Bytes_Access := Files.Load ("external/" & Picture_Name);
+      --  The raster first: if it fails to load, the picture is not yet allocated to leak.
       Source : constant Files.Raster := Files.Load_Raster ("external/" & Source_Name);
+      Picture : Files.Bytes_Access := Files.Load ("external/" & Picture_Name);
       Storage : aliased Pictlib.Streams.Byte_Array := [1 .. 3 * Source.Width * Source.Height => 16#EE#];
       Output : constant Pictlib.Images.Mutable_Image_View :=
         Canvases.View (Storage'Access, Source.Width, Source.Height);

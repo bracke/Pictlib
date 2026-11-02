@@ -8,6 +8,7 @@
 --  A decoder that is not installed is reported as skipped; --require fails the run unless every decoder ran.
 --  Runs from anywhere below the pictlib tree.
 with Ada.Directories;
+with Ada.Exceptions;
 with Ada.Streams.Stream_IO;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
@@ -214,6 +215,11 @@ procedure Pictlib_Conformance is
       end if;
       Files.Save_Path (Path (To_String (Item.Name), "pict"), Picture.Data.all);
       return True;
+   exception
+      --  A picture this tool could not write fails its case, and the others still run.
+      when Error : others =>
+         Fail (To_String (Item.Name) & ": could not write the picture: " & Ada.Exceptions.Exception_Message (Error));
+         return False;
    end Encode;
 
    Magick : constant String := Pictlib_Testing.Tools.ImageMagick;
@@ -322,6 +328,11 @@ begin
                      Report (Item, "LibreOffice", Path (Name, "soffice.ppm"), Status);
                   end;
                end if;
+            exception
+               --  A file this tool could not write or read fails the case, and the others still run.
+               when Error : others =>
+                  Fail (Name & ": " & Ada.Exceptions.Exception_Name (Error) & ": "
+                        & Ada.Exceptions.Exception_Message (Error));
             end;
          end if;
       end;

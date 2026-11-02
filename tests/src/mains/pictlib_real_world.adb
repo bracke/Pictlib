@@ -160,6 +160,7 @@ procedure Pictlib_Real_World is
 
    procedure Visit (Directory : String) is
       use Ada.Directories;
+      use type Bytes_Access;
       Prefix : constant String := Full_Name (Directory);
    begin
       for Path of Pictlib_Testing.Tools.Files_Below (Directory) loop
@@ -172,16 +173,27 @@ procedure Pictlib_Real_World is
                Pictlib_Testing.Tools.Fail (Relative & ": a corpus file's name may not hold a space");
             elsif Ada.Characters.Handling.To_Lower (Extension (Path)) in "pct" | "pict" then
                declare
-                  Data : Bytes_Access := Pictlib_Testing.Files.Load_Path (Path);
+                  Data : Bytes_Access;
                   Line : Unbounded_String;
                begin
-                  Line := To_Unbounded_String (Enumerate (Data));
-                  Append (Line, " " & Render
-                            (Data, Pictlib.Compatible,
-                             (if Exists (Path & ".reference.ppm") then Path & ".reference.ppm" else "")));
-                  Append (Line, " " & Render (Data, Pictlib.Recover_When_Safe));
-                  Results_Now.Include (Relative, To_String (Line));
-                  Free (Data);
+                  --  A file this tool cannot read fails the run, and the others are still decoded.
+                  begin
+                     Data := Pictlib_Testing.Files.Load_Path (Path);
+                  exception
+                     when Error : others =>
+                        Pictlib_Testing.Tools.Fail (Relative & ": could not read: "
+                                                    & Ada.Exceptions.Exception_Message (Error));
+                        Results_Now.Include (Relative, "unreadable");
+                  end;
+                  if Data /= null then
+                     Line := To_Unbounded_String (Enumerate (Data));
+                     Append (Line, " " & Render
+                               (Data, Pictlib.Compatible,
+                                (if Exists (Path & ".reference.ppm") then Path & ".reference.ppm" else "")));
+                     Append (Line, " " & Render (Data, Pictlib.Recover_When_Safe));
+                     Results_Now.Include (Relative, To_String (Line));
+                     Free (Data);
+                  end if;
                exception
                   when Error : others =>
                      Free (Data);

@@ -1,3 +1,4 @@
+with Ada.Containers;
 with Pictlib.Internal.Checked_Arithmetic;
 with Pictlib.Internal.Bytes;
 
@@ -35,10 +36,32 @@ package body Pictlib.Internal.Regions is
         (Integer (Bytes.To_Coordinate (Bytes.Word_At (Data, Data'First + 2 * At_Index))));
 
       Previous_Y : Integer := Integer'First;
+
+      --  Reserve exactly the scanlines and inversion points Data holds, counted first, so their vectors take
+      --  what the allocation total counts for them; the structure is checked as they are stored.
+      procedure Reserve is
+         Lines, Points : Natural := 0;
+         In_Line : Boolean := False;
+      begin
+         for At_Index in 0 .. Words - 1 loop
+            if Word (At_Index) = End_Mark then
+               exit when not In_Line;
+               In_Line := False;
+            elsif In_Line then
+               Points := Points + 1;
+            else
+               Lines := Lines + 1;
+               In_Line := True;
+            end if;
+         end loop;
+         Item.Lines.Reserve_Capacity (Ada.Containers.Count_Type (Lines));
+         Item.Points.Reserve_Capacity (Ada.Containers.Count_Type (Points));
+      end Reserve;
    begin
       if Data'Length mod 2 /= 0 then
          return False;
       end if;
+      Reserve;
       loop
          if Index >= Words then
             return False;
@@ -93,10 +116,13 @@ package body Pictlib.Internal.Regions is
 
    --  Active := Active xor Points (Line), both sorted.
    procedure Invert (Item : in out Region; Line : Scanline) is
+      use type Ada.Containers.Count_Type;
       Merged : Integer_Vectors.Vector;
       Left : Positive := 1;
       Right : Positive := Line.First;
    begin
+      --  At most every point of both, reserved at once: appending alone could grow it to twice that.
+      Merged.Reserve_Capacity (Item.Active.Length + Ada.Containers.Count_Type (Line.Last - Line.First + 1));
       while Left <= Natural (Item.Active.Length) or else Right <= Line.Last loop
          if Right > Line.Last then
             Merged.Append (Item.Active (Left));
