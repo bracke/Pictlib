@@ -97,7 +97,7 @@ package body Pictlib.Internal.Text is
       Loaded : Natural := 0;
       Status : Textrender.Status_Code;
    begin
-      Cache.Clock := (if Cache.Clock = Natural'Last then 0 else Cache.Clock + 1);
+      Cache.Clock := Cache.Clock + 1;
       for Index in Cache.Items'Range loop
          if Cache.Items (Index).Used and then Cache.Items (Index).Path = Key and then Cache.Items (Index).Size = Size
          then

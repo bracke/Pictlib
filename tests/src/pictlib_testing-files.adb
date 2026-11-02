@@ -40,12 +40,35 @@ package body Pictlib_Testing.Files is
       Close (File);
    end Save_Path;
 
+   overriding procedure Adjust (Item : in out Raster) is
+      use type Bytes_Access;
+   begin
+      if Item.Data /= null then
+         Item.Data := new Pictlib.Streams.Byte_Array'(Item.Data.all);
+      end if;
+   end Adjust;
+
+   overriding procedure Finalize (Item : in out Raster) is
+   begin
+      Free (Item.Data);
+   end Finalize;
+
+   --  Free Item's bytes and give it its defaults.
+   procedure Clear (Item : in out Raster) is
+   begin
+      Free (Item.Data);
+      Item.Kind := '6';
+      Item.Width := 0;
+      Item.Height := 0;
+      Item.First_Pixel := 1;
+   end Clear;
+
    function Read_Raster (Path : String; Item : out Raster) return Boolean is
       Data : Bytes_Access;
       Position : Positive;
       Fields : array (1 .. 3) of Natural := [others => 0];
    begin
-      Item := (others => <>);
+      Clear (Item);
       if not Ada.Directories.Exists (Path) then
          return False;
       end if;
@@ -76,12 +99,14 @@ package body Pictlib_Testing.Files is
         and then Data'Last - Position
                  >= (if Item.Kind = '6' then 3 * Fields (1) else (Fields (1) + 7) / 8) * Fields (2)
       then
-         Item := (Data => Data, Kind => Item.Kind, Width => Fields (1), Height => Fields (2),
-                  First_Pixel => Position + 1);
+         Item.Data := Data;
+         Item.Width := Fields (1);
+         Item.Height := Fields (2);
+         Item.First_Pixel := Position + 1;
          return True;
       end if;
       Free (Data);
-      Item := (others => <>);
+      Clear (Item);
       return False;
    end Read_Raster;
 

@@ -233,7 +233,7 @@ package body Pictlib.Internal.Sessions is
       return Bytes.Read_U16_BE (S.Stream, Value);
    end Read_Word;
 
-   function Read_Count_Byte (S : in out Session; Value : out Byte) return Results.Result is
+   function Read_Byte (S : in out Session; Value : out Byte) return Results.Result is
       Outcome : constant Results.Result := Admit_Data (S, 1);
    begin
       Value := 0;
@@ -241,7 +241,7 @@ package body Pictlib.Internal.Sessions is
          return Outcome;
       end if;
       return Bytes.Read_Byte (S.Stream, Value);
-   end Read_Count_Byte;
+   end Read_Byte;
 
    function Read_RGB (S : in out Session; Color : out Images.RGB_Color) return Results.Result is
       Data : Streams.Byte_Array (1 .. RGB_Color_Bytes);

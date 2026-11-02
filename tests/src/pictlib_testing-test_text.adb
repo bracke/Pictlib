@@ -296,6 +296,20 @@ package body Pictlib_Testing.Test_Text is
       end;
       Assert (Pictlib.Fonts.Classic_Name (21) = "Helvetica" and then Pictlib.Fonts.Classic_Name (22) = "Courier"
               and then Pictlib.Fonts.Classic_Name (999) = "", "classic names");
+      --  An empty path takes an entry away: the name, the ID and the classic name fall through to the default.
+      declare
+         Table : Pictlib.Fonts.Font_Table;
+      begin
+         Pictlib.Fonts.Set_Default (Table, "default.ttf");
+         Pictlib.Fonts.Add (Table, "Geneva", "geneva.ttf");
+         Pictlib.Fonts.Add (Table, Pictlib.Fonts.Font_ID (300), "300.ttf");
+         Pictlib.Fonts.Add (Table, "geneva", "");
+         Pictlib.Fonts.Add (Table, Pictlib.Fonts.Font_ID (300), "");
+         Assert (Pictlib.Fonts.Resolve (Table, 3) = "default.ttf"
+                 and then Pictlib.Fonts.Resolve (Table, 300) = "default.ttf"
+                 and then Pictlib.Fonts.Resolve (Table, 999, "Geneva") = "default.ttf",
+                 "an empty path hid the default: " & Pictlib.Fonts.Resolve (Table, 3));
+      end;
    end Font_Resolution;
 
    procedure Characters (T : in out AUnit.Test_Cases.Test_Case'Class) is

@@ -117,7 +117,9 @@ package body Pictlib.Internal.QuickTime is
    function Check_Image (S : Sessions.Session; Event : Pictures.Opcode_Event; Item : Description)
      return Results.Result
    is
-      Pixels : constant Byte_Count := Byte_Count (Item.Width) * Byte_Count (Item.Height);
+      Image : constant JPEG_Bridge.Image := (Item.Width, Item.Height, Item.Data_Size);
+      Pixels : constant Byte_Count := JPEG_Bridge.Pixel_Total (Image);
+      Bytes : constant Byte_Count := JPEG_Bridge.Pixel_Bytes (Image);
       Largest : constant Byte_Count := Byte_Count (Natural'Last);
    begin
       if Byte_Count (Item.Data_Size) > S.Budget.Max_Embedded_Image_Bytes then
@@ -128,11 +130,10 @@ package body Pictlib.Internal.QuickTime is
       elsif Pixel_Count (Pixels) > S.Budget.Max_Embedded_Image_Pixels then
          return Sessions.Over_Limit
            (S, Embedded_Image_Pixel_Limit, Byte_Count (S.Budget.Max_Embedded_Image_Pixels), Pixels);
-      elsif JPEG_Bridge.Pixel_Bytes ((Item.Width, Item.Height, Item.Data_Size)) > Largest then
+      elsif Bytes > Largest then
          --  The budget as set when it is the smaller bound.
          return Sessions.Over_Limit
-           (S, Allocation_Byte_Limit, Byte_Count'Min (Largest, S.Budget.Max_Allocation_Bytes),
-            JPEG_Bridge.Pixel_Bytes ((Item.Width, Item.Height, Item.Data_Size)));
+           (S, Allocation_Byte_Limit, Byte_Count'Min (Largest, S.Budget.Max_Allocation_Bytes), Bytes);
       end if;
       return Results.Success;
    end Check_Image;
@@ -255,8 +256,7 @@ package body Pictlib.Internal.QuickTime is
          return Outcome;
       end if;
       Has_Mask := True;
-      Rendering.To_Picture (P, Mask);
-      return Results.Success;
+      return Rendering.Mask_To_Picture (P, S, Mask);
    end Read_Mask;
 
    --  The image description, its bytes past the fields read skipped, and room for the data it announces.

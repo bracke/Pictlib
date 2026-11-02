@@ -23,5 +23,5 @@ package Pictlib.Internal.Drawing is
    --  @param P Painter.
    --  @param Font The font ID.
    --  @param Name Its family name.
-   procedure Register_Font_Name (P : in out Rendering.Painter; Font : Natural; Name : String);
+   procedure Register_Font_Name (P : in out Rendering.Painter; Font : Font_ID; Name : String);
 end Pictlib.Internal.Drawing;

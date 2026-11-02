@@ -4,6 +4,7 @@ with Pictlib.Images;
 with Pictlib.Limits;
 with Pictlib.Results;
 with Pictlib.Streams;
+with Pictlib_Testing.Files;
 
 --  Rendering helpers: caller-owned views, and expected rasters written as letters, one per pixel, rows
 --  separated by '/': W white, B black, R red, G green, U blue, Y yellow, '?' anything else.
@@ -123,6 +124,16 @@ package Pictlib_Testing.Canvases is
    --  Pixel.
    --  @return The color at X, Y of an RGB_24 view.
    function Pixel (Output : Pictlib.Images.Mutable_Image_View; X, Y : Natural) return Pictlib.Images.RGB_Color;
+   --  Compare: Output, an RGB_24 view, against Reference, a raster of the same size, pixel for pixel.
+   --  @param Wrong The pixels with a component that differs by more than Tolerance.
+   --  @param Largest The largest difference of a component found.
+   procedure Compare
+     (Output : Pictlib.Images.Mutable_Image_View;
+      Reference : Files.Raster;
+      Tolerance : Natural;
+      Wrong, Largest : out Natural)
+     with Pre => Natural (Output.Descriptor.Width) = Reference.Width
+                 and then Natural (Output.Descriptor.Height) = Reference.Height;
    --  Picture of.
    --  @return The letters of an RGB_24 view, for comparison with an expected raster.
    function Picture_Of (Output : Pictlib.Images.Mutable_Image_View) return String;

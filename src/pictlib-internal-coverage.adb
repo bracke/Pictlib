@@ -68,10 +68,6 @@ package body Pictlib.Internal.Coverage is
 
    function Last_Row (Item : Shape) return Integer is (Item.Top + Natural (Item.Rows.Length) - 1);
 
-   function Row (Item : Shape; Y : Integer) return Span_List is
-     (if not Item.Spent and then Y in First_Row (Item) .. Last_Row (Item) then Item.Rows (Y - Item.Top)
-      else Regions.Span_Vectors.Empty_Vector);
-
    procedure Copy_Row (Item : Shape; Y : Integer; Into : in out Span_List) is
    begin
       if not Item.Spent and then Y in First_Row (Item) .. Last_Row (Item) then
@@ -80,6 +76,13 @@ package body Pictlib.Internal.Coverage is
          Into.Clear;
       end if;
    end Copy_Row;
+
+   function Row (Item : Shape; Y : Integer) return Span_List is
+      Result : Span_List;
+   begin
+      Copy_Row (Item, Y, Result);
+      return Result;
+   end Row;
 
    function Work (Item : Shape) return Pixel_Count is (Item.Units);
 
@@ -115,7 +118,18 @@ package body Pictlib.Internal.Coverage is
          Item.Rows.Append (Empty, Ada.Containers.Count_Type (Y - Last_Row (Item)));
       elsif Y < Item.Top then
          Charge (Item, Item.Top - Y + Natural (Item.Rows.Length));
-         Item.Rows.Prepend (Empty, Ada.Containers.Count_Type (Item.Top - Y));
+         --  Each held row is moved, not copied, so the cost is a unit a row whatever its spans: Prepend would
+         --  copy every span the rows below hold.
+         declare
+            Added : constant Natural := Item.Top - Y;
+            Moved : Row_Vectors.Vector;
+         begin
+            Moved.Append (Empty, Ada.Containers.Count_Type (Added + Natural (Item.Rows.Length)));
+            for Index in Item.Rows.First_Index .. Item.Rows.Last_Index loop
+               Regions.Span_Vectors.Move (Target => Moved (Added + Index), Source => Item.Rows (Index));
+            end loop;
+            Item.Rows.Move (Moved);
+         end;
          Item.Top := Y;
       end if;
    end Hold;
@@ -451,7 +465,7 @@ package body Pictlib.Internal.Coverage is
       end loop;
    end Polygon;
 
-   package Integer_Vectors is new Ada.Containers.Vectors (Natural, Integer);
+   package Column_Vectors is new Ada.Containers.Vectors (Natural, Integer);
 
    --  The path from From to To is the one Bresenham's walk takes, a pixel a step, its x and y steps each decided
    --  on the error before either: rows Kept_Top .. Kept_Bottom record their leftmost and rightmost columns in
@@ -465,7 +479,7 @@ package body Pictlib.Internal.Coverage is
      (Item : in out Shape;
       From, To : Point;
       Kept_Top, Kept_Bottom : Integer;
-      Low_X, High_X : in out Integer_Vectors.Vector)
+      Low_X, High_X : in out Column_Vectors.Vector)
    is
       --  Steps of the path, in 64 bits: the products below stay under 2 ** 52 within reach.
       subtype Long is Long_Long_Integer;
@@ -505,7 +519,7 @@ package body Pictlib.Internal.Coverage is
       --  Only the path rows whose pen reaches the window are kept.
       Kept_Top : constant Integer := Integer'Max (Top, Item.Window.Top - Pen_Height + 1);
       Kept_Bottom : constant Integer := Integer'Min (Bottom, Item.Window.Bottom - 1);
-      Low_X, High_X : Integer_Vectors.Vector;
+      Low_X, High_X : Column_Vectors.Vector;
       --  Along a line the columns move one way as the rows go down.
       Increasing : constant Boolean := (To.H >= From.H) = (To.V >= From.V);
    begin

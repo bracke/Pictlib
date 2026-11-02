@@ -141,15 +141,22 @@ package body Pictlib.Internal.Shapes is
             return Outcome;
          end if;
       end if;
-      --  The polygon is copied for drawing, and a filled one keeps every edge while it is scanned: both count
-      --  against the aggregate allocation quota. Walking the copy and the edges is shape work, charged as the
-      --  shape is built.
-      Outcome :=
-        Accounting.Admit_Aggregate
-          (S,
-           (Accounting.Point_Cost_Bytes
-            + (if Verb = Framed then 0 else Accounting.Polygon_Edge_Bytes))
-           * Byte_Count (P.Port.Last_Polygon.Length));
+      --  A frame drawn with no pen covers nothing, and walks nothing.
+      if Verb = Framed and then (P.Port.Pen_Width <= 0 or else P.Port.Pen_Height <= 0) then
+         return Results.Success;
+      end if;
+      --  The polygon is copied and moved for drawing: work a unit a point, whether or not a line lands, and
+      --  storage by its size. A filled one keeps every edge while it is scanned, counted against the aggregate
+      --  allocation quota too; walking the edges is shape work, charged as the shape is built.
+      Outcome := Accounting.Charge_Work (S, Natural (P.Port.Last_Polygon.Length));
+      if Results.Succeeded (Outcome) then
+         Outcome :=
+           Accounting.Admit_Aggregate
+             (S,
+              (Accounting.Point_Cost_Bytes
+               + (if Verb = Framed then 0 else Accounting.Polygon_Edge_Bytes))
+              * Byte_Count (P.Port.Last_Polygon.Length));
+      end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;

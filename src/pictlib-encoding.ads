@@ -37,8 +37,15 @@ package Pictlib.Encoding is
       Keep_Alpha : Boolean := False;
    end record;
 
-   type Encoder_State is (Created, Ready, Encoded, Finished, Failed, Cancelled);
+   type Encoder_State is
+     (Created,    --  not initialized, or finalized
+      Ready,      --  initialized; Encode is next, and a failure before writing began leaves it here
+      Encoded,    --  the picture is written; Finish is next
+      Finished,   --  the picture is complete
+      Failed,     --  a failure while writing ended it; Last_Error reports it
+      Cancelled); --  Cancel ended it
 
+   --  Writes one image as a PICT to a borrowed destination.
    type Encoder is limited private;
 
    --  Initialize.

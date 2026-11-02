@@ -131,6 +131,13 @@ package Pictlib.Internal.Rendering is
    --  @param P Painter.
    --  @param Item A local region, moved to picture coordinates.
    procedure To_Picture (P : Painter; Item : in out Regions.Region);
+   --  Mask to picture: a mask region moved to picture coordinates, the walk charged as drawing work first.
+   --  @param P Painter.
+   --  @param S Session charged.
+   --  @param Mask A local region, moved to picture coordinates when the charge succeeds.
+   --  @return Success, or the drawing-work limit.
+   function Mask_To_Picture (P : Painter; S : in out Sessions.Session; Mask : in out Regions.Region)
+     return Results.Result;
 
    --  Sampled: the nearest-neighbour rule copies and images scale by.
    --  @param Offset A destination pixel's offset from the destination's first pixel, from 0.

@@ -374,8 +374,9 @@ package body Pictlib.Encoding is
       return Outcome;
    end Fail;
 
-   --  Choose layout: Auto takes Mono_1 only for pure black and white, which it must keep exactly, whatever the
-   --  threshold: one between the two does.
+   --  Choose layout: Auto takes Mono_1 only for pure black and white, which it must keep exactly. Any threshold
+   --  strictly between black and white does, and the caller's need not be one, so Auto uses
+   --  Default_Mono_Threshold rather than the caller's.
    procedure Choose_Layout
      (Image : Images.Image_View;
       Colors : Palette;

@@ -13,36 +13,27 @@ package body Pictlib_Testing.Test_External is
 
    --  Render Picture_Name and require the pixels of Source_Name, each component within Tolerance.
    procedure Expect_Source (Picture_Name, Source_Name : String; Tolerance : Natural := 0) is
-      Picture : constant Files.Bytes_Access := Files.Load ("external/" & Picture_Name);
+      Picture : Files.Bytes_Access := Files.Load ("external/" & Picture_Name);
       Source : constant Files.Raster := Files.Load_Raster ("external/" & Source_Name);
       Storage : aliased Pictlib.Streams.Byte_Array := [1 .. 3 * Source.Width * Source.Height => 16#EE#];
       Output : constant Pictlib.Images.Mutable_Image_View :=
         Canvases.View (Storage'Access, Source.Width, Source.Height);
       Decoder : Pictlib.Decoding.Decoder;
       Outcome : Pictlib.Results.Result;
-      Wrong : Natural := 0;
-      Largest : Natural := 0;
+      Wrong, Largest : Natural;
    begin
       Canvases.Render (Picture.all, Decoder, Output, Outcome);
+      Files.Free (Picture);
       Assert (Pictlib.Results.Succeeded (Outcome),
               Picture_Name & ": render failed with " & Outcome.First_Error.Code'Image & " at opcode"
               & Outcome.First_Error.Context.Op'Image & " offset" & Outcome.First_Error.Context.Source'Image);
-      for Y in 0 .. Source.Height - 1 loop
-         for X in 0 .. Source.Width - 1 loop
-            declare
-               Got : constant Pictlib.Images.RGB_Color := Canvases.Pixel (Output, X, Y);
-               Want : constant Pictlib.Images.RGB_Color := Files.Pixel (Source, X, Y);
-               Difference : constant Natural := Canvases.Difference (Got, Want);
-            begin
-               Largest := Natural'Max (Largest, Difference);
-               if Difference > Tolerance then
-                  Wrong := Wrong + 1;
-               end if;
-            end;
-         end loop;
-      end loop;
+      Canvases.Compare (Output, Source, Tolerance, Wrong, Largest);
       Assert (Wrong = 0, Picture_Name & ":" & Wrong'Image & " pixels differ from " & Source_Name
               & " by more than" & Tolerance'Image & "; largest difference" & Largest'Image);
+   exception
+      when others =>
+         Files.Free (Picture);
+         raise;
    end Expect_Source;
 
    procedure Netpbm_Indexed (T : in out AUnit.Test_Cases.Test_Case'Class);

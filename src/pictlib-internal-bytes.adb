@@ -24,8 +24,7 @@ package body Pictlib.Internal.Bytes is
       Value := 0;
       Outcome := Streams.Read_Exact (Object, Buffer);
       if Results.Succeeded (Outcome) then
-         Value := Interfaces.Shift_Left (Interfaces.Unsigned_16 (Buffer (1)), 8)
-           or Interfaces.Unsigned_16 (Buffer (2));
+         Value := Word_At (Buffer, Buffer'First);
       end if;
       return Outcome;
    end Read_U16_BE;
@@ -40,9 +39,7 @@ package body Pictlib.Internal.Bytes is
       Value := 0;
       Outcome := Streams.Read_Exact (Object, Buffer);
       if Results.Succeeded (Outcome) then
-         for Item of Buffer loop
-            Value := Interfaces.Shift_Left (Value, 8) or Interfaces.Unsigned_32 (Item);
-         end loop;
+         Value := Long_At (Buffer, Buffer'First);
       end if;
       return Outcome;
    end Read_U32_BE;

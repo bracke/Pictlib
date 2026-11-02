@@ -133,13 +133,17 @@ private
 
    type Renderer_Access is access Textrender.Renderer;
 
+   --  When a slot was last used, counted in Acquire calls: 64 bits, so the count never wraps and the least
+   --  recently used font is always the one with the smallest stamp.
+   type Use_Time is range 0 .. 2 ** 63 - 1;
+
    type Slot_Type is new Ada.Finalization.Limited_Controlled with record
       --  Allocated by the first Acquire that loads into the slot, and freed by Clear or finalization.
       Renderer : Renderer_Access;
       Path : Ada.Strings.Unbounded.Unbounded_String;
       Size : Natural := 0;
       Used : Boolean := False;
-      Stamp : Natural := 0;
+      Stamp : Use_Time := 0;
    end record;
 
    overriding procedure Finalize (Item : in out Slot_Type);
@@ -148,6 +152,6 @@ private
 
    type Font_Cache is limited record
       Items : Slot_Array;
-      Clock : Natural := 0;
+      Clock : Use_Time := 0;
    end record;
 end Pictlib.Internal.Text;

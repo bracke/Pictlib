@@ -1,3 +1,5 @@
+with Ada.Finalization;
+
 with Pictlib.Images;
 with Pictlib.Streams;
 
@@ -15,14 +17,17 @@ package Pictlib_Testing.Files is
    --  Save path: create or replace the file at Path with Data, byte for byte.
    procedure Save_Path (Path : String; Data : Pictlib.Streams.Byte_Array);
 
-   --  A binary Netpbm raster: P6 (8-bit RGB) or P4 (1-bit, 1 is black).
-   type Raster is record
+   --  A binary Netpbm raster: P6 (8-bit RGB) or P4 (1-bit, 1 is black). It owns its file's bytes: a copy copies
+   --  them, and they are freed with it.
+   type Raster is new Ada.Finalization.Controlled with record
       Data : Bytes_Access;
       Kind : Character := '6';
       Width : Natural := 0;
       Height : Natural := 0;
       First_Pixel : Positive := 1;
    end record;
+   overriding procedure Adjust (Item : in out Raster);
+   overriding procedure Finalize (Item : in out Raster);
 
    --  Read raster: the file at Path as a Netpbm raster whose pixels all lie within it.
    --  @param Path A file, which may be missing or written by another program.

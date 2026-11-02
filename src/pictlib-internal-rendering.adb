@@ -30,6 +30,17 @@ package body Pictlib.Internal.Rendering is
       Regions.Translate (Item, -P.Port.Origin_H, -P.Port.Origin_V);
    end To_Picture;
 
+   function Mask_To_Picture (P : Painter; S : in out Sessions.Session; Mask : in out Regions.Region)
+     return Results.Result
+   is
+      Outcome : constant Results.Result := Accounting.Charge_Work (S, Regions.Size (Mask));
+   begin
+      if Results.Succeeded (Outcome) then
+         To_Picture (P, Mask);
+      end if;
+      return Outcome;
+   end Mask_To_Picture;
+
    function Unsupported
      (S : in out Sessions.Session;
       Event : Pictures.Opcode_Event;
@@ -419,7 +430,10 @@ package body Pictlib.Internal.Rendering is
          end if;
       end if;
       if Header.Masked then
-         To_Picture (P, Mask);
+         Outcome := Mask_To_Picture (P, S, Mask);
+         if not Results.Succeeded (Outcome) then
+            return Outcome;
+         end if;
       end if;
 
       Outcome := Pixmaps.Start (S, Decoder, Header);

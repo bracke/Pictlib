@@ -7,21 +7,24 @@ private with Ada.Strings.Unbounded;
 --  The TrueType fonts text renders with. pictlib ships no fonts: the caller maps the Macintosh font families a
 --  picture names to TrueType files, by name or by font ID, and may name a default for everything else.
 package Pictlib.Fonts is
+   --  A Macintosh font ID, as TxFont and fontName give it.
    subtype Font_ID is Pictlib.Font_ID;
 
+   --  Which file each family and font ID is drawn with, and a default for the rest.
    type Font_Table is private;
 
+   --  A table that names no font and no default: text is Font_Unavailable in Strict, else skipped with a warning.
    Empty : constant Font_Table;
 
    --  Add.
    --  @param Table Table to extend; a later entry for the same name replaces the earlier one.
    --  @param Family A Macintosh font family name, compared without regard to case.
-   --  @param Path A TrueType font file.
+   --  @param Path A TrueType font file; empty removes the name's entry, so the name resolves as if never added.
    procedure Add (Table : in out Font_Table; Family : String; Path : String);
    --  Add.
    --  @param Table Table to extend; a later entry for the same ID replaces the earlier one.
    --  @param ID A font ID, as TxFont names it.
-   --  @param Path A TrueType font file.
+   --  @param Path A TrueType font file; empty removes the ID's entry, so the ID resolves as if never added.
    procedure Add (Table : in out Font_Table; ID : Font_ID; Path : String);
    --  Set default.
    --  @param Table Table to change.

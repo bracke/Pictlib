@@ -22,11 +22,14 @@ package Pictlib.Internal.JPEG_Bridge is
       Data_Size : Interfaces.Unsigned_32 := 0;
    end record;
 
+   --  Pixel total.
+   --  @param Item An image.
+   --  @return Its width times its height.
+   function Pixel_Total (Item : Image) return Byte_Count is (Byte_Count (Item.Width) * Byte_Count (Item.Height));
    --  Pixel bytes.
    --  @param Item An image.
    --  @return The bytes its decoded pixels take.
-   function Pixel_Bytes (Item : Image) return Byte_Count is
-     (Bytes_Per_Pixel * Byte_Count (Item.Width) * Byte_Count (Item.Height));
+   function Pixel_Bytes (Item : Image) return Byte_Count is (Bytes_Per_Pixel * Pixel_Total (Item));
 
    --  Admit and decode.
    --  @param S Session positioned at the compressed data.

@@ -25,8 +25,11 @@ package Pictlib.Decoding is
       Cancelled);
 
    type Options is record
+      --  How malformed or unsupported input is met: failed, worked around with a warning, or recovered from.
       Strictness : Strictness_Mode := Strict;
+      --  Whether the input starts with the 512-byte file header, or is looked at to decide.
       File_Header : Header_Policy := Auto;
+      --  Which payloads are kept as metadata: comments and font names by default.
       Retention : Metadata.Retention_Policy;
       --  Fail (Strict) or warn when bytes follow the end opcode; otherwise they are not read.
       Require_End_Of_Input : Boolean := False;

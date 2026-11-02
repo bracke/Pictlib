@@ -63,7 +63,7 @@ package body Pictlib.Internal.Pixmaps is
       end if;
       declare
          Small : Byte;
-         Outcome : constant Results.Result := Sessions.Read_Count_Byte (S, Small);
+         Outcome : constant Results.Result := Sessions.Read_Byte (S, Small);
       begin
          Count := Natural (Small);
          return Outcome;

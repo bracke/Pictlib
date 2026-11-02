@@ -112,9 +112,9 @@ package body Pictlib.Internal.Drawing is
          declare
             Dh, Dv : Byte := 0;
          begin
-            Outcome := Sessions.Read_Count_Byte (S, Dh);
+            Outcome := Sessions.Read_Byte (S, Dh);
             if Results.Succeeded (Outcome) then
-               Outcome := Sessions.Read_Count_Byte (S, Dv);
+               Outcome := Sessions.Read_Byte (S, Dv);
             end if;
             To := (H => From.H + Signed (Dh), V => From.V + Signed (Dv));
          end;
@@ -150,11 +150,11 @@ package body Pictlib.Internal.Drawing is
             V : Integer := P.Port.Text_State.Origin_V;
          begin
             if Event.Op in Opcodes.DH_Text | Opcodes.DHDV_Text then
-               Outcome := Sessions.Read_Count_Byte (S, Offset);
+               Outcome := Sessions.Read_Byte (S, Offset);
                H := H + Natural (Offset);
             end if;
             if Results.Succeeded (Outcome) and then Event.Op in Opcodes.DV_Text | Opcodes.DHDV_Text then
-               Outcome := Sessions.Read_Count_Byte (S, Offset);
+               Outcome := Sessions.Read_Byte (S, Offset);
                V := V + Natural (Offset);
             end if;
             if Results.Succeeded (Outcome) and then not Rendering.Within_Reach (H) then
@@ -168,7 +168,7 @@ package body Pictlib.Internal.Drawing is
          end;
       end if;
       if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Read_Count_Byte (S, Count);
+         Outcome := Sessions.Read_Byte (S, Count);
       end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
@@ -338,7 +338,7 @@ package body Pictlib.Internal.Drawing is
             Outcome := Sessions.Read_Word (S, Value);
             State.Font := Fonts.Font_ID (Value);
          when Opcodes.Text_Face =>
-            Outcome := Sessions.Read_Count_Byte (S, State.Face);
+            Outcome := Sessions.Read_Byte (S, State.Face);
          when Opcodes.Text_Mode =>
             --  Checked when read, as PnMode is, whether or not text is drawn in it.
             Outcome := Sessions.Read_Word (S, Value);
@@ -456,8 +456,8 @@ package body Pictlib.Internal.Drawing is
       return Outcome;
    end Consume;
 
-   procedure Register_Font_Name (P : in out Rendering.Painter; Font : Natural; Name : String) is
+   procedure Register_Font_Name (P : in out Rendering.Painter; Font : Font_ID; Name : String) is
    begin
-      P.Port.Text_State.Names.Include (Fonts.Font_ID (Font), Name);
+      P.Port.Text_State.Names.Include (Font, Name);
    end Register_Font_Name;
 end Pictlib.Internal.Drawing;

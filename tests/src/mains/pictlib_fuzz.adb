@@ -147,6 +147,10 @@ procedure Pictlib_Fuzz is
       Data := Pictlib_Testing.Files.Load_Path (Name);
       Seeds.Append (Data.all);
       Pictlib_Testing.Files.Free (Data);
+   exception
+      when Error : others =>
+         Pictlib_Testing.Files.Free (Data);
+         Fail ("could not read seed " & Name & ": " & Ada.Exceptions.Exception_Message (Error));
    end Add_File;
 
    procedure Add_Files (Directory : String) is
@@ -304,7 +308,8 @@ procedure Pictlib_Fuzz is
    end Finalize;
 
    --  Saves an input still running after Stuck_Seconds, while it runs. A failure of its own is reported at once,
-   --  a run that never returns being the case it is for, and the watchdog goes on watching.
+   --  a run that never returns being the case it is for: after a failed save the watchdog goes on watching, and
+   --  after any other failure the run goes on unwatched.
    task type Watchdog is
       entry Stop;
    end Watchdog;
@@ -369,6 +374,7 @@ procedure Pictlib_Fuzz is
              & W (16#2D#) & W (8) & L (16#0001_0000#) & L (0)
              & W (16#28#) & W (20) & W (5) & B (2) & Text ("Hi") & B (0));
       Table : constant Pictlib.Fonts.Font_Table := Pictlib_Testing.Fonts.Test_Table;
+      Number : Positive := 1;
    begin
       for Picture of Byte_Vectors.Vector'[Version_1, Version_2] loop
          declare
@@ -393,10 +399,17 @@ procedure Pictlib_Fuzz is
                      & Outcome.First_Error.Context.Op'Image & " " & Outcome.First_Error.Context.Limit'Image
                      & ", expected"
                      & Outcome.First_Error.Context.Expected'Image & ", actual"
-                     & Outcome.First_Error.Context.Actual'Image & "; saved as hand-seed.pict");
-               Save ("hand-seed.pict", Picture);
+                     & Outcome.First_Error.Context.Actual'Image & "; saved as " & Input_Name ("hand-seed", Number));
+               begin
+                  Save (Input_Name ("hand-seed", Number), Picture);
+               exception
+                  when Error : others =>
+                     Fail ("could not save hand-assembled seed" & Number'Image & ": "
+                           & Ada.Exceptions.Exception_Message (Error));
+               end;
             end if;
          end;
+         Number := Number + 1;
       end loop;
    end Add_Hand_Seeds;
 

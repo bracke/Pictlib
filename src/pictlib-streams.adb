@@ -8,11 +8,19 @@ package body Pictlib.Streams is
       Step : Source_Result;
       Total, Completed : Byte_Count) return Results.Result
    is
-      Failure : constant Errors.Error := Internal.Replies.Judged (Step, Total - Completed, Object.Offset);
    begin
-      if Errors.Is_Fatal (Failure) then
-         return Results.Failure (Failure);
-      elsif Step.Count = 0 then
+      --  A sound step needs no diagnostic, so the source's Offset, caller code, is asked only on a failure.
+      if not Errors.Is_Fatal (Step.Error) and then Step.Count in 1 .. Total - Completed then
+         return Results.Success;
+      end if;
+      declare
+         Failure : constant Errors.Error := Internal.Replies.Judged (Step, Total - Completed, Object.Offset);
+      begin
+         if Errors.Is_Fatal (Failure) then
+            return Results.Failure (Failure);
+         end if;
+      end;
+      if Step.Count = 0 then
          --  Nothing, at the end of the input.
          return Results.Failure
            (Errors.Make

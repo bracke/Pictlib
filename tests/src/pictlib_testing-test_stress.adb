@@ -1,3 +1,6 @@
+with Ada.Exceptions;
+with Ada.Strings.Unbounded;
+
 with AUnit.Assertions;
 
 with Pictlib;
@@ -120,6 +123,9 @@ package body Pictlib_Testing.Test_Stress is
       Expected : constant Bytes := Render (Picture, 48, 24);
       type Outcome_Array is array (1 .. 4) of Boolean;
       Same : Outcome_Array := [others => False];
+      --  Why a worker's render failed: an assertion or exception inside a task would end it silently.
+      type Failure_Array is array (1 .. 4) of Ada.Strings.Unbounded.Unbounded_String;
+      Failures : Failure_Array;
 
       task type Worker is
          entry Start (Index : Positive);
@@ -138,6 +144,10 @@ package body Pictlib_Testing.Test_Stress is
                Matches := Matches and then Render (Picture, 48, 24) = Expected;
             end loop;
             Same (Slot) := Matches;
+         exception
+            when Error : others =>
+               Failures (Slot) := Ada.Strings.Unbounded.To_Unbounded_String
+                 (Ada.Exceptions.Exception_Name (Error) & ": " & Ada.Exceptions.Exception_Message (Error));
          end;
       end Worker;
    begin
@@ -148,6 +158,10 @@ package body Pictlib_Testing.Test_Stress is
             Workers (Index).Start (Index);
          end loop;
       end;
+      for Index in Failures'Range loop
+         Assert (Ada.Strings.Unbounded.Length (Failures (Index)) = 0,
+                 "the render in task" & Index'Image & " failed: " & Ada.Strings.Unbounded.To_String (Failures (Index)));
+      end loop;
       Assert ((for all Item of Same => Item), "decoders in different tasks rendered differently");
    end Concurrency;
 

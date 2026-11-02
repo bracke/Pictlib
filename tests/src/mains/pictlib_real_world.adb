@@ -113,7 +113,7 @@ procedure Pictlib_Real_World is
          if Pictlib.Results.Succeeded (Outcome) and then Reference'Length > 0 then
             declare
                Raster : Pictlib_Testing.Files.Raster;
-               Wrong : Natural := 0;
+               Wrong, Largest : Natural;
                View : constant Pictlib.Images.Mutable_Image_View :=
                  Pictlib_Testing.Canvases.Frame_View (Decoder, Storage);
             begin
@@ -122,19 +122,11 @@ procedure Pictlib_Real_World is
                then
                   Pictlib_Testing.Tools.Fail (Reference & ": not a raster of the picture's frame");
                else
-                  for Y in 0 .. Height - 1 loop
-                     for X in 0 .. Width - 1 loop
-                        if Pictlib_Testing.Canvases.Difference
-                             (Pictlib_Testing.Canvases.Pixel (View, X, Y), Pictlib_Testing.Files.Pixel (Raster, X, Y))
-                           > Reference_Tolerance
-                        then
-                           Wrong := Wrong + 1;
-                        end if;
-                     end loop;
-                  end loop;
+                  Pictlib_Testing.Canvases.Compare (View, Raster, Reference_Tolerance, Wrong, Largest);
                   if Wrong > 0 then
                      Pictlib_Testing.Tools.Fail
-                       (Reference & ":" & Wrong'Image & " pixels differ from the reference");
+                       (Reference & ":" & Wrong'Image & " pixels differ from the reference, by up to"
+                        & Largest'Image);
                   end if;
                end if;
             end;
@@ -146,6 +138,10 @@ procedure Pictlib_Real_World is
             return "partial";
          end if;
          return Code_Of (Outcome);
+      exception
+         when others =>
+            Free (Storage);
+            raise;
       end;
    end Render;
 
@@ -184,6 +180,7 @@ procedure Pictlib_Real_World is
                   Free (Data);
                exception
                   when Error : others =>
+                     Free (Data);
                      Defects := Defects + 1;
                      Results_Now.Include (Relative, "exception " & Ada.Exceptions.Exception_Name (Error));
                      Ada.Text_IO.Put_Line (Relative & ": " & Ada.Exceptions.Exception_Information (Error));
@@ -207,6 +204,10 @@ begin
       return;
    end if;
    Visit (Corpus);
+   --  A corpus that is not there, or holds no picture, tests nothing: it must not pass.
+   if Results_Now.Is_Empty then
+      Pictlib_Testing.Tools.Fail ("no pictures under " & Corpus);
+   end if;
    if Ada.Directories.Exists (Expected_File) then
       declare
          File : Ada.Text_IO.File_Type;
@@ -215,13 +216,21 @@ begin
          while not Ada.Text_IO.End_Of_File (File) loop
             declare
                Line : constant String := Ada.Text_IO.Get_Line (File);
+               Kept : Boolean := False;
             begin
                for Index in Line'Range loop
                   if Line (Index) = ' ' then
-                     Expected.Include (Line (Line'First .. Index - 1), Line (Index + 1 .. Line'Last));
+                     Kept := Index > Line'First and then Index < Line'Last;
+                     if Kept then
+                        Expected.Include (Line (Line'First .. Index - 1), Line (Index + 1 .. Line'Last));
+                     end if;
                      exit;
                   end if;
                end loop;
+               --  A line that names no picture or no outcome is a broken file, not a picture to skip.
+               if not Kept then
+                  Pictlib_Testing.Tools.Fail (Expected_File & ": not ""<file> <outcomes>"": """ & Line & """");
+               end if;
             end;
          end loop;
          Ada.Text_IO.Close (File);

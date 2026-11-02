@@ -161,6 +161,10 @@ package body Pictlib.Internal.Picture_Stream is
       return True;
    end Answered;
 
+   --  Wanted, cut to the picture budget left: what the source is asked for once the look-ahead is spent.
+   function Within_Budget (Object : Reader; Wanted : Byte_Count) return Byte_Count is
+     (Byte_Count'Min (Wanted, Remaining_Budget (Object)));
+
    --  Up to Wanted bytes of a look-ahead that holds some, consumed.
    function Take_Buffered (Object : in out Reader; Wanted : Byte_Count) return Streams.Source_Result is
       Count : constant Natural :=
@@ -192,9 +196,7 @@ package body Pictlib.Internal.Picture_Stream is
       end if;
 
       declare
-         Allowed : constant Natural :=
-           (if Remaining_Budget (Object) < Byte_Count (Buffer'Length) then Natural (Remaining_Budget (Object))
-            else Buffer'Length);
+         Allowed : constant Natural := Natural (Within_Budget (Object, Byte_Count (Buffer'Length)));
          Before : constant Generation := Object.Bound;
          Step : constant Streams.Source_Result :=
            Object.Input.Read (Buffer (Buffer'First .. Buffer'First + Allowed - 1));
@@ -209,9 +211,7 @@ package body Pictlib.Internal.Picture_Stream is
       if Object.Input = null then
          return Unbound_Reply;
       elsif Buffered (Object) > 0 then
-         Object.First := Object.First + 1;
-         Object.Consumed := Object.Consumed + 1;
-         return (Error => Errors.Make (Errors.No_Error), Count => 1, End_Of_Input => False);
+         return Take_Buffered (Object, 1);
       elsif Object.Input_Ended then
          return (Error => Errors.Make (Errors.No_Error), Count => 0, End_Of_Input => True);
       end if;
@@ -236,7 +236,7 @@ package body Pictlib.Internal.Picture_Stream is
       end if;
 
       declare
-         Allowed : constant Byte_Count := Byte_Count'Min (Count, Remaining_Budget (Object));
+         Allowed : constant Byte_Count := Within_Budget (Object, Count);
          Before : constant Generation := Object.Bound;
          Step : constant Streams.Source_Result := Object.Input.Skip (Allowed);
       begin

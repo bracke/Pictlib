@@ -21,6 +21,9 @@ package body Pictlib.Internal.Typesetting is
    Space : constant := 16#20#;
    --  ChExtra is 4.12 fixed point.
    Char_Extra_Unit : constant := 4096.0;
+   --  The metric of a glyph the font lacks: textrender leaves its out parameter unset then, so it is never read.
+   No_Glyph : constant Textrender.Glyph_Metric :=
+     (X | Y | W | H => 0, U0 | V0 | U1 | V1 | Advance_X | Bearing_X | Bearing_Y => 0.0);
 
    function Has (Face : Byte; Bit : Byte) return Boolean is ((Face and Bit) /= 0);
 
@@ -247,11 +250,15 @@ package body Pictlib.Internal.Typesetting is
       function Retake (Index : Positive) return Results.Result is
          Result : constant Results.Result :=
            (if Cells (Index).Drawable then Accounting.Charge_Work (S, Text.Glyph_Work (Size)) else Results.Success);
+         Taken : Textrender.Glyph_Metric;
       begin
-         if Results.Succeeded (Result) and then Cells (Index).Drawable
-           and then Font.Get_Glyph (Cells (Index).Code, Cells (Index).Metric, Style) /= Textrender.Success
-         then
-            Cells (Index).Drawable := False;
+         if Results.Succeeded (Result) and then Cells (Index).Drawable then
+            if Font.Get_Glyph (Cells (Index).Code, Taken, Style) = Textrender.Success then
+               Cells (Index).Metric := Taken;
+            else
+               Cells (Index).Metric := No_Glyph;
+               Cells (Index).Drawable := False;
+            end if;
          end if;
          return Result;
       end Retake;
@@ -300,10 +307,9 @@ package body Pictlib.Internal.Typesetting is
             return Result;
          end if;
          declare
-            --  Defined even when the font lacks the glyph and leaves it alone.
-            Metric : Textrender.Glyph_Metric :=
-              (X | Y | W | H => 0, U0 | V0 | U1 | V1 | Advance_X | Bearing_X | Bearing_Y => 0.0);
-            Status : constant Textrender.Status_Code := Font.Get_Glyph (Text.To_Unicode (Item), Metric, Style);
+            Taken : Textrender.Glyph_Metric;
+            Status : constant Textrender.Status_Code := Font.Get_Glyph (Text.To_Unicode (Item), Taken, Style);
+            Metric : constant Textrender.Glyph_Metric := (if Status = Textrender.Success then Taken else No_Glyph);
             Advance : constant Long_Float :=
               Advance_Of (Item, (if Status = Textrender.Success then Metric.Advance_X else Float (Size) / 2.0),
                           Width_Change, State);

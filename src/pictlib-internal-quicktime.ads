@@ -13,9 +13,11 @@ package Pictlib.Internal.QuickTime is
    --  @param Length The opcode's data length after the length field; all of it is consumed on success.
    --  @return Success; Unsupported_Feature strictly for codecs other than 'jpeg', mattes, matrices other
    --  than translation and scaling, and JPEGs jpeglib or pictlib does not decode (lossless, with a DNL marker,
-   --  or progressive or hierarchical beyond the stack bound); Embedded_Image_Failed for a JPEG jpeglib rejects
-   --  or an image description of size 0; Region_Invalid for a mask whose size is not maskSize; Limit_Exceeded
-   --  above the embedded image budgets; Opcode_Length_Invalid when the parts do not fit the opcode.
+   --  or progressive or hierarchical beyond the stack bound); Embedded_Image_Failed for a JPEG jpeglib rejects,
+   --  an image of zero width or height, or a JPEG whose size is not the description's; Region_Invalid for a mask
+   --  whose size is not maskSize; Limit_Exceeded above the embedded image budgets, the allocation budgets, a
+   --  hierarchical JPEG's coefficients beyond jpeglib's share, or the drawing work; Opcode_Length_Invalid when
+   --  the parts do not fit the opcode or the image description is shorter than its fields.
    function Draw
      (P : in out Rendering.Painter;
       S : in out Sessions.Session;

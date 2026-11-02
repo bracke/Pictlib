@@ -26,7 +26,9 @@ package Pictlib.Internal.Picture_Stream is
    --  Fill lookahead.
    --  @param Object Reader whose look-ahead buffer is filled.
    --  @param Count Bytes wanted ahead of the current position; fewer are buffered at end of input.
-   --  @return Success, or the source failure or zero progress.
+   --  @return Success; the source's failure or zero progress; Invalid_State when the reader was rebound while
+   --  its source ran; Source_Read_Failed when it is unbound; Internal_Invariant_Failed when the source delivered
+   --  more than asked.
    function Fill_Lookahead (Object : in out Reader; Count : Positive) return Results.Result
      with Pre => Count <= Lookahead_Capacity;
    --  Lookahead length.
@@ -56,13 +58,25 @@ package Pictlib.Internal.Picture_Stream is
    --  @return Bytes the reader may still deliver within the picture byte limit.
    function Remaining_Budget (Object : Reader) return Byte_Count;
 
+   --  Read: the look-ahead first, then the source, within the picture byte budget.
+   --  @param Object Reader.
+   --  @param Buffer Receives the bytes; only the Count delivered are defined.
+   --  @return The bytes delivered and whether input ended, or a failure as Fill_Lookahead's; a request beyond the
+   --  budget gets what is left of it, and one once it is spent is Limit_Exceeded.
    overriding function Read (Object : in out Reader; Buffer : out Streams.Byte_Array) return Streams.Source_Result;
 
    --  Probe past end.
    --  @param Object Reader positioned after the picture.
    --  @return Whether one more byte follows: it is not picture data, so the picture byte budget does not apply.
    function Probe_Past_End (Object : in out Reader) return Streams.Source_Result;
+   --  Offset.
+   --  @param Object Reader.
+   --  @return The source offset of the next byte the reader delivers, the look-ahead counted as not yet read.
    overriding function Offset (Object : Reader) return Source_Offset;
+   --  Skip: the look-ahead first, then the source, within the picture byte budget.
+   --  @param Object Reader.
+   --  @param Count Bytes to pass over.
+   --  @return The bytes passed over and whether input ended, or a failure as Read's.
    overriding function Skip (Object : in out Reader; Count : Byte_Count) return Streams.Source_Result;
 
 private

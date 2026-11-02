@@ -196,11 +196,11 @@ package Pictlib.Internal.Sessions is
    --  @param Value Big-endian word.
    --  @return Operation result.
    function Read_Word (S : in out Session; Value : out Interfaces.Unsigned_16) return Results.Result;
-   --  Read count byte.
+   --  Read byte.
    --  @param S Session reading an opcode's data.
-   --  @param Value The byte.
+   --  @param Value One byte of the opcode's data: a count, an offset, a face or a flag.
    --  @return Operation result.
-   function Read_Count_Byte (S : in out Session; Value : out Byte) return Results.Result;
+   function Read_Byte (S : in out Session; Value : out Byte) return Results.Result;
    --  Read long.
    --  @param S Session reading an opcode's data.
    --  @param Value Big-endian long.

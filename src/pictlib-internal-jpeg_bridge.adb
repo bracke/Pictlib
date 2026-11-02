@@ -58,7 +58,7 @@ package body Pictlib.Internal.JPEG_Bridge is
       --  jpeglib reports a frame of more components than it decodes at the frame's marker, and its buffers
       --  outgrowing their share nowhere in particular.
       At_Frame : constant Boolean := Decoded.First_Error.Context.Marker /= 0;
-      Pixels_Of : constant Byte_Count := Byte_Count (Item.Width) * Byte_Count (Item.Height);
+      Pixels_Of : constant Byte_Count := Pixel_Total (Item);
       --  The pixels and jpeglib's share are what the image was allowed: the configured limit itself when
       --  nothing capped the share.
       Allowed : constant Byte_Count := Checked_Arithmetic.Saturating_Add (Bytes_Per_Pixel * Pixels_Of, Share);
@@ -85,9 +85,10 @@ package body Pictlib.Internal.JPEG_Bridge is
            ((case Code is
                 when Jpeglib.Errors.Unsupported_Feature | Jpeglib.Errors.Output_Limit_Exceeded =>
                   Errors.Unsupported_Feature,
-                --  pictlib drives jpeglib's states in order, so Invalid_State comes only from malformed data.
                 when Jpeglib.Errors.Operation_Cancelled | Jpeglib.Errors.Internal_Invariant_Failed =>
                   Errors.Internal_Invariant_Failed,
+                --  pictlib drives jpeglib's states in order, so Invalid_State, among the rest, comes only from
+                --  malformed data.
                 when others => Errors.Embedded_Image_Failed),
             Context));
    end Rejected;
@@ -249,7 +250,7 @@ package body Pictlib.Internal.JPEG_Bridge is
          (Jpeglib.Limits.Default_Limits with delta
             --  The description's pixels, which Max_Embedded_Image_Pixels bounded: a larger JPEG is refused at
             --  its frame header, before anything is set aside for it.
-            Max_Pixels => Jpeglib.Pixel_Count (Byte_Count (Item.Width) * Byte_Count (Item.Height)),
+            Max_Pixels => Jpeglib.Pixel_Count (Pixel_Total (Item)),
             --  Its own caps are pictlib's: the coefficients come out of its share, and its output is the pixels.
             Max_Allocation_Bytes => Jpeglib.Byte_Count (Share),
             Max_Coefficient_Bytes => Jpeglib.Byte_Count (Share),
@@ -302,8 +303,8 @@ package body Pictlib.Internal.JPEG_Bridge is
       end if;
       return Results.Success;
    exception
-      --  The source's exception, met through jpeglib or skipping, passes through, the pixels and jpeglib's buffers
-      --  released.
+      --  The source's exception, met through jpeglib or skipping, passes through with the pixels released; the
+      --  decoder lets go of its input, and its buffers go when it goes out of scope.
       when others =>
          Jpeglib.Decoding.Finalize (Decoder);
          Free (Pixels);
@@ -331,8 +332,7 @@ package body Pictlib.Internal.JPEG_Bridge is
       if Results.Succeeded (Outcome) then
          Outcome :=
            Accounting.Charge_Work
-             (S, Pixel_Count (Item.Width) * Pixel_Count (Item.Height) + Pixel_Count (Item.Height)
-                 + Pixel_Count (Item.Data_Size));
+             (S, Pixel_Count (Pixel_Total (Item)) + Pixel_Count (Item.Height) + Pixel_Count (Item.Data_Size));
       end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;

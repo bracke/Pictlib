@@ -359,6 +359,16 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   pictures, as the specification now lists; the dead `Transfer_Mode_Invalid`
   entry of the recoverable list is gone, it being only ever a warning
   leniently.
+- A framed polygon charges its points as drawing work before it is copied,
+  as a region shape does: `frameSamePoly` repeated after one large polygon
+  below the frame walked every point each time for one unit. A frame with
+  no pen walks nothing. A mask, of a `BitsRgn` copy or a QuickTime image,
+  is charged for its move to the origin; rows added above a shape are
+  moved, not copied, so they cost what they are charged.
+- A glyph the font lacks is never read through textrender's unset metric.
+- `Fonts.Add` with an empty path removes the entry, so the name or ID
+  falls through to the default instead of hiding it.
+- The font cache's use clock is 64 bits and never wraps.
 
 ### Documentation
 
@@ -440,6 +450,14 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - The specification names the new units and the rules for rebinding from
   caller code; the external fixtures' README records the ImageMagick and
   Netpbm versions and the check that reproduces them.
+- `limits_and_safety.md` says a QuickTime image is decoded whole, text
+  keeps its fonts for a render, and retained metadata costs its bytes
+  twice; it and the specification note the one byte probed past
+  `Max_Picture_Bytes` under `Require_End_Of_Input`. The work table lists
+  polygon shapes and masks. `Diagnostic_Context`'s fields, `Options`,
+  `Encoder_State`, `Fonts.Empty`, `Capabilities`, `Version` and the picture
+  stream's operations are documented; the QuickTime return list and three
+  misleading comments are corrected.
 
 ### Internal structure
 
@@ -561,6 +579,13 @@ place:
   `Failures.Context_Of`; `Visiting` is `Busy`; the font cache checks it is
   given a held textrender guard; `Text.File_Bytes` catches only file
   errors; polygon filling reuses its row vectors.
+- `Probe_Past_End` takes a buffered byte through `Take_Buffered`, and
+  `Read` and `Skip` clamp to the budget through one helper; the big-endian
+  readers use `Word_At` and `Long_At`; `JPEG_Bridge.Pixel_Total` counts an
+  image's pixels once; `Sessions.Read_Count_Byte` is `Read_Byte`;
+  `Register_Font_Name` takes a `Font_ID`; coverage's column vectors have a
+  name of their own and `Coverage.Row` is a `Copy_Row`; `Read_Exact` and
+  `Skip_Exact` ask a source its offset only on a failure.
 
 ### Tooling
 
@@ -708,8 +733,8 @@ All tooling is Ada, in the `tests` crate:
   inputs are named in one place.
 - `pictlib_fuzz`'s watchdog no longer reads an input that is gone: the
   watch on an input ends however its run ends, through a guard object (an
-  input that raised stayed watched). A failure in the watchdog is reported
-  at the end instead of ending it and losing the summary; it is stopped
+  input that raised stayed watched). A failure in the watchdog no longer
+  loses the run's summary; it is stopped
   only while it runs; a stuck input it saved is not saved again; a failed
   save of a slow input is not counted as a defect of pictlib; both tasks
   print in turn. Of LibreOffice's failing pictures only the two that are
@@ -762,3 +787,10 @@ All tooling is Ada, in the `tests` crate:
   tool and the benchmark release what they allocate; the benchmark times
   encoding alone, through one encoder and destination, and reads each
   picture's header once.
+- `pictlib_real_world` fails with no corpus and on a malformed
+  `expected.txt` line, and frees what a raising picture held. The fuzzer's
+  hand seeds save to files of their own, and a seed it cannot read or save
+  is reported; its watchdog comment says what it survives. `Files.Raster`
+  frees its bytes; the tools share `Canvases.Compare`. The concurrency test
+  reports why a task's render failed; `packbits.word_units` checks what it
+  wrote, and `hostile.pen_steps` the work its lines cost.

@@ -74,7 +74,7 @@ package body Pictlib_Testing.Test_PackBits is
       --  A run of two words, then a literal of two words.
       Packed : constant Bytes := B (16#FF#) & W (16#1234#) & B (1) & W (16#ABCD#) & W (16#00FF#);
    begin
-      Assert (Unpack (Packed, 2, Output, Written) = PackBits.Exact
+      Assert (Unpack (Packed, 2, Output, Written) = PackBits.Exact and then Written = 8
               and then Output = W (16#1234#) & W (16#1234#) & W (16#ABCD#) & W (16#00FF#),
               "word runs and literals did not unpack");
    end Word_Units;

@@ -476,7 +476,8 @@ finishes with a warning in both lenient modes, as below. Limits, stream failures
 never recovered.
 
 The decoder reads nothing after the end opcode unless `Require_End_Of_Input` is set; then one more
-byte fails with `Trailing_Data` in `Strict` and is a warning otherwise. Input that ends at an
+byte fails with `Trailing_Data` in `Strict` and is a warning otherwise; that probe is not picture
+data and may take one byte past `Max_Picture_Bytes`. Input that ends at an
 opcode boundary without the end opcode fails with `Missing_End_Opcode` in `Strict` and finishes
 with a warning otherwise; input that ends inside an opcode fails with `Source_Unexpected_End`
 in every mode, which `Render` under `Recover_When_Safe` then recovers as a partial picture,
@@ -565,7 +566,9 @@ before or as the work is done, whether or not anything is drawn, and nothing is 
 | --- | --- |
 | a shape opcode | 1, plus every row its shape holds and every row painting walks |
 | a region shape | every unit of its region's size, for the copy moved to the origin, besides building it |
-| building a shape | every row walked and every unit of span, region, polygon and line work; building stops at the budget left, and a shape that stops covers nothing |
+| a polygon shape | every point, for the copy moved to the origin, besides building it; a frame with no pen walks nothing |
+| a QuickTime mask | every unit of its region's size, for the copy moved to the origin |
+| building a shape | every row walked and every unit of span, region, polygon and line work, every row held moved when a row is added above them; building stops at the budget left, and a shape that stops covers nothing |
 | painting | every pixel painted, underlines included |
 | a copied pixmap | for every row converted, its pixels or the bytes it unpacks to, whichever is more, plus 1; every destination row walked; 1 for every row a copy skips, a QuickTime placeholder's included |
 | a pattern | 1, plus, for every row of a color `PixPat` tile decoded, its pixels or the bytes it unpacks to, whichever is more, plus 1 |

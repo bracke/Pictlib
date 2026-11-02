@@ -1,12 +1,20 @@
 package body Pictlib.Fonts is
    procedure Add (Table : in out Font_Table; Family : String; Path : String) is
    begin
-      Table.Names.Include (Family, Path);
+      if Path'Length = 0 then
+         Table.Names.Exclude (Family);
+      else
+         Table.Names.Include (Family, Path);
+      end if;
    end Add;
 
    procedure Add (Table : in out Font_Table; ID : Font_ID; Path : String) is
    begin
-      Table.IDs.Include (ID, Path);
+      if Path'Length = 0 then
+         Table.IDs.Exclude (ID);
+      else
+         Table.IDs.Include (ID, Path);
+      end if;
    end Add;
 
    procedure Set_Default (Table : in out Font_Table; Path : String) is

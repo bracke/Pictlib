@@ -137,7 +137,7 @@ package body Pictlib.Internal.Opcode_Reader is
                for Index in Name'Range loop
                   Name (Index) := Character'Val (Data (3 + Index));
                end loop;
-               Drawing.Register_Font_Name (Paint.all, Natural (Font), Name);
+               Drawing.Register_Font_Name (Paint.all, Font_ID (Font), Name);
             end;
          end if;
          if S.Retention.Font_Names then
@@ -184,7 +184,7 @@ package body Pictlib.Internal.Opcode_Reader is
       Outcome : Results.Result := Sessions.Skip_Data (S, Byte_Count (Prefix));
    begin
       if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Read_Count_Byte (S, Count);
+         Outcome := Sessions.Read_Byte (S, Count);
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Sessions.Skip_Data (S, Byte_Count (Count));

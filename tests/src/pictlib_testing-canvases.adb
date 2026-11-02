@@ -1,7 +1,6 @@
 with Ada.Strings.Unbounded;
 with Pictlib.Geometry;
 with AUnit.Assertions;
-with Pictlib_Testing.Files;
 with Pictlib_Testing.Recorders;
 
 package body Pictlib_Testing.Canvases is
@@ -50,7 +49,7 @@ package body Pictlib_Testing.Canvases is
      (Decoder : in out Pictlib.Decoding.Decoder;
       Storage : in out Pictlib.Streams.Byte_Array_Access) return Pictlib.Results.Result
    is
-      procedure Free (Item : in out Pictlib.Streams.Byte_Array_Access) 
+      procedure Free (Item : in out Pictlib.Streams.Byte_Array_Access)
         renames Pictlib_Testing.Files.Free;
       Needed : constant Natural := Frame_Bytes (Decoder);
    begin
@@ -261,6 +260,29 @@ package body Pictlib_Testing.Canvases is
    begin
       return (Output.Storage (At_Pixel), Output.Storage (At_Pixel + 1), Output.Storage (At_Pixel + 2));
    end Pixel;
+
+   procedure Compare
+     (Output : Pictlib.Images.Mutable_Image_View;
+      Reference : Files.Raster;
+      Tolerance : Natural;
+      Wrong, Largest : out Natural)
+   is
+   begin
+      Wrong := 0;
+      Largest := 0;
+      for Y in 0 .. Reference.Height - 1 loop
+         for X in 0 .. Reference.Width - 1 loop
+            declare
+               Apart : constant Natural := Difference (Pixel (Output, X, Y), Files.Pixel (Reference, X, Y));
+            begin
+               Largest := Natural'Max (Largest, Apart);
+               if Apart > Tolerance then
+                  Wrong := Wrong + 1;
+               end if;
+            end;
+         end loop;
+      end loop;
+   end Compare;
 
    function Letter (Color : Pictlib.Images.RGB_Color) return Character is
      (if Color = (16#FF#, 16#FF#, 16#FF#) then 'W'

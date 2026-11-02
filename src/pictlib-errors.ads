@@ -48,18 +48,28 @@ package Pictlib.Errors is
 
    type Warning_Severity is (Informational, Compatibility, Recovery, Data_Loss);
 
+   --  Where a failure or warning arose and what it judged.
    type Diagnostic_Context is record
+      --  The source offset where reading stood, or of the opcode judged as a whole.
       Source : Source_Offset := 0;
+      --  The encoder's destination offset.
       Destination : Destination_Offset := 0;
+      --  The opcode whose data was read, when Has_Opcode.
       Op : Opcode := 0;
       Has_Opcode : Boolean := False;
+      --  The opcode's position in the picture's opcode stream.
       Ordinal : Opcode_Ordinal := 0;
       Row : Row_Index := 0;
       --  Whether Row names a row: row 0 is a row too.
       Has_Row : Boolean := False;
+      --  The bound or requirement a value was checked against: a limit, what the format requires, or the length
+      --  of what must hold it (an opcode, a view, a caller's buffer or storage).
       Expected : Byte_Count := 0;
+      --  What the input, content or request came to.
       Actual : Byte_Count := 0;
+      --  The limit exceeded, for Limit_Exceeded.
       Limit : Limit_Kind := No_Limit;
+      --  A dependency's own code, when Has_Underlying_Code: jpeglib's Error_Code position for an embedded JPEG.
       Underlying_Code : Long_Long_Integer := 0;
       Has_Underlying_Code : Boolean := False;
    end record;

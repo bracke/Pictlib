@@ -89,10 +89,15 @@ package body Pictlib_Testing.Test_Hostile is
 
    procedure Pen_Steps (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
-      --  140,000 short lines of 127 move the pen beyond the frame; each line costs its opcode, nothing more.
+      --  140,000 short lines of 127 move the pen beyond the frame, and then beyond reach. A line outside the frame
+      --  costs a few units, not its 127 pixels: the pen leaves reach on a budget of 8 units a line.
       Runaway_Pen : aliased constant Bytes := Pic (4, 4, Repeat (W (16#23#) & B (127) & B (0), 140_000));
+      Budget : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
    begin
       Canvases.Expect_Failure (Runaway_Pen, 4, 4, Errors.Opcode_Invalid, "pen moved 140,000 times", 16#23#);
+      Budget.Max_Drawing_Work := 1_120_000;
+      Canvases.Expect_Failure (Runaway_Pen, 4, 4, Errors.Opcode_Invalid, "pen moved 140,000 times, 8 units a line",
+                               16#23#, Budget => Budget);
    end Pen_Steps;
 
    --  Pixel layouts that enumeration and rendering must read alike.
@@ -306,6 +311,11 @@ package body Pictlib_Testing.Test_Hostile is
 
       Polygon : aliased constant Bytes :=
         Pic (200, 200, W (16#71#) & W (10 + 4 * Points) & Rect (0, 0, 200, 200) & Zig_Zag);
+      --  2,000 points below the frame, framed once and then 99 times more by frameSamePoly: no line lands, yet
+      --  every frame walks every point.
+      Far_Polygon : aliased constant Bytes :=
+        Pic (4, 4, W (16#70#) & W (10 + 4 * 2_000) & Rect (1_000, 0, 1_001, 4)
+                   & Repeat (W (1_000) & W (0), 2_000) & Repeat (W (16#78#), 99));
       Moving_Clip : aliased constant Bytes :=
         Pic (4, 4, W (16#01#) & Striped_Region & Repeat (Origin (1, 1) & Origin (-1, -1), 20_000)
                    & Op_Rect (16#31#, 0, 0, 4, 4));
@@ -330,6 +340,10 @@ package body Pictlib_Testing.Test_Hostile is
                  "zig-zag polygon at a total of" & Natural'Image (Step * 20_000) & " named "
                  & Outcome.First_Error.Context.Limit'Image);
       end loop;
+      Canvases.Expect_Raster (Far_Polygon, 4, 4, "WWWW/WWWW/WWWW/WWWW", "a polygon below the frame");
+      Small.Max_Drawing_Work := 100_000;
+      Canvases.Expect_Failure (Far_Polygon, 4, 4, Errors.Limit_Exceeded, "100 frames of 2,000 points on 100,000",
+                               16#78#, Budget => Small, Limit => Pictlib.Drawing_Work_Limit);
       Canvases.Expect_Raster (Moving_Clip, 4, 4, "BBBB/WWWW/BBBB/WWWW", "clip kept while the origin moves");
       --  A shape that runs out of its allowance part-way covers nothing, whoever asks.
       declare
@@ -423,12 +437,27 @@ package body Pictlib_Testing.Test_Hostile is
       Missing : aliased constant Bytes :=
         Pic (16, 1, Repeat (W (16#98#) & W (2) & Rect (0, 0, 1, 16) & Rect (0, 0, 1, 16) & Rect (100, 100, 101, 116)
                             & W (0) & Zeros (2), 20));
+      --  A mask of 4,000 lines, all below the frame.
+      function Far_Mask return Bytes is
+         Result : Bytes (1 .. 8 * 4_000);
+      begin
+         for K in 0 .. 3_999 loop
+            Result (Result'First + 8 * K .. Result'First + 8 * K + 7) := W (10 + K) & W (0) & W (1) & W (16#7FFF#);
+         end loop;
+         return W (10 + Result'Length + 2) & Rect (10, 0, 4_010, 1) & Result & W (16#7FFF#);
+      end Far_Mask;
+      --  A 1-pixel BitsRgn behind that mask: moving the mask to the origin is work, though no line of it lands.
+      Far_Masked : aliased constant Bytes :=
+        Pic (1, 1, W (16#91#) & W (2) & Rect (0, 0, 1, 1) & Rect (0, 0, 1, 1) & Rect (0, 0, 1, 1) & W (0)
+                   & Far_Mask & Zeros (2));
       Pen_Bits : aliased constant Bytes := Pic (4, 4, W (16#09#) & Zeros (8));
       Cut_Pen_Bits : aliased constant Bytes := V2_Prefix (0, 0, 4, 4) & W (16#09#) & Zeros (3);
       Cut_Pixel_Pattern : aliased constant Bytes := V2_Prefix (0, 0, 4, 4) & W (16#13#) & W (1);
    begin
       Assert (Pictlib."<=" (1_000, Canvases.Least_Drawing_Work (Wide_Row, 1, 1, "a 1,000-byte row")),
               "a 1-pixel row of 1,000 unpacked bytes was charged as one pixel");
+      Assert (Pictlib."<=" (8_000, Canvases.Least_Drawing_Work (Far_Masked, 1, 1, "a mask of 4,000 lines")),
+              "moving a mask of 4,000 lines was not charged");
       Canvases.Expect_Failure (Empty_Rows, 64, 1_000, Errors.PackBits_Invalid, "empty packed rows", 16#98#,
                                Compatible);
       Canvases.Render (Empty_Rows, Decoder, Canvases.View (Storage'Access, 64, 1_000), Outcome,

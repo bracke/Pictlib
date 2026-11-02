@@ -10,7 +10,7 @@ bounds a read, a skip, an allocation or a loop.
 | `Max_Frame_Width`, `Max_Frame_Height` | after `picFrame`, before any opcode; the encoder's image | `Limit_Exceeded` |
 | `Max_Canvas_Pixels` | the frame, when `Render` starts | `Limit_Exceeded` |
 | `Max_Output_Bytes` | the view's accessible bytes, when `Render` starts; the encoder's whole picture, measured by a dry run | `Limit_Exceeded` |
-| `Max_Picture_Bytes` | every byte taken from the source, the look-ahead included; a look-ahead it cuts short of the version is this limit, not a bad version | `Limit_Exceeded` |
+| `Max_Picture_Bytes` | every byte taken from the source, the look-ahead included, except the one byte probed past the end under `Require_End_Of_Input`; a look-ahead it cuts short of the version is this limit, not a bad version | `Limit_Exceeded` |
 | `Max_Opcodes` | each opcode, the version opcode and `HeaderOp` included | `Limit_Exceeded` |
 | `Max_Opcode_Bytes` | each opcode's data, before every read or skip inside it; not the file header | `Limit_Exceeded` |
 | `Max_Region_Bytes`, `Max_Polygon_Points` | each region and polygon size word, enumerating and rendering | `Limit_Exceeded` |
@@ -80,10 +80,17 @@ turns; everything else runs in parallel.
 The decoder holds a fixed 528-byte look-ahead buffer. Retained metadata is
 copied into library-owned heap storage that `Reset`, `Initialize` and
 `Finalize` release. A payload is read into a heap buffer only after the
-per-opcode and allocation budgets admit it. Rendering decodes pixel data one
-row at a time through three buffers per opcode (stored row, unpacked row,
-row of colors), at most 64 KiB plus two rows, and frees them when the opcode
-ends. Regions keep their scanline data and the current inversion set only.
+per-opcode and allocation budgets admit it. Rendering decodes a PixMap or
+BitMap one row at a time through three buffers per opcode (stored row,
+unpacked row, row of colors), at most 64 KiB plus two rows, and frees them
+when the opcode ends. A QuickTime image is the exception: `jpeglib` decodes
+it whole, into a heap buffer of its pixels (up to `Max_Embedded_Image_Pixels`)
+besides `jpeglib`'s own buffers, both freed when the opcode ends. Text keeps
+up to eight loaded fonts, each a copy of its file and a glyph atlas, for the
+whole of a `Render`; they are freed when it ends. Regions keep their
+scanline data and the current inversion set only. Retained metadata and
+font names are read into a heap buffer and then copied into the store, so
+each costs its bytes twice against `Max_Total_Allocation_Bytes`.
 
 ## Caller views
 
