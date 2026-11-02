@@ -63,6 +63,9 @@ package body Pictlib.Internal.Shapes is
          when Inverted => (Rendering.Invert_Paint, Rendering.Pen_Slot, Transfer_Modes.Copy),
          when Filled => (Rendering.Pattern_Paint, Rendering.Fill_Slot, Transfer_Modes.Copy));
 
+   --  Whether the pen draws: a frame drawn without one covers nothing.
+   function Has_Pen (P : Rendering.Painter) return Boolean is (P.Port.Pen_Width > 0 and then P.Port.Pen_Height > 0);
+
    --  The pixels a shape verb changes, for the rect, round rect, oval and arc kinds.
    procedure Rect_Like
      (P : Rendering.Painter;
@@ -84,7 +87,7 @@ package body Pictlib.Internal.Shapes is
          end case;
       end Interior;
    begin
-      if Frame and then (P.Port.Pen_Width <= 0 or else P.Port.Pen_Height <= 0) then
+      if Frame and then not Has_Pen (P) then
          return;
       end if;
       Interior (Shape, Bounds, P.Port.Oval_Width, P.Port.Oval_Height);
@@ -142,7 +145,8 @@ package body Pictlib.Internal.Shapes is
          end if;
       end if;
       --  A frame drawn with no pen covers nothing, and walks nothing.
-      if Verb = Framed and then (P.Port.Pen_Width <= 0 or else P.Port.Pen_Height <= 0) then
+      if Verb = Framed and then not Has_Pen (P) then
+         Coverage.Start (Shape, P.Window, Accounting.Shape_Work_Left (S));
          return Results.Success;
       end if;
       --  The polygon is copied and moved for drawing: work a unit a point, whether or not a line lands, and
@@ -191,21 +195,26 @@ package body Pictlib.Internal.Shapes is
             return Outcome;
          end if;
       end if;
-      --  The region is copied and moved for drawing: work like drawing it, and storage by its size.
-      Outcome := Accounting.Charge_Work (S, Regions.Size (P.Port.Last_Region));
-      if Results.Succeeded (Outcome) then
-         Outcome :=
-           Accounting.Admit_Aggregate
-             (S, Accounting.Region_Unit_Bytes * Byte_Count (Regions.Size (P.Port.Last_Region)));
+      --  A frame drawn with no pen covers nothing, and walks nothing.
+      if Verb = Framed and then not Has_Pen (P) then
+         Coverage.Start (Shape, P.Window, Accounting.Shape_Work_Left (S));
+         return Results.Success;
       end if;
+      --  The region is copied and moved for drawing: storage by its size, and work like drawing it.
+      Outcome :=
+        Accounting.Admit_Aggregate (S, Accounting.Region_Unit_Bytes * Byte_Count (Regions.Size (P.Port.Last_Region)));
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
       declare
          Region : Regions.Region := P.Port.Last_Region;
       begin
+         Outcome := Rendering.Region_To_Picture (P, S, Region);
+         if not Results.Succeeded (Outcome) then
+            return Outcome;
+         end if;
+         --  Its allowance is what the budget has left once the move is charged.
          Coverage.Start (Shape, P.Window, Accounting.Shape_Work_Left (S));
-         Rendering.To_Picture (P, Region);
          if Verb = Framed then
             Coverage.Region_Frame (Shape, Region, P.Port.Pen_Width, P.Port.Pen_Height);
          else

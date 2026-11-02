@@ -1,7 +1,6 @@
 with Ada.Directories;
 with Ada.Unchecked_Deallocation;
 package body Pictlib.Internal.Text is
-   use type Ada.Strings.Unbounded.Unbounded_String;
    use type Textrender.Status_Code;
 
    --  Mac Roman 16#80# .. 16#FF#, from the Unicode mapping of the Mac OS Roman encoding.
@@ -81,9 +80,21 @@ package body Pictlib.Internal.Text is
 
    procedure Free is new Ada.Unchecked_Deallocation (Textrender.Renderer, Renderer_Access);
 
+   --  The slot holding Path at Size, or 0.
+   function Find (Cache : Font_Cache; Path : String; Size : Positive) return Natural is
+   begin
+      for Index in Cache.Items'Range loop
+         if Cache.Items (Index).Used and then Ada.Strings.Unbounded.To_String (Cache.Items (Index).Path) = Path
+           and then Cache.Items (Index).Size = Size
+         then
+            return Index;
+         end if;
+      end loop;
+      return 0;
+   end Find;
+
    function Cached (Cache : Font_Cache; Path : String; Size : Positive) return Boolean is
-     (for some Item of Cache.Items =>
-        Item.Used and then Ada.Strings.Unbounded.To_String (Item.Path) = Path and then Item.Size = Size);
+     (Find (Cache, Path, Size) > 0);
 
    function Acquire
      (Cache : in out Font_Cache;
@@ -92,19 +103,19 @@ package body Pictlib.Internal.Text is
       Slot : out Positive;
       Held : Textrender_Guard) return Textrender.Status_Code
    is
-      Key : constant Ada.Strings.Unbounded.Unbounded_String := Ada.Strings.Unbounded.To_Unbounded_String (Path);
+      Found : constant Natural := Find (Cache, Path, Size);
       Spare : Natural := 0;
       Loaded : Natural := 0;
       Status : Textrender.Status_Code;
    begin
       Cache.Clock := Cache.Clock + 1;
+      if Found > 0 then
+         Cache.Items (Found).Stamp := Cache.Clock;
+         Slot := Found;
+         return Textrender.Success;
+      end if;
       for Index in Cache.Items'Range loop
-         if Cache.Items (Index).Used and then Cache.Items (Index).Path = Key and then Cache.Items (Index).Size = Size
-         then
-            Cache.Items (Index).Stamp := Cache.Clock;
-            Slot := Index;
-            return Textrender.Success;
-         elsif Cache.Items (Index).Used then
+         if Cache.Items (Index).Used then
             Loaded := Loaded + 1;
          elsif Spare = 0 then
             Spare := Index;
@@ -126,7 +137,7 @@ package body Pictlib.Internal.Text is
          end if;
          --  A full atlas evicts glyphs rather than refusing new ones.
          Item.Renderer.Set_Atlas_Eviction (True);
-         Item.Path := Key;
+         Item.Path := Ada.Strings.Unbounded.To_Unbounded_String (Path);
          Item.Size := Size;
          Item.Used := True;
          Item.Stamp := Cache.Clock;

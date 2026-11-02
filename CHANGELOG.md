@@ -369,6 +369,12 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - `Fonts.Add` with an empty path removes the entry, so the name or ID
   falls through to the default instead of hiding it.
 - The font cache's use clock is 64 bits and never wraps.
+- The total-allocation quota counts a filled polygon's edge three times,
+  as its edge list and both active lists hold it, and a region read at 6
+  per byte, as an empty scanline takes three times its bytes. A framed
+  region with no pen walks nothing, as a framed polygon does. A glyph lost
+  when its atlas is retaken gets the data-loss warning.
+- `Fonts.Add` ignores an empty family name.
 
 ### Documentation
 
@@ -458,6 +464,13 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   `Encoder_State`, `Fonts.Empty`, `Capabilities`, `Version` and the picture
   stream's operations are documented; the QuickTime return list and three
   misleading comments are corrected.
+- The specification lists a zero-size image description as
+  `Embedded_Image_Failed`, which errors are recovered, the empty-path font
+  rule and every mask in the work table; `Finished` says it also ends a
+  truncated or partial picture; `limits_and_safety.md` gives jpeglib's
+  output limit and the ninth font while one loads. The `Limit_Set` fields,
+  `Error`, `Warning`, `Warning_Severity`, the stream replies and
+  `Length_Rule` are documented.
 
 ### Internal structure
 
@@ -586,6 +599,12 @@ place:
   `Register_Font_Name` takes a `Font_ID`; coverage's column vectors have a
   name of their own and `Coverage.Row` is a `Copy_Row`; `Read_Exact` and
   `Skip_Exact` ask a source its offset only on a failure.
+- Region shapes and masks move to the origin through one
+  `Rendering.Region_To_Picture`; `Fill_Lookahead` clamps through
+  `Within_Budget`; `Write_All` asks the destination its offset only on a
+  failure, and `Judged_Step` asks once; the font cache finds a slot in one
+  place, and the picture's font names are `Family_Maps`; QuickTime builds
+  its image through `Image_Of`; the version opcode skips its own length.
 
 ### Tooling
 
@@ -794,3 +813,9 @@ All tooling is Ada, in the `tests` crate:
   frees its bytes; the tools share `Canvases.Compare`. The concurrency test
   reports why a task's render failed; `packbits.word_units` checks what it
   wrote, and `hostile.pen_steps` the work its lines cost.
+- Tests: the QuickTime mask, pen-less framed polygons and regions, and rows
+  added above a shape; the font test checks entries exist before removing
+  them; `Builders.Striped_Region` is shared. The fuzzer reports a hand
+  seed's file after it is saved; `pictlib_real_world` refuses a corpus name
+  with a space and a picture recorded twice; `Read_Raster` skips Netpbm
+  comments; the JPEG capability probe uses `Canvases.Compare`.

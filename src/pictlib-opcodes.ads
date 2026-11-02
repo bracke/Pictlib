@@ -19,8 +19,10 @@ is
       Version_Data,        --  one byte in version 1, two bytes in version 2
       End_Of_Picture);     --  no data; the picture ends
 
+   --  How an opcode's data length is found.
    type Length_Rule is record
       Rule : Data_Rule := Fixed_Data;
+      --  The data length, for Fixed_Data.
       Fixed_Length : Natural := 0;
    end record;
 

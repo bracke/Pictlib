@@ -14,20 +14,18 @@ package body Pictlib.Streams is
          return Results.Success;
       end if;
       declare
-         Failure : constant Errors.Error := Internal.Replies.Judged (Step, Total - Completed, Object.Offset);
+         Where : constant Source_Offset := Object.Offset;
+         Failure : constant Errors.Error := Internal.Replies.Judged (Step, Total - Completed, Where);
       begin
          if Errors.Is_Fatal (Failure) then
             return Results.Failure (Failure);
          end if;
-      end;
-      if Step.Count = 0 then
          --  Nothing, at the end of the input.
          return Results.Failure
            (Errors.Make
               (Errors.Source_Unexpected_End,
-               (Source => Object.Offset, Expected => Total, Actual => Completed, others => <>)));
-      end if;
-      return Results.Success;
+               (Source => Where, Expected => Total, Actual => Completed, others => <>)));
+      end;
    end Judged_Step;
 
    function Read_Exact (Object : in out Source'Class; Buffer : out Byte_Array) return Results.Result is
@@ -72,11 +70,17 @@ package body Pictlib.Streams is
          declare
             Step : constant Destination_Result :=
               Object.Write (Buffer (Buffer'First + Completed .. Buffer'Last));
-            Failure : constant Errors.Error :=
-              Internal.Replies.Judged_Write (Step, Byte_Count (Buffer'Length - Completed), Object.Offset);
+            Left : constant Byte_Count := Byte_Count (Buffer'Length - Completed);
          begin
-            if Errors.Is_Fatal (Failure) then
-               return Results.Failure (Failure);
+            --  As for reading, the destination's Offset, caller code, is asked only on a failure.
+            if Errors.Is_Fatal (Step.Error) or else Step.Count not in 1 .. Left then
+               declare
+                  Failure : constant Errors.Error := Internal.Replies.Judged_Write (Step, Left, Object.Offset);
+               begin
+                  if Errors.Is_Fatal (Failure) then
+                     return Results.Failure (Failure);
+                  end if;
+               end;
             end if;
             Completed := Completed + Natural (Step.Count);
          end;

@@ -206,10 +206,10 @@ package body Pictlib.Internal.Container is
       end if;
       Info.Version := (if Detected = Detected_1 then Version_1 else Version_2);
       Sessions.Set_Version (S, Info.Version);
-      --  The opcode and its data, each Opcode_Bytes long; the data counts against the per-opcode budget, as
+      --  The opcode, then its data, each Opcode_Bytes long; the data counts against the per-opcode budget, as
       --  every opcode's does.
+      Outcome := Streams.Skip_Exact (S.Stream.all, Byte_Count (Opcode_Bytes (Info.Version)));
       Event.Data_Length := Byte_Count (Opcode_Bytes (Info.Version));
-      Outcome := Streams.Skip_Exact (S.Stream.all, Event.Data_Length);
       if Results.Succeeded (Outcome) then
          Sessions.Begin_Opcode_Data (S, Event);
          Outcome := Sessions.Skip_Data (S, Event.Data_Length);

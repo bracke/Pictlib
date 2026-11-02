@@ -97,6 +97,35 @@ package body Pictlib_Testing.Test_Coverage is
                     "Subtract is wrong on trial" & Trial'Image);
          end;
       end loop;
+      --  Rows added above a shape's first move those it holds down, spans and all.
+      declare
+         package Coverage renames Pictlib.Internal.Coverage;
+         use type Regions.Span;
+         Shape : Coverage.Shape;
+      begin
+         Coverage.Start (Shape, (Top => 0, Left => 0, Bottom => 20, Right => 20));
+         Coverage.Rectangle (Shape, (Top => 10, Left => 1, Bottom => 13, Right => 3));
+         Coverage.Rectangle (Shape, (Top => 10, Left => 5, Bottom => 13, Right => 7));
+         Coverage.Rectangle (Shape, (Top => 2, Left => 4, Bottom => 4, Right => 9));
+         Coverage.Rectangle (Shape, (Top => 0, Left => 0, Bottom => 1, Right => 1));
+         Assert (Coverage.First_Row (Shape) = 0 and then Coverage.Last_Row (Shape) = 12,
+                 "rows" & Coverage.First_Row (Shape)'Image & " .." & Coverage.Last_Row (Shape)'Image);
+         for Y in 0 .. 12 loop
+            declare
+               Row : constant Span_List := Coverage.Row (Shape, Y);
+            begin
+               case Y is
+                  when 0 => Assert (Natural (Row.Length) = 1 and then Row (1) = (0, 1), "row 0 lost its span");
+                  when 2 | 3 =>
+                     Assert (Natural (Row.Length) = 1 and then Row (1) = (4, 9), "row" & Y'Image & " is wrong");
+                  when 10 .. 12 =>
+                     Assert (Natural (Row.Length) = 2 and then Row (1) = (1, 3) and then Row (2) = (5, 7),
+                             "row" & Y'Image & " lost its spans when rows were added above");
+                  when others => Assert (Row.Is_Empty, "row" & Y'Image & " is not empty");
+               end case;
+            end;
+         end loop;
+      end;
    end Span_Operations;
 
    --  A 1 x 1 pen's line covers the pixels of Bresenham's walk, stepped here a pixel at a time as an independent

@@ -20,6 +20,6 @@ package Pictlib.Capabilities is
    QuickTime_JPEG_Decoding : constant Boolean := True;
    --  Comments, font names, file headers and payloads kept on request.
    Metadata_Retention : constant Boolean := True;
-   --  Encoding.Encode: raster PICT version 2.
+   --  Encoding.Encode: raster PICT extended version 2.
    Raster_Encoding : constant Boolean := True;
 end Pictlib.Capabilities;

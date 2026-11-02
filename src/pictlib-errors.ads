@@ -46,6 +46,8 @@ package Pictlib.Errors is
       Data_Loss,
       Warnings_Suppressed);
 
+   --  How much a warning matters: a note, a picture read as an old reader would, a failure recovered from, or
+   --  something not drawn or kept. Severity_Of gives each code's.
    type Warning_Severity is (Informational, Compatibility, Recovery, Data_Loss);
 
    --  Where a failure or warning arose and what it judged.
@@ -59,6 +61,7 @@ package Pictlib.Errors is
       Has_Opcode : Boolean := False;
       --  The opcode's position in the picture's opcode stream.
       Ordinal : Opcode_Ordinal := 0;
+      --  The row of a copy's pixel data, from 0, when Has_Row.
       Row : Row_Index := 0;
       --  Whether Row names a row: row 0 is a row too.
       Has_Row : Boolean := False;
@@ -74,15 +77,20 @@ package Pictlib.Errors is
       Has_Underlying_Code : Boolean := False;
    end record;
 
+   --  A failure, or No_Error, as Make builds it.
    type Error is record
       Code : Error_Code := No_Error;
+      --  Identifier_For (Code), a stable dotted string.
       Identifier : Identifiers.Bounded_String := Identifiers.To_Bounded_String ("pict.ok");
       Context : Diagnostic_Context;
    end record;
 
+   --  A warning, as Make_Warning builds it.
    type Warning is record
       Code : Warning_Code := Generic_Warning;
+      --  Identifier_For (Code), a stable dotted string.
       Identifier : Identifiers.Bounded_String := Identifiers.To_Bounded_String ("pict.warning");
+      --  Severity_Of (Code).
       Severity : Warning_Severity := Informational;
       Context : Diagnostic_Context;
    end record;

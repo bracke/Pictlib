@@ -19,6 +19,9 @@ package Pictlib_Testing.Builders is
    function Text (Item : String) return Bytes;
    --  A rectangular region.
    function Region (Top, Left, Bottom, Right : Integer) return Bytes;
+   --  A region of Lines scanlines from row Top, each inverting columns 0 .. Width - 1, so every other row is in.
+   function Striped_Region (Top, Lines, Width : Natural) return Bytes
+     with Pre => Lines in 1 .. 4_000 and then Top + Lines <= 16#7FFF# and then Width in 1 .. 16#7FFE#;
    --  An L of a region in a 4 x 4 box: rows 0 and 1 columns 0 .. 1, rows 2 and 3 columns 0 .. 3; its last
    --  scanline lies on the box's bottom, with a point on its right.
    function L_Region return Bytes;

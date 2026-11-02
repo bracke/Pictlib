@@ -16,12 +16,13 @@ package Pictlib.Fonts is
    --  A table that names no font and no default: text is Font_Unavailable in Strict, else skipped with a warning.
    Empty : constant Font_Table;
 
-   --  Add.
+   --  Add: the file text in a family is drawn with.
    --  @param Table Table to extend; a later entry for the same name replaces the earlier one.
-   --  @param Family A Macintosh font family name, compared without regard to case.
+   --  @param Family A Macintosh font family name, compared without regard to case; an empty name is ignored,
+   --  as no picture names it.
    --  @param Path A TrueType font file; empty removes the name's entry, so the name resolves as if never added.
    procedure Add (Table : in out Font_Table; Family : String; Path : String);
-   --  Add.
+   --  Add: the file text in a font ID is drawn with.
    --  @param Table Table to extend; a later entry for the same ID replaces the earlier one.
    --  @param ID A font ID, as TxFont names it.
    --  @param Path A TrueType font file; empty removes the ID's entry, so the ID resolves as if never added.

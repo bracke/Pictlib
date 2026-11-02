@@ -8,7 +8,8 @@ with Textrender;
 
 --  Text state of the port, the Mac Roman character set, and the TrueType renderers text is drawn with.
 package Pictlib.Internal.Text is
-   package Name_Maps is new Ada.Containers.Indefinite_Ordered_Maps (Fonts.Font_ID, String, Pictlib."<");
+   --  The family a picture's fontName opcodes named each font ID.
+   package Family_Maps is new Ada.Containers.Indefinite_Ordered_Maps (Fonts.Font_ID, String, Pictlib."<");
 
    --  TxFace bits.
    Bold : constant := 1;
@@ -34,7 +35,7 @@ package Pictlib.Internal.Text is
       Origin_H : Integer := 0;
       Origin_V : Integer := 0;
       --  fontName: the family names this picture gave its font IDs.
-      Names : Name_Maps.Map;
+      Names : Family_Maps.Map;
    end record;
 
    --  To unicode.

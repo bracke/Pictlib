@@ -18,7 +18,8 @@ package Pictlib.Decoding is
      (Created,      --  not initialized, or finalized
       Ready,        --  bound to a source
       Header_Read,  --  the container was read; the opcode stream is next
-      Finished,     --  the end opcode was reached
+      Finished,     --  the picture ended: at its end opcode, or leniently at the end of the input or as a
+                    --  partial picture, which a warning reports
       Stopped,      --  the visitor stopped enumeration early, caller code raised mid-picture, or the source's
                     --  Offset raised in Initialize or Reset
       Failed,       --  a failure ended decoding; Last_Error reports it

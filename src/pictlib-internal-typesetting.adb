@@ -105,7 +105,8 @@ package body Pictlib.Internal.Typesetting is
 
    --  A glyph drawn from the pen paints its cell: the larger of its advance box and its ink.
    type Cell is record
-      Code : Textrender.Codepoint := 0;
+      --  The character, in Mac Roman.
+      Item : Byte := 0;
       Metric : Textrender.Glyph_Metric;
       Drawable : Boolean := False;
       Glyph_Left, Glyph_Top : Integer := 0;
@@ -118,7 +119,7 @@ package body Pictlib.Internal.Typesetting is
    --  The cell of a glyph drawn at Pen, Advance wide, on Baseline, emboldened by Bold columns. The pen is a
    --  Long_Float: text may start millions of pixels off the frame, where a Float could not hold a fraction.
    function Cell_At
-     (Code : Textrender.Codepoint;
+     (Item : Byte;
       Metric : Textrender.Glyph_Metric;
       Drawable : Boolean;
       Pen, Advance : Long_Float;
@@ -131,7 +132,7 @@ package body Pictlib.Internal.Typesetting is
       Glyph_Top : constant Integer := Baseline - Integer (Metric.Bearing_Y);
    begin
       return
-        (Code => Code,
+        (Item => Item,
          Metric => Metric,
          Drawable => Drawable,
          Glyph_Left => Glyph_Left,
@@ -178,6 +179,15 @@ package body Pictlib.Internal.Typesetting is
       Pen : Long_Float := Long_Float (State.Origin_H);
       Missing_Reported : Boolean := False;
       Outcome : Results.Result := Results.Success;
+
+      --  A character the font cannot draw loses data: said once an opcode, naming the first such character.
+      procedure Report_Missing (Item : Byte) is
+      begin
+         if not Missing_Reported then
+            Sessions.Warn (S, Errors.Data_Loss, (Failures.Context_Of (Event) with delta Actual => Byte_Count (Item)));
+            Missing_Reported := True;
+         end if;
+      end Report_Missing;
 
       --  Text is a bit source: ink black, the rest white, through the text mode.
       function Through_Mode (Ink : Boolean; Under : Images.RGB_Color) return Images.RGB_Color is
@@ -253,11 +263,12 @@ package body Pictlib.Internal.Typesetting is
          Taken : Textrender.Glyph_Metric;
       begin
          if Results.Succeeded (Result) and then Cells (Index).Drawable then
-            if Font.Get_Glyph (Cells (Index).Code, Taken, Style) = Textrender.Success then
+            if Font.Get_Glyph (Text.To_Unicode (Cells (Index).Item), Taken, Style) = Textrender.Success then
                Cells (Index).Metric := Taken;
             else
                Cells (Index).Metric := No_Glyph;
                Cells (Index).Drawable := False;
+               Report_Missing (Cells (Index).Item);
             end if;
          end if;
          return Result;
@@ -314,14 +325,12 @@ package body Pictlib.Internal.Typesetting is
               Advance_Of (Item, (if Status = Textrender.Success then Metric.Advance_X else Float (Size) / 2.0),
                           Width_Change, State);
          begin
-            if Status /= Textrender.Success and then not Missing_Reported then
-               Sessions.Warn (S, Errors.Data_Loss,
-                              (Failures.Context_Of (Event) with delta Actual => Byte_Count (Item)));
-               Missing_Reported := True;
+            if Status /= Textrender.Success then
+               Report_Missing (Item);
             end if;
             Cell_Count := Cell_Count + 1;
             Cells (Cell_Count) :=
-              Cell_At (Text.To_Unicode (Item), Metric,
+              Cell_At (Item, Metric,
                        Status = Textrender.Success and then Metric.W > 0 and then Metric.H > 0,
                        Pen, Advance, Baseline, Ascent, Descent, Bold);
             Pen := Pen + Advance;

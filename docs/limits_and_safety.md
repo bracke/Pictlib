@@ -15,7 +15,7 @@ bounds a read, a skip, an allocation or a loop.
 | `Max_Opcode_Bytes` | each opcode's data, before every read or skip inside it; not the file header | `Limit_Exceeded` |
 | `Max_Region_Bytes`, `Max_Polygon_Points` | each region and polygon size word, enumerating and rendering | `Limit_Exceeded` |
 | `Max_Metadata_Items`, `Max_Retained_Metadata_Bytes` | before an item is retained | strict: `Limit_Exceeded`; lenient: dropped, `Data_Loss` warning |
-| `Max_Allocation_Bytes` | each allocation before it is made: a retained payload, an opcode's row buffers (with a PixPat's tile), a font's atlas and file, a QuickTime image's pixels (never above 2^31 − 1 bytes, set aside only once the JPEG header agrees); jpeglib gets the rest for its own buffers, at most 8 times the RGB bytes of the image rounded up to 32-pixel MCUs, plus 1 MiB (its coefficient and output limits too); the encoder's row buffers | `Limit_Exceeded` |
+| `Max_Allocation_Bytes` | each allocation before it is made: a retained payload, an opcode's row buffers (with a PixPat's tile), a font's atlas and file, a QuickTime image's pixels (never above 2^31 − 1 bytes, set aside only once the JPEG header agrees); jpeglib gets the rest for its own buffers, at most 8 times the RGB bytes of the image rounded up to 32-pixel MCUs, plus 1 MiB, which is its coefficient limit too; its output limit is the image's RGB bytes; the encoder's row buffers | `Limit_Exceeded` |
 | `Max_Total_Allocation_Bytes` | every allocation of a session, counted when admitted and never given back, and the storage the specification's section 9 counts at fixed rates; unlimited by default | `Limit_Exceeded` |
 | `Max_Drawing_Work` | all rendering work, drawn or not, before or as it is done: the specification, section 9, lists what each piece costs | `Limit_Exceeded` |
 | `Max_Embedded_Image_Bytes` | a QuickTime image's dataSize, before decoding | `Limit_Exceeded` |
@@ -86,7 +86,7 @@ unpacked row, row of colors), at most 64 KiB plus two rows, and frees them
 when the opcode ends. A QuickTime image is the exception: `jpeglib` decodes
 it whole, into a heap buffer of its pixels (up to `Max_Embedded_Image_Pixels`)
 besides `jpeglib`'s own buffers, both freed when the opcode ends. Text keeps
-up to eight loaded fonts, each a copy of its file and a glyph atlas, for the
+up to eight loaded fonts, nine while one loads before the least recently used goes, each a copy of its file and a glyph atlas, for the
 whole of a `Render`; they are freed when it ends. Regions keep their
 scanline data and the current inversion set only. Retained metadata and
 font names are read into a heap buffer and then copied into the store, so

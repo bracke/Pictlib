@@ -303,6 +303,9 @@ package body Pictlib_Testing.Test_Text is
          Pictlib.Fonts.Set_Default (Table, "default.ttf");
          Pictlib.Fonts.Add (Table, "Geneva", "geneva.ttf");
          Pictlib.Fonts.Add (Table, Pictlib.Fonts.Font_ID (300), "300.ttf");
+         Assert (Pictlib.Fonts.Resolve (Table, 3) = "geneva.ttf" and then Pictlib.Fonts.Resolve (Table, 300) = "300.ttf"
+                 and then Pictlib.Fonts.Resolve (Table, 999) = "default.ttf",
+                 "the entries to remove were not there: " & Pictlib.Fonts.Resolve (Table, 3));
          Pictlib.Fonts.Add (Table, "geneva", "");
          Pictlib.Fonts.Add (Table, Pictlib.Fonts.Font_ID (300), "");
          Assert (Pictlib.Fonts.Resolve (Table, 3) = "default.ttf"

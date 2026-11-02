@@ -8,7 +8,8 @@ package Pictlib.Internal.Replies is
    --  Judged.
    --  @param Step The source's reply to a request.
    --  @param Requested The bytes asked for.
-   --  @param Where The source offset the request was made at.
+   --  @param Where The source offset a failure names: where the request was made, or where the source says it
+   --  stands after replying.
    --  @return The source's own failure; Internal_Invariant_Failed when it claims more than it was asked for, since
    --  offsets could no longer be trusted; Source_Zero_Progress when it delivers nothing short of the end;
    --  No_Error otherwise, a reply of nothing at the end included.
@@ -18,7 +19,8 @@ package Pictlib.Internal.Replies is
    --  Judged write.
    --  @param Step The destination's reply to a write.
    --  @param Requested The bytes given it.
-   --  @param Where The destination offset the write was made at.
+   --  @param Where The destination offset a failure names: where the write was made, or where the destination
+   --  says it stands after replying.
    --  @return The destination's own failure; Internal_Invariant_Failed when it claims more than it was given;
    --  Destination_Zero_Progress when it takes nothing of a write; No_Error otherwise.
    function Judged_Write (Step : Streams.Destination_Result; Requested : Byte_Count; Where : Destination_Offset)

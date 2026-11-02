@@ -96,10 +96,13 @@ package body Pictlib.Internal.Picture_Stream is
       Requested : Byte_Count) return Streams.Source_Result
    is (if Object.Bound /= Before then Rebound_Reply else Advance (Object, Step, Requested));
 
+   --  Wanted, cut to the picture budget left: what the source is asked for.
+   function Within_Budget (Object : Reader; Wanted : Byte_Count) return Byte_Count is
+     (Byte_Count'Min (Wanted, Remaining_Budget (Object)));
+
    function Fill_Lookahead (Object : in out Reader; Count : Positive) return Results.Result is
       --  Never buffer beyond the budget: those bytes could not be delivered.
-      Wanted : constant Natural :=
-        (if Remaining_Budget (Object) < Byte_Count (Count) then Natural (Remaining_Budget (Object)) else Count);
+      Wanted : constant Natural := Natural (Within_Budget (Object, Byte_Count (Count)));
    begin
       if Object.Input = null then
          return Results.Failure (Unbound_Reply.Error);
@@ -160,10 +163,6 @@ package body Pictlib.Internal.Picture_Stream is
       end if;
       return True;
    end Answered;
-
-   --  Wanted, cut to the picture budget left: what the source is asked for once the look-ahead is spent.
-   function Within_Budget (Object : Reader; Wanted : Byte_Count) return Byte_Count is
-     (Byte_Count'Min (Wanted, Remaining_Budget (Object)));
 
    --  Up to Wanted bytes of a look-ahead that holds some, consumed.
    function Take_Buffered (Object : in out Reader; Wanted : Byte_Count) return Streams.Source_Result is

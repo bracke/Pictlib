@@ -47,6 +47,9 @@ package body Pictlib.Internal.QuickTime is
       Width, Height : Natural := 0;
    end record;
 
+   --  The image a description states, as the JPEG bridge takes it.
+   function Image_Of (Item : Description) return JPEG_Bridge.Image is (Item.Width, Item.Height, Item.Data_Size);
+
    function Read_Image_Header (S : in out Sessions.Session; Header : out Image_Header) return Results.Result is
       Version : Interfaces.Unsigned_16;
       Matte_Rect : Geometry.Rect;
@@ -117,7 +120,7 @@ package body Pictlib.Internal.QuickTime is
    function Check_Image (S : Sessions.Session; Event : Pictures.Opcode_Event; Item : Description)
      return Results.Result
    is
-      Image : constant JPEG_Bridge.Image := (Item.Width, Item.Height, Item.Data_Size);
+      Image : constant JPEG_Bridge.Image := Image_Of (Item);
       Pixels : constant Byte_Count := JPEG_Bridge.Pixel_Total (Image);
       Bytes : constant Byte_Count := JPEG_Bridge.Pixel_Bytes (Image);
       Largest : constant Byte_Count := Byte_Count (Natural'Last);
@@ -256,7 +259,7 @@ package body Pictlib.Internal.QuickTime is
          return Outcome;
       end if;
       Has_Mask := True;
-      return Rendering.Mask_To_Picture (P, S, Mask);
+      return Rendering.Region_To_Picture (P, S, Mask);
    end Read_Mask;
 
    --  The image description, its bytes past the fields read skipped, and room for the data it announces.
@@ -340,7 +343,7 @@ package body Pictlib.Internal.QuickTime is
          return Outcome;
       end if;
 
-      Outcome := JPEG_Bridge.Admit_And_Decode (S, Event, (Item.Width, Item.Height, Item.Data_Size), Pixels);
+      Outcome := JPEG_Bridge.Admit_And_Decode (S, Event, Image_Of (Item), Pixels);
       --  A JPEG jpeglib cannot decode is an image this renderer cannot draw, as another codec is: strictly
       --  unsupported, otherwise skipped with a warning, the rest of the opcode with it.
       if not Results.Succeeded (Outcome)

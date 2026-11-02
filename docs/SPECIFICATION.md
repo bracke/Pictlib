@@ -250,7 +250,9 @@ are retained, never interpreted.
   named that ID (`fontName`, compared without regard to case), the file for the ID, the file for the
   family the classic Macintosh system gave the ID (`Fonts.Classic_Name`: 0 Chicago, 1 and 3 Geneva,
   2 New York, 4 Monaco, 20 Times, 21 Helvetica, 22 Courier, 23 Symbol, …), then the table's
-  default. No file, or one that does not load, is `Font_Unavailable` in `Strict`; otherwise the text
+  default. `Fonts.Add` with an empty path removes the name's or ID's entry, so it falls through to
+  the next; an empty family name is ignored. No file, or one that does not load, is
+  `Font_Unavailable` in `Strict`; otherwise the text
   is skipped with an `Approximated_Rendering` warning.
 - `LongText` sets the text origin to its point; `DHText`, `DVText` and `DHDVText` move the previous
   text origin by their unsigned offsets. Characters are drawn from the origin's baseline. Text state:
@@ -288,8 +290,9 @@ are retained, never interpreted.
   fit the opcode fail with `Opcode_Length_Invalid`; a mask whose size disagrees with `maskSize`
   fails with `Region_Invalid`.
 - Codec `'jpeg'` is decoded by `jpeglib`, which reads the data straight from the picture (never
-  more than `dataSize` bytes); the decoded RGB image is held on the heap. A JPEG whose size is not
-  the description's, or whose data `jpeglib` finds malformed, is `Embedded_Image_Failed`;
+  more than `dataSize` bytes); the decoded RGB image is held on the heap. An image description of
+  zero width or height, a JPEG whose size is not the description's, or one whose data `jpeglib`
+  finds malformed, is `Embedded_Image_Failed`;
   `Recover_When_Safe` keeps what was drawn before it as a partial picture. A JPEG feature `jpeglib`
   does not decode, a lossless JPEG, a JPEG whose height a later DNL marker gives (nothing bounds
   what it will need), and a progressive or hierarchical JPEG of more than 8192 blocks
@@ -318,7 +321,8 @@ are retained, never interpreted.
   `Limit_Exceeded` on `Max_Allocation_Bytes`, whose expected count is the image's pixels plus that
   share; a frame of more components than it decodes, and its other unsupported features, to
   `Unsupported_Feature`; its own invariants to `Internal_Invariant_Failed`; and malformed JPEG data,
-  malformed metadata included, to `Embedded_Image_Failed`. Only the last is ever recovered.
+  malformed metadata included, to `Embedded_Image_Failed`. Only `Embedded_Image_Failed`, the first
+  and the last of these, is ever recovered.
 - `jpeglib`'s share is what `Max_Allocation_Bytes` leaves once the pixels are admitted, but no more
   than 8 times the image's RGB bytes over its extent rounded up to 32-pixel MCUs (8 pixels times the
   largest sampling factor, 4), plus 1 MiB. Its coefficient and output limits are that share and the
@@ -565,9 +569,9 @@ before or as the work is done, whether or not anything is drawn, and nothing is 
 | Work | Units |
 | --- | --- |
 | a shape opcode | 1, plus every row its shape holds and every row painting walks |
-| a region shape | every unit of its region's size, for the copy moved to the origin, besides building it |
+| a region shape | every unit of its region's size, for the copy moved to the origin, besides building it; a frame with no pen walks nothing |
 | a polygon shape | every point, for the copy moved to the origin, besides building it; a frame with no pen walks nothing |
-| a QuickTime mask | every unit of its region's size, for the copy moved to the origin |
+| a mask, of a `BitsRgn`, `PackBitsRgn` or `DirectBitsRgn` copy or a QuickTime image | every unit of its region's size, for its move to the origin |
 | building a shape | every row walked and every unit of span, region, polygon and line work, every row held moved when a row is added above them; building stops at the budget left, and a shape that stops covers nothing |
 | painting | every pixel painted, underlines included |
 | a copied pixmap | for every row converted, its pixels or the bytes it unpacks to, whichever is more, plus 1; every destination row walked; 1 for every row a copy skips, a QuickTime placeholder's included |
@@ -586,8 +590,8 @@ and storage that is no single allocation at fixed rates:
 | --- | --- |
 | a retained metadata item or font name | its bytes twice, the buffer it is read into and the copy kept, plus 128 |
 | a polygon read | 8 per point |
-| a polygon drawn | 8 per point again, for the copy drawn, plus 104 per edge when it is filled |
-| a region read | 4 per byte of it, for its scanlines and inversion points |
+| a polygon drawn | 8 per point again, for the copy drawn, plus 152 per edge when it is filled |
+| a region read | 6 per byte of it, for its scanlines and inversion points |
 | a region shape drawn | 8 per unit of its region's size, for the copy moved to the origin |
 | building a shape | 256 per unit of shape work, the spans it can make; building stops at what the total still admits |
 | a QuickTime image | its pixels, and `jpeglib`'s share for its own buffers |

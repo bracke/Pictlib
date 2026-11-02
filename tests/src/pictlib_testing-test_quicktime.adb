@@ -210,6 +210,7 @@ package body Pictlib_Testing.Test_QuickTime is
 
    procedure Masks_And_Modes (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
+      use type Pictlib.Pixel_Count;
       Masked : aliased constant Bytes :=
         Image (QuickTime ("jpeg", Image_Width, Image_Height, JPEG, Mask => Region (0, 0, 3, 8)), 8, 6);
       Clipped : aliased constant Bytes := Image (W (16#01#) & Region (0, 0, 3, 8) & Plain, 8, 6);
@@ -222,7 +223,20 @@ package body Pictlib_Testing.Test_QuickTime is
       --  A region whose own size word claims far more than maskSize: refused before it is read.
       Long_Mask : aliased constant Bytes :=
         Image (QuickTime ("jpeg", Image_Width, Image_Height, JPEG, Mask => W (16#F000#) & Rect (0, 0, 3, 8)), 8, 6);
+      --  A mask of 4,000 lines below the frame: moving it to the origin is work, a unit of its size.
+      Far_Mask : aliased constant Bytes :=
+        Image (QuickTime ("jpeg", Image_Width, Image_Height, JPEG, Mask => Striped_Region (10, 4_000, 8)), 8, 6);
+      Unmasked : aliased constant Bytes := Image (Plain, 8, 6);
    begin
+      declare
+         Alone : constant Pictlib.Pixel_Count := Canvases.Least_Drawing_Work (Unmasked, 8, 6, "the image unmasked");
+         Masked : constant Pictlib.Pixel_Count :=
+           Canvases.Least_Drawing_Work (Far_Mask, 8, 6, "the image behind a far mask");
+      begin
+         --  The mask's size is its 4,000 lines, 8,000 points and 1; it hides the image's 48 painted pixels.
+         Assert (Alone + 12_001 - 48 <= Masked, "moving a mask of 4,000 lines was not charged:" & Alone'Image
+                 & " alone," & Masked'Image & " masked");
+      end;
       Expect (Masked, 8, 6, Top_Rows'Access, "mask region");
       Expect (Clipped, 8, 6, Top_Rows'Access, "clip region");
       Expect (Copied, 8, 6, Identity'Access, "srcCopy");

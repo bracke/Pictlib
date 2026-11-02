@@ -184,7 +184,8 @@ procedure Pictlib_Fuzz is
       Pictlib_Testing.Files.Save_Path (Artifacts & "/" & Name, Input);
    end Save;
 
-   --  The file an input of Iteration is saved as, Prefix "slow", "stuck" or "defect".
+   --  The file an input of Iteration is saved as, Prefix "slow", "stuck" or "defect"; a hand-assembled seed that
+   --  does not render is saved as "hand-seed", numbered in its order.
    function Input_Name (Prefix : String; Iteration : Positive) return String is
      (Prefix & "-" & Iteration'Image (2 .. Iteration'Image'Last) & ".pict");
 
@@ -399,9 +400,10 @@ procedure Pictlib_Fuzz is
                      & Outcome.First_Error.Context.Op'Image & " " & Outcome.First_Error.Context.Limit'Image
                      & ", expected"
                      & Outcome.First_Error.Context.Expected'Image & ", actual"
-                     & Outcome.First_Error.Context.Actual'Image & "; saved as " & Input_Name ("hand-seed", Number));
+                     & Outcome.First_Error.Context.Actual'Image);
                begin
                   Save (Input_Name ("hand-seed", Number), Picture);
+                  Ada.Text_IO.Put_Line ("saved as " & Artifacts & "/" & Input_Name ("hand-seed", Number));
                exception
                   when Error : others =>
                      Fail ("could not save hand-assembled seed" & Number'Image & ": "

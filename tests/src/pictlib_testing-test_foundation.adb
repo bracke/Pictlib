@@ -173,12 +173,13 @@ package body Pictlib_Testing.Test_Foundation is
       --  libjpeg's own decoding of the fixture, within what two conforming decoders may differ by.
       function JPEG_Works return Boolean is
          Reference : constant Files.Raster := Files.Load_Raster ("external/small_decoded.ppm");
+         Wrong, Largest : Natural;
       begin
-         return Renders (Compressed, 8, 6, Output)
-           and then (for all Y in 0 .. 5 =>
-                       (for all X in 0 .. 7 =>
-                          Canvases.Difference (Canvases.Pixel (Output, X, Y), Files.Pixel (Reference, X, Y))
-                            <= Canvases.JPEG_Decoder_Tolerance));
+         if not Renders (Compressed, Reference.Width, Reference.Height, Output) then
+            return False;
+         end if;
+         Canvases.Compare (Output, Reference, Canvases.JPEG_Decoder_Tolerance, Wrong, Largest);
+         return Wrong = 0;
       end JPEG_Works;
 
       --  Read back by pictlib's own decoder: enough to show the feature works, while the independent evidence that

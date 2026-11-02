@@ -299,16 +299,6 @@ package body Pictlib_Testing.Test_Hostile is
          return Result;
       end Zig_Zag;
 
-      --  4,000 region lines, every other row inside.
-      function Striped_Region return Bytes is
-         Result : Bytes (1 .. 8 * 4_000);
-      begin
-         for K in 0 .. 3_999 loop
-            Result (Result'First + 8 * K .. Result'First + 8 * K + 7) := W (K) & W (0) & W (4) & W (16#7FFF#);
-         end loop;
-         return W (10 + Result'Length + 2) & Rect (0, 0, 4_000, 4) & Result & W (16#7FFF#);
-      end Striped_Region;
-
       Polygon : aliased constant Bytes :=
         Pic (200, 200, W (16#71#) & W (10 + 4 * Points) & Rect (0, 0, 200, 200) & Zig_Zag);
       --  2,000 points below the frame, framed once and then 99 times more by frameSamePoly: no line lands, yet
@@ -316,8 +306,13 @@ package body Pictlib_Testing.Test_Hostile is
       Far_Polygon : aliased constant Bytes :=
         Pic (4, 4, W (16#70#) & W (10 + 4 * 2_000) & Rect (1_000, 0, 1_001, 4)
                    & Repeat (W (1_000) & W (0), 2_000) & Repeat (W (16#78#), 99));
+      Penless_Polygon : aliased constant Bytes :=
+        Pic (4, 4, Pen_Size (0, 0) & W (16#70#) & W (10 + 4 * 2_000) & Rect (1_000, 0, 1_001, 4)
+                   & Repeat (W (1_000) & W (0), 2_000) & Repeat (W (16#78#), 99));
+      Penless_Region : aliased constant Bytes :=
+        Pic (4, 4, Pen_Size (0, 0) & W (16#80#) & Striped_Region (10, 4_000, 4) & Repeat (W (16#88#), 99));
       Moving_Clip : aliased constant Bytes :=
-        Pic (4, 4, W (16#01#) & Striped_Region & Repeat (Origin (1, 1) & Origin (-1, -1), 20_000)
+        Pic (4, 4, W (16#01#) & Striped_Region (0, 4_000, 4) & Repeat (Origin (1, 1) & Origin (-1, -1), 20_000)
                    & Op_Rect (16#31#, 0, 0, 4, 4));
       Small : Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
       Storage : aliased Bytes := [1 .. 3 * 200 * 200 => 0];
@@ -341,6 +336,14 @@ package body Pictlib_Testing.Test_Hostile is
                  & Outcome.First_Error.Context.Limit'Image);
       end loop;
       Canvases.Expect_Raster (Far_Polygon, 4, 4, "WWWW/WWWW/WWWW/WWWW", "a polygon below the frame");
+      --  Framed with no pen, the same polygon walks nothing: its 100 opcodes cost a unit each.
+      Small.Max_Drawing_Work := 100;
+      Canvases.Render (Penless_Polygon, Decoder, Canvases.View (Storage'Access, 4, 4), Outcome, Budget => Small);
+      Assert (Pictlib.Results.Succeeded (Outcome), "100 pen-less frames of 2,000 points cost more than a unit each: "
+              & Outcome.First_Error.Code'Image);
+      Canvases.Render (Penless_Region, Decoder, Canvases.View (Storage'Access, 4, 4), Outcome, Budget => Small);
+      Assert (Pictlib.Results.Succeeded (Outcome), "100 pen-less frames of a 4,000-line region cost more than a unit"
+              & " each: " & Outcome.First_Error.Code'Image);
       Small.Max_Drawing_Work := 100_000;
       Canvases.Expect_Failure (Far_Polygon, 4, 4, Errors.Limit_Exceeded, "100 frames of 2,000 points on 100,000",
                                16#78#, Budget => Small, Limit => Pictlib.Drawing_Work_Limit);
@@ -437,19 +440,11 @@ package body Pictlib_Testing.Test_Hostile is
       Missing : aliased constant Bytes :=
         Pic (16, 1, Repeat (W (16#98#) & W (2) & Rect (0, 0, 1, 16) & Rect (0, 0, 1, 16) & Rect (100, 100, 101, 116)
                             & W (0) & Zeros (2), 20));
-      --  A mask of 4,000 lines, all below the frame.
-      function Far_Mask return Bytes is
-         Result : Bytes (1 .. 8 * 4_000);
-      begin
-         for K in 0 .. 3_999 loop
-            Result (Result'First + 8 * K .. Result'First + 8 * K + 7) := W (10 + K) & W (0) & W (1) & W (16#7FFF#);
-         end loop;
-         return W (10 + Result'Length + 2) & Rect (10, 0, 4_010, 1) & Result & W (16#7FFF#);
-      end Far_Mask;
-      --  A 1-pixel BitsRgn behind that mask: moving the mask to the origin is work, though no line of it lands.
+      --  A 1-pixel BitsRgn behind a mask of 4,000 lines, all below the frame: moving the mask to the origin is
+      --  work, though no line of it lands.
       Far_Masked : aliased constant Bytes :=
         Pic (1, 1, W (16#91#) & W (2) & Rect (0, 0, 1, 1) & Rect (0, 0, 1, 1) & Rect (0, 0, 1, 1) & W (0)
-                   & Far_Mask & Zeros (2));
+                   & Striped_Region (10, 4_000, 1) & Zeros (2));
       Pen_Bits : aliased constant Bytes := Pic (4, 4, W (16#09#) & Zeros (8));
       Cut_Pen_Bits : aliased constant Bytes := V2_Prefix (0, 0, 4, 4) & W (16#09#) & Zeros (3);
       Cut_Pixel_Pattern : aliased constant Bytes := V2_Prefix (0, 0, 4, 4) & W (16#13#) & W (1);

@@ -50,13 +50,15 @@ package Pictlib.Internal.Sessions.Accounting is
    Item_Overhead_Bytes : constant := 128;
    --  A polygon point.
    Point_Cost_Bytes : constant := 8;
-   --  A polygon edge while a filled polygon is scanned: its record in the edge and active lists, and its
+   --  A polygon edge while a filled polygon is scanned: its record in the edge list and in the two active lists,
+   --  this row's and the next's, which swap buffers and so both grow to the most edges active at once; and its
    --  crossing.
-   Polygon_Edge_Bytes : constant := 2 * 48 + 8;
+   Polygon_Edge_Bytes : constant := 3 * 48 + 8;
    --  A unit of a region's size, for a copy of it.
    Region_Unit_Bytes : constant := 8;
-   --  Each byte of a region read: its scanlines and inversion points, with capacity growth.
-   Region_Payload_Factor : constant := 4;
+   --  Each byte of a region read: its scanlines and inversion points, with capacity growth. An empty scanline,
+   --  4 bytes read, is a 12-byte record, and growth may double it.
+   Region_Payload_Factor : constant := 6;
    --  A unit of shape-building work: the spans it can make.
    Shape_Bytes_Per_Work_Unit : constant := 256;
 end Pictlib.Internal.Sessions.Accounting;

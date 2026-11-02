@@ -27,6 +27,15 @@ package body Pictlib_Testing.Builders is
 
    function Region (Top, Left, Bottom, Right : Integer) return Bytes is (W (10) & Rect (Top, Left, Bottom, Right));
 
+   function Striped_Region (Top, Lines, Width : Natural) return Bytes is
+      Result : Bytes (1 .. 8 * Lines);
+   begin
+      for K in 0 .. Lines - 1 loop
+         Result (Result'First + 8 * K .. Result'First + 8 * K + 7) := W (Top + K) & W (0) & W (Width) & W (16#7FFF#);
+      end loop;
+      return W (10 + Result'Length + 2) & Rect (Top, 0, Top + Lines, Width) & Result & W (16#7FFF#);
+   end Striped_Region;
+
    function L_Region return Bytes is
      (W (36) & Rect (0, 0, 4, 4) & W (0) & W (0) & W (2) & W (16#7FFF#) & W (2) & W (2) & W (4) & W (16#7FFF#)
       & W (4) & W (0) & W (4) & W (16#7FFF#) & W (16#7FFF#));

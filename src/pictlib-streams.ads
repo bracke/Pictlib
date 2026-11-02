@@ -8,14 +8,21 @@ package Pictlib.Streams is
    type Byte_Array_Access is access all Byte_Array;
    type Const_Byte_Array_Access is access constant Byte_Array;
 
+   --  A source's reply to a read or skip.
    type Source_Result is record
+      --  No_Error, or the source's failure.
       Error : Errors.Error := Errors.Make (Errors.No_Error);
+      --  The bytes read or skipped, at most those asked for.
       Count : Byte_Count := 0;
+      --  Whether the input has ended; Count may still be positive.
       End_Of_Input : Boolean := False;
    end record;
 
+   --  A destination's reply to a write.
    type Destination_Result is record
+      --  No_Error, or the destination's failure.
       Error : Errors.Error := Errors.Make (Errors.No_Error);
+      --  The bytes taken, at most those given.
       Count : Byte_Count := 0;
    end record;
 

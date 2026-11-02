@@ -12,6 +12,7 @@ with Ada.Characters.Handling;
 with Ada.Containers.Indefinite_Ordered_Maps;
 with Ada.Directories;
 with Ada.Exceptions;
+with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Pictlib;
@@ -166,7 +167,10 @@ procedure Pictlib_Real_World is
             --  The key in expected.txt: the path below the corpus, with '/' whatever the platform's separator.
             Relative : constant String := Slashed (Path (Path'First + Prefix'Length + 1 .. Path'Last));
          begin
-            if Ada.Characters.Handling.To_Lower (Extension (Path)) in "pct" | "pict" then
+            --  expected.txt names a picture up to its first space, so a name may hold none.
+            if Ada.Strings.Fixed.Index (Relative, " ") > 0 then
+               Pictlib_Testing.Tools.Fail (Relative & ": a corpus file's name may not hold a space");
+            elsif Ada.Characters.Handling.To_Lower (Extension (Path)) in "pct" | "pict" then
                declare
                   Data : Bytes_Access := Pictlib_Testing.Files.Load_Path (Path);
                   Line : Unbounded_String;
@@ -221,8 +225,11 @@ begin
                for Index in Line'Range loop
                   if Line (Index) = ' ' then
                      Kept := Index > Line'First and then Index < Line'Last;
-                     if Kept then
-                        Expected.Include (Line (Line'First .. Index - 1), Line (Index + 1 .. Line'Last));
+                     if Kept and then Expected.Contains (Line (Line'First .. Index - 1)) then
+                        Pictlib_Testing.Tools.Fail (Expected_File & ": " & Line (Line'First .. Index - 1)
+                                                    & " is recorded twice");
+                     elsif Kept then
+                        Expected.Insert (Line (Line'First .. Index - 1), Line (Index + 1 .. Line'Last));
                      end if;
                      exit;
                   end if;

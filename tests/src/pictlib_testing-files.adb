@@ -84,8 +84,15 @@ package body Pictlib_Testing.Files is
       Fields (3) := 255;
       for Field in 1 .. (if Item.Kind = '6' then 3 else 2) loop
          Fields (Field) := 0;
+         --  Whitespace, and comments from '#' to the end of their line, come before each field.
          while Position <= Data'Last and then Character'Val (Data (Position)) not in '0' .. '9' loop
-            Position := Position + 1;
+            if Character'Val (Data (Position)) = '#' then
+               while Position <= Data'Last and then Character'Val (Data (Position)) /= ASCII.LF loop
+                  Position := Position + 1;
+               end loop;
+            else
+               Position := Position + 1;
+            end if;
          end loop;
          while Position <= Data'Last and then Character'Val (Data (Position)) in '0' .. '9'
            and then Fields (Field) < 1_000_000
