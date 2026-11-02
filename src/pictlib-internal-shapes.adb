@@ -1,3 +1,4 @@
+with Ada.Containers;
 with Pictlib.Internal.Sessions.Accounting;
 with Pictlib.Geometry;
 with Pictlib.Internal.Coverage;
@@ -23,6 +24,8 @@ package body Pictlib.Internal.Shapes is
          Outcome := Accounting.Admit_Aggregate (S, Accounting.Point_Cost_Bytes * Byte_Count (Count));
       end if;
       if Results.Succeeded (Outcome) then
+         --  Exactly what was admitted: appending alone would let the vector's growth hold up to twice that.
+         Points.Reserve_Capacity (Ada.Containers.Count_Type (Count));
          Outcome := Sessions.Read_Bounds (S, Box);
       end if;
       for Index in 1 .. Count loop
@@ -178,6 +181,7 @@ package body Pictlib.Internal.Shapes is
          return Outcome;
       end if;
       Coverage.Start (Shape, P.Window, Accounting.Shape_Work_Left (S));
+      Points.Reserve_Capacity (P.Port.Last_Polygon.Length);
       for Item of P.Port.Last_Polygon loop
          Points.Append (Rendering.To_Picture (P, Item.H, Item.V));
       end loop;

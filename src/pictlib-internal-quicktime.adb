@@ -354,14 +354,16 @@ package body Pictlib.Internal.QuickTime is
 
       Outcome := JPEG_Bridge.Admit_And_Decode (S, Event, Image_Of (Item), Pixels);
       --  A JPEG jpeglib cannot decode is an image this renderer cannot draw, as another codec is: strictly
-      --  unsupported, otherwise skipped with a warning, the rest of the opcode with it.
+      --  unsupported, otherwise skipped with a warning, the rest of the opcode with it. The warning keeps the
+      --  failure's whole context, jpeglib's own code among it, as the strict failure does.
       if not Results.Succeeded (Outcome)
         and then Errors."=" (Outcome.First_Error.Code, Errors.Unsupported_Feature)
         and then Sessions.Is_Lenient (S)
       then
          JPEG_Bridge.Free (Pixels);
          return Finish
-           (Rendering.Unsupported (S, Event, Outcome.First_Error.Context.Expected, Outcome.First_Error.Context.Actual));
+           (Sessions.Reject_Or_Warn
+              (S, Errors.Unsupported_Feature, Errors.Approximated_Rendering, Outcome.First_Error.Context));
       end if;
       if Results.Succeeded (Outcome) then
          Outcome := Finish (Results.Success);

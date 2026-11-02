@@ -376,6 +376,7 @@ package body Pictlib.Internal.Coverage is
       Count : constant Natural := Natural (Points.Length);
    begin
       Edges.Clear;
+      Edges.Reserve_Capacity (Ada.Containers.Count_Type (Count));
       for Index in 1 .. Count loop
          declare
             P : constant Point := Points (Index);
@@ -427,6 +428,11 @@ package body Pictlib.Internal.Coverage is
       if Edges.Is_Empty then
          return;
       end if;
+      --  Every list holds at most every edge: reserved exactly, as the allocation total counts them, where
+      --  appending alone would let each grow to twice that.
+      Active.Reserve_Capacity (Edges.Length);
+      Kept.Reserve_Capacity (Edges.Length);
+      Boundaries.Reserve_Capacity (Edges.Length);
 
       --  From the first row an edge crosses, not the window's top.
       for Y in Integer (Long_Long_Integer'Max (Long_Long_Integer (Item.Window.Top), Edges.First_Element.First))

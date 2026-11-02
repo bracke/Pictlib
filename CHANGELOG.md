@@ -380,6 +380,10 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   before copying it, and the copy counts 12 bytes a unit against the
   total-allocation quota, a scanline record's size. A polygon whose points
   are cut short keeps no junk point.
+- An unsupported JPEG skipped leniently keeps jpeglib's code in its
+  warning, as the strict failure does. Polygon points and edges are held in
+  vectors reserved to the size the allocation total counts, where
+  appending alone could grow them to twice that.
 
 ### Documentation
 
@@ -483,6 +487,8 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   is corrected; the source policy's comment no longer admits `GNAT` and
   `System`, and an older entry here no longer says CI keeps fuzz inputs
   only on failure.
+- The specification says a `Cancel` a source's `Offset` makes during
+  `Initialize` or `Reset` does not stand.
 
 ### Internal structure
 
@@ -839,3 +845,8 @@ All tooling is Ada, in the `tests` crate:
   and `Files.Owned` free fixture copies, sample images and destination
   buffers the tests used to leak. The fuzzer fails when an encoded seed
   cannot be made; `stress.large_inputs` checks every NOP is enumerated.
+- The rest of the tests' leaks: the hostile test's 4 MB picture, the
+  QuickTime tests' jpeglib buffers and encoder, and a reference freed only
+  when its assertions passed. Tests for the warning's jpeglib code, a
+  `Cancel` from `Offset` during `Reset`, and the opcodes around
+  `stress.large_inputs`'s NOPs.

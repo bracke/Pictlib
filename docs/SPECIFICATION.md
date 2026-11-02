@@ -465,7 +465,8 @@ binding it replaced is dropped, so a reset decoder reads its new source from the
 reading, and what the source delivered for the call it cancelled is dropped.
 `Initialize` and `Reset` ask the source's `Offset` where the picture begins; an exception from it
 propagates and leaves the decoder `Stopped`, its earlier picture discarded and bound to nothing,
-until `Reset` or `Initialize`.
+until `Reset` or `Initialize`. A `Cancel` that `Offset` makes there does not stand: the binding
+being made replaces it, and the decoder is `Ready`.
 
 `Render` rejects an invalid view or one whose size is not the frame's with `Invalid_Argument`
 (expecting the frame's pixels against the view's, or, for an invalid view of the frame's size, the

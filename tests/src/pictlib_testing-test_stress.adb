@@ -10,6 +10,7 @@ with Pictlib.Errors;
 with Pictlib.Fonts;
 with Pictlib.Images;
 with Pictlib.Limits;
+with Pictlib.Opcodes;
 with Pictlib.Results;
 with Pictlib.Streams;
 with Pictlib_Testing.Builders;
@@ -317,8 +318,11 @@ package body Pictlib_Testing.Test_Stress is
          Outcome := Decoding.Enumerate (Decoder, Visitor);
       end if;
       Assert (Pictlib.Results.Succeeded (Outcome), "100_000 NOPs did not enumerate");
-      Assert ((for all Index in 3 .. 100_002 => Pictlib."=" (Visitor.Events (Index).Op, 0))
-              and then Natural (Visitor.Events.Length) = 100_003,
+      Assert (Natural (Visitor.Events.Length) = 100_003
+              and then Pictlib."=" (Visitor.Events (1).Op, Pictlib.Opcodes.Version_Op)
+              and then Pictlib."=" (Visitor.Events (2).Op, Pictlib.Opcodes.Header_Op)
+              and then (for all Index in 3 .. 100_002 => Pictlib."=" (Visitor.Events (Index).Op, 0))
+              and then Pictlib."=" (Visitor.Events (100_003).Op, Pictlib.Opcodes.End_Picture),
               "100_000 NOPs enumerated as" & Natural'Image (Natural (Visitor.Events.Length)) & " opcodes");
 
       Pictlib.Streams.Open (Source, Huge_Frame'Unchecked_Access);

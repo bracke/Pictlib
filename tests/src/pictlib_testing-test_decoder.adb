@@ -110,6 +110,28 @@ package body Pictlib_Testing.Test_Decoder is
 
    Source_Raised : exception;
 
+   --  A source whose Offset cancels Target once Armed: caller code run while the decoder is bound to it.
+   type Offset_Cancelling (Target : not null access Decoding.Decoder) is
+     limited new Pictlib.Streams.Source with record
+      Inner : Pictlib.Streams.Memory_Source;
+      Armed : Boolean := True;
+   end record;
+   overriding function Read
+     (Object : in out Offset_Cancelling; Buffer : out Pictlib.Streams.Byte_Array)
+      return Pictlib.Streams.Source_Result is (Object.Inner.Read (Buffer));
+   overriding function Offset (Object : Offset_Cancelling) return Pictlib.Source_Offset;
+   overriding function Skip
+     (Object : in out Offset_Cancelling; Count : Pictlib.Byte_Count) return Pictlib.Streams.Source_Result
+   is (Object.Inner.Skip (Count));
+
+   overriding function Offset (Object : Offset_Cancelling) return Pictlib.Source_Offset is
+   begin
+      if Object.Armed then
+         Decoding.Cancel (Object.Target.all);
+      end if;
+      return Object.Inner.Offset;
+   end Offset;
+
    --  What a meddling visitor does to its decoder at its first opcode.
    type Meddle is (Cancels, Enumerates, Reads_Header, Renders, Resets, Resets_And_Reads_Header, Finalizes, Raises);
 
@@ -789,6 +811,27 @@ package body Pictlib_Testing.Test_Decoder is
          Decoding.Reset (Other, Good'Access);
          Outcome := Decoding.Read_Header (Other);
          Assert (Pictlib.Results.Succeeded (Outcome), "a Reset after a raising one did not bind the decoder");
+      end;
+
+      --  A source whose Offset cancels the decoder as it is bound: the Cancel is of the binding being replaced,
+      --  and the new one stands.
+      declare
+         Other : aliased Decoding.Decoder;
+         Good : aliased Pictlib.Streams.Memory_Source;
+         Meddling : aliased Offset_Cancelling (Other'Access);
+      begin
+         Pictlib.Streams.Open (Good, Picture'Access);
+         Decoding.Initialize (Other, Good'Access);
+         Outcome := Decoding.Read_Header (Other);
+         Assert (Pictlib.Results.Succeeded (Outcome), "the picture's header was not read");
+         Pictlib.Streams.Open (Meddling.Inner, Picture'Access);
+         Decoding.Reset (Other, Meddling'Access);
+         Meddling.Armed := False;
+         Assert (Decoding.State (Other) = Decoding.Ready,
+                 "a Cancel from Offset during Reset left the decoder " & Decoding.State (Other)'Image);
+         Outcome := Decoding.Read_Header (Other);
+         Assert (Pictlib.Results.Succeeded (Outcome),
+                 "the new binding did not stand: " & Outcome.First_Error.Code'Image);
       end;
    end Source_Offsets;
 end Pictlib_Testing.Test_Decoder;

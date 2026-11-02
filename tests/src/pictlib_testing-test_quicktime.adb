@@ -1,3 +1,4 @@
+with Ada.Finalization;
 with Ada.Unchecked_Deallocation;
 with AUnit.Assertions;
 with Jpeglib;
@@ -121,34 +122,62 @@ package body Pictlib_Testing.Test_QuickTime is
       return False;
    end Nothing;
 
+   --  A jpeglib buffer, freed when it goes out of scope, so an assertion that fails leaks nothing.
+   type JPEG_Buffer is new Ada.Finalization.Limited_Controlled with record
+      Data : Jpeglib.Streams.Byte_Array_Access;
+   end record;
+
+   overriding procedure Finalize (Item : in out JPEG_Buffer) is
+      procedure Free is new Ada.Unchecked_Deallocation
+        (Jpeglib.Streams.Byte_Array, Jpeglib.Streams.Byte_Array_Access);
+   begin
+      Free (Item.Data);
+   end Finalize;
+
+   --  A zeroed buffer of Length bytes.
+   function JPEG_Room (Length : Natural) return JPEG_Buffer is
+   begin
+      return Result : JPEG_Buffer do
+         Result.Data := new Jpeglib.Streams.Byte_Array'(1 .. Length => 0);
+      end return;
+   end JPEG_Room;
+
+   --  A copy of Item.
+   function JPEG_Copy (Item : Bytes) return JPEG_Buffer is
+   begin
+      return Result : JPEG_Buffer do
+         Result.Data := new Jpeglib.Streams.Byte_Array'([for Byte_Item of Item => Jpeglib.Byte (Byte_Item)]);
+      end return;
+   end JPEG_Copy;
+
    --  A Width x Height RGB image as jpeglib's encoder writes it with Settings.
    function Encoded_JPEG
      (Settings : Jpeglib.Encoding.Options;
       Width : Positive := Image_Width;
       Height : Positive := Image_Height) return Bytes
    is
-      Pixels : constant Jpeglib.Streams.Byte_Array_Access := new Jpeglib.Streams.Byte_Array (1 .. 3 * Width * Height);
-      Encoded : constant Jpeglib.Streams.Byte_Array_Access :=
-        new Jpeglib.Streams.Byte_Array (1 .. 3 * Width * Height + 100_000);
+      Pixels : constant JPEG_Buffer := JPEG_Room (3 * Width * Height);
+      Encoded : constant JPEG_Buffer := JPEG_Room (3 * Width * Height + 100_000);
       Output : aliased Jpeglib.Streams.Fixed_Buffer_Destination;
       Encoder : Jpeglib.Encoding.Encoder;
       Result : Jpeglib.Results.Result;
    begin
-      for Index in Pixels'Range loop
-         Pixels (Index) := Jpeglib.Byte ((Index * 37) mod 256);
+      for Index in Pixels.Data'Range loop
+         Pixels.Data (Index) := Jpeglib.Byte ((Index * 37) mod 256);
       end loop;
-      Jpeglib.Streams.Open (Output, Encoded);
+      Jpeglib.Streams.Open (Output, Encoded.Data);
       Jpeglib.Encoding.Initialize (Encoder, Output'Access, Settings);
       Result := Jpeglib.Encoding.Encode_Image
         (Encoder, (Descriptor => (Width => Jpeglib.Image_Width (Width), Height => Jpeglib.Image_Height (Height),
                                   Format => Jpeglib.Images.RGB_24, Stride => Jpeglib.Row_Stride (3 * Width),
                                   Accessible_Bytes => Jpeglib.Byte_Count (3 * Width * Height)),
-                   Storage => Pixels));
+                   Storage => Pixels.Data));
       if Jpeglib.Results.Succeeded (Result) then
          Result := Jpeglib.Encoding.Finish (Encoder);
       end if;
+      Jpeglib.Encoding.Finalize (Encoder);
       Assert (Jpeglib.Results.Succeeded (Result), "jpeglib did not encode the image");
-      return [for Index in 1 .. Natural (Output.Offset) => Pictlib.Byte (Encoded (Index))];
+      return [for Index in 1 .. Natural (Output.Offset) => Pictlib.Byte (Encoded.Data (Index))];
    end Encoded_JPEG;
 
    function Image (Data : Bytes; Width, Height : Positive; Extra : Bytes := [1 .. 0 => 0]) return Bytes is
@@ -350,11 +379,10 @@ package body Pictlib_Testing.Test_QuickTime is
          Small_Data : constant Bytes := Encoded_JPEG (Progressive, 500, 500);
          Small : aliased constant Bytes := Image (QuickTime ("jpeg", 500, 500, Small_Data), 8, 6);
          --  jpeglib's own decoding of the small JPEG, whose top-left 8 x 6 pixels the frame must show.
-         procedure Free is new Ada.Unchecked_Deallocation
-           (Jpeglib.Streams.Byte_Array, Jpeglib.Streams.Byte_Array_Access);
-         Reference : Jpeglib.Streams.Byte_Array_Access := new Jpeglib.Streams.Byte_Array (1 .. 3 * 500 * 500);
-         Reference_Data : Jpeglib.Streams.Byte_Array_Access :=
-           new Jpeglib.Streams.Byte_Array'([for Item of Small_Data => Jpeglib.Byte (Item)]);
+         Reference_Pixels : constant JPEG_Buffer := JPEG_Room (3 * 500 * 500);
+         Reference : Jpeglib.Streams.Byte_Array_Access renames Reference_Pixels.Data;
+         Reference_Copy : constant JPEG_Buffer := JPEG_Copy (Small_Data);
+         Reference_Data : Jpeglib.Streams.Byte_Array_Access renames Reference_Copy.Data;
          Reference_Source : aliased Jpeglib.Streams.Memory_Source;
          Reference_Decoder : Jpeglib.Decoding.Decoder;
          Reference_View : Jpeglib.Images.Mutable_Image_View :=
@@ -394,8 +422,6 @@ package body Pictlib_Testing.Test_QuickTime is
             end loop;
          end loop;
          Jpeglib.Decoding.Finalize (Reference_Decoder);
-         Free (Reference);
-         Free (Reference_Data);
          Assert (Wrong = 0, "a small progressive JPEG was not drawn:" & Wrong'Image & " pixels differ");
       end;
       --  A hierarchical JPEG holds a continuation frame's coefficients beside the first frame's: a budget that
@@ -437,6 +463,16 @@ package body Pictlib_Testing.Test_QuickTime is
               and then Recorders.Has_Warning (Decoder, Errors.Approximated_Rendering)
               and then not Recorders.Has_Warning (Decoder, Errors.Partial_Picture),
               "a JPEG jpeglib cannot decode was not skipped as unsupported: " & Outcome.First_Error.Code'Image);
+      --  The warning says what jpeglib said, as the strict failure does.
+      declare
+         Skipped : constant Errors.Warning := Recorders.Warning_With (Decoder, Errors.Approximated_Rendering);
+      begin
+         Canvases.Render (Unsupported_JPEG, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome);
+         Assert (Outcome.First_Error.Context.Has_Underlying_Code and then Skipped.Context.Has_Underlying_Code
+                 and then Skipped.Context.Underlying_Code = Outcome.First_Error.Context.Underlying_Code,
+                 "the warning lost jpeglib's code: strictly" & Outcome.First_Error.Context.Underlying_Code'Image
+                 & ", leniently" & Skipped.Context.Underlying_Code'Image);
+      end;
       --  UncompressedQuickTime is skipped while rendering, and never retained then, whatever the policy says.
       declare
          Uncompressed : aliased constant Bytes :=
@@ -550,9 +586,11 @@ package body Pictlib_Testing.Test_QuickTime is
       declare
          use type Pictlib.Byte_Count;
          use type Jpeglib.Byte_Count;
+         Data_Copy : constant JPEG_Buffer := JPEG_Copy (JPEG);
          Data : constant Jpeglib.Streams.Const_Byte_Array_Access :=
-           new Jpeglib.Streams.Byte_Array'([for Item of JPEG => Jpeglib.Byte (Item)]);
-         Pixels : constant Jpeglib.Streams.Byte_Array_Access := new Jpeglib.Streams.Byte_Array (1 .. 144);
+           Jpeglib.Streams.Const_Byte_Array_Access (Data_Copy.Data);
+         Pixel_Room : constant JPEG_Buffer := JPEG_Room (144);
+         Pixels : Jpeglib.Streams.Byte_Array_Access renames Pixel_Room.Data;
 
          function Jpeglib_Decodes (Budget : Jpeglib.Byte_Count) return Boolean is
             Source : aliased Jpeglib.Streams.Memory_Source;

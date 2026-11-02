@@ -10,6 +10,7 @@ with Pictlib.Results;
 with Pictlib.Streams;
 with Pictlib_Testing.Builders;
 with Pictlib_Testing.Canvases;
+with Pictlib_Testing.Files;
 with Pictlib_Testing.Recorders;
 
 --  Pictures built to make the renderer overflow, allocate or work without bound; each must end with a result
@@ -195,8 +196,8 @@ package body Pictlib_Testing.Test_Hostile is
            & Rect (-32_768, -32_768, Rows - 32_768, 32_767) & Pixmap_Tail (0, 1, 1, 1)
            & Table_Header (16#8000#, 2) & Table_Entry (0, 0, 0, 0) & Table_Entry (1, 0, 0, 0);
          Tail : constant Bytes := Op_Rect (16#34#, 0, 0, 2, 8) & W (16#FF#);
-         Whole : constant Pictlib.Streams.Byte_Array_Access :=
-           new Bytes (1 .. Head'Length + Rows * Row'Length + Tail'Length);
+         Whole_Picture : constant Files.Owned := Files.Allocated (Head'Length + Rows * Row'Length + Tail'Length);
+         Whole : Pictlib.Streams.Byte_Array_Access renames Whole_Picture.Data;
       begin
          Whole (1 .. Head'Length) := Head;
          for Index in 0 .. Rows - 1 loop

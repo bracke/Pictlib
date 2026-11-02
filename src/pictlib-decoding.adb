@@ -29,6 +29,7 @@ package body Pictlib.Decoding is
       Discard_Picture (Object);
       Internal.Sessions.Start
         (Object.Inner.Session, Input, Object.Decode_Options.Strictness, Object.Decode_Options.Retention);
+      --  A Cancel the source's Offset made just now is of the binding this replaces: the new one stands.
       Object.Current_State := Ready;
       Object.Binds := Object.Binds + 1;
    exception
