@@ -14,7 +14,7 @@ bounds a read, a skip, an allocation or a loop.
 | `Max_Opcodes` | each opcode, the version opcode and `HeaderOp` included | `Limit_Exceeded` |
 | `Max_Opcode_Bytes` | each opcode's data, before every read or skip inside it; not the file header | `Limit_Exceeded` |
 | `Max_Region_Bytes`, `Max_Polygon_Points` | each region and polygon size word, enumerating and rendering | `Limit_Exceeded` |
-| `Max_Metadata_Items`, `Max_Retained_Metadata_Bytes` | before an item is retained | strict: `Limit_Exceeded`; lenient: dropped, `Data_Loss` warning |
+| `Max_Metadata_Items`, `Max_Retained_Metadata_Bytes` | before an item is retained; an item longer than `Max_Picture_Bytes` has left is never retained, but skipped as an unretained one is | strict: `Limit_Exceeded`; lenient: dropped, `Data_Loss` warning |
 | `Max_Allocation_Bytes` | each allocation before it is made: a retained payload, an opcode's row buffers (with a PixPat's tile), a font's atlas and file, a QuickTime image's pixels (never above 2^31 − 1 bytes, set aside only once the JPEG header agrees); jpeglib gets the rest for its own buffers, at most 8 times the RGB bytes of the image rounded up to 32-pixel MCUs, plus 1 MiB, which is its coefficient limit too; its output limit is the image's RGB bytes; the encoder's row buffers | `Limit_Exceeded` |
 | `Max_Total_Allocation_Bytes` | every allocation of a session, counted when admitted and never given back, and the storage the specification's section 9 counts at fixed rates; unlimited by default | `Limit_Exceeded` |
 | `Max_Drawing_Work` | all rendering work, drawn or not, before or as it is done: the specification, section 9, lists what each piece costs | `Limit_Exceeded` |

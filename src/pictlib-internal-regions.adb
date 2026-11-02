@@ -3,6 +3,7 @@ with Pictlib.Internal.Checked_Arithmetic;
 with Pictlib.Internal.Bytes;
 
 package body Pictlib.Internal.Regions is
+   use type Ada.Containers.Count_Type;
 
    End_Mark : constant := 16#7FFF#;
 
@@ -116,7 +117,6 @@ package body Pictlib.Internal.Regions is
 
    --  Active := Active xor Points (Line), both sorted.
    procedure Invert (Item : in out Region; Line : Scanline) is
-      use type Ada.Containers.Count_Type;
       Merged : Integer_Vectors.Vector;
       Left : Positive := 1;
       Right : Positive := Line.First;
@@ -188,6 +188,9 @@ package body Pictlib.Internal.Regions is
       declare
          Index : Positive := 1;
       begin
+         --  The row's spans, at most one a pair of active points, reserved exactly: a row cut from a large
+         --  region keeps no capacity a walk of the next did not ask for, and grows to no more than it holds.
+         Spans.Reserve_Capacity (Item.Active.Length / 2);
          while Index + 1 <= Natural (Item.Active.Length) loop
             declare
                Left : constant Integer := Integer'Max (Item.Active (Index), Box.Left);
@@ -208,6 +211,8 @@ package body Pictlib.Internal.Regions is
       R : Positive := 1;
    begin
       Result.Clear;
+      --  At most a span for each of both, reserved exactly as Row_Spans reserves its own.
+      Result.Reserve_Capacity (Left.Length + Right.Length);
       while L <= Natural (Left.Length) and then R <= Natural (Right.Length) loop
          declare
             A : constant Span := Left (L);

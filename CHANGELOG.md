@@ -388,7 +388,10 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   skipped as an unretained one is, so retention no longer turns a
   truncated, recoverable picture into a `Limit_Exceeded` failure. A
   region's scanlines and points are reserved exactly, and its walk's merge
-  buffer too, so a region stays within the 6 bytes a byte counted.
+  buffer too, so a region stays within the rate counted for it.
+- A clip or mask row's spans, and their intersection with the drawn row,
+  are reserved exactly, and a region read counts 10 bytes a byte, for the
+  spans its walk cuts as well as its points.
 
 ### Documentation
 
@@ -497,6 +500,8 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - The specification says how retention meets the picture byte budget, what
   a region's allocation rate covers, and that only `Embedded_Image_Failed`
   is recovered as a partial picture, an unsupported JPEG being skipped.
+- `limits_and_safety.md` says an item longer than the picture budget has
+  left is skipped, not retained.
 
 ### Internal structure
 
@@ -862,3 +867,7 @@ All tooling is Ada, in the `tests` crate:
   `pictlib_conformance` fails a case it cannot write or read and runs the
   rest; `test_external` loads its raster before the picture it would leak.
   A test renders a cut comment with retention on and off.
+- `pictlib_real_world --update` records outcomes only when reading the
+  corpus raised no defect and no failure, so an unreadable file or a
+  differing reference never becomes an expected outcome; a broken
+  `expected.txt` can still be rewritten.

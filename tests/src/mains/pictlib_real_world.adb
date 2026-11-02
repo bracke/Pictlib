@@ -1,8 +1,8 @@
 --  Real-world corpus: every picture under fixtures/real_world is enumerated strictly and rendered compatibly
 --  and recoverably, with the test fonts. An exception escaping pictlib is a defect. Each outcome is printed as
 --  "<file> <strict enumerate> <compatible render> <recovering render>" and compared with
---  fixtures/real_world/expected.txt; --update rewrites that file, and --opcodes prints each picture's opcode
---  counts. Runs from anywhere below the pictlib tree.
+--  fixtures/real_world/expected.txt; --update rewrites that file when the run had no defect and no other
+--  failure, and --opcodes prints each picture's opcode counts. Runs from anywhere below the pictlib tree.
 with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Files;
 with Pictlib_Testing.Fonts;
@@ -208,6 +208,7 @@ procedure Pictlib_Real_World is
 
    Expected : Outcome_Maps.Map;
    Mismatches : Natural := 0;
+   Corpus_Failures : Natural := 0;
 begin
    if not Pictlib_Testing.Tools.Enter_Tests_Directory then
       return;
@@ -220,10 +221,13 @@ begin
       return;
    end if;
    Visit (Corpus);
-   --  A corpus that is not there, or holds no picture, tests nothing: it must not pass.
+   --  A corpus that is not there, or holds no picture, tests nothing: it must not pass, nor be recorded.
    if Results_Now.Is_Empty then
       Pictlib_Testing.Tools.Fail ("no pictures under " & Corpus);
    end if;
+   --  What failed while the corpus was read, before the recorded outcomes are: a broken expected.txt is what
+   --  --update repairs, so it does not count against updating.
+   Corpus_Failures := Pictlib_Testing.Tools.Failures;
    if Ada.Directories.Exists (Expected_File) then
       declare
          File : Ada.Text_IO.File_Type;
@@ -276,7 +280,11 @@ begin
          Ada.Text_IO.Put_Line ("FAIL " & Outcome_Maps.Key (Position) & " is recorded but missing");
       end if;
    end loop;
-   if Project_Tools.Processes.Has_Argument ("--update") and then Defects = 0 then
+   --  Only a clean run is recorded: an unreadable file or a reference that differs must not become an outcome.
+   if Project_Tools.Processes.Has_Argument ("--update") and then (Defects > 0 or else Corpus_Failures > 0) then
+      Ada.Text_IO.Put_Line ("not updating " & Expected_File & ": the run failed");
+   end if;
+   if Project_Tools.Processes.Has_Argument ("--update") and then Defects = 0 and then Corpus_Failures = 0 then
       declare
          File : Ada.Text_IO.File_Type;
       begin

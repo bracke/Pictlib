@@ -596,7 +596,7 @@ and storage that is no single allocation at fixed rates:
 | a retained metadata item or font name | its bytes twice, the buffer it is read into and the copy kept, plus 128 |
 | a polygon read | 8 per point |
 | a polygon drawn | 8 per point again, for the copy drawn, plus 152 per edge when it is filled |
-| a region read | 6 per byte of it, for its scanlines and inversion points and, while it is walked, its active points |
+| a region read | 10 per byte of it, for its scanlines and inversion points and, while it is walked as a clip or mask, its active points and the spans a row cuts from them |
 | a region shape drawn | 12 per unit of its region's size, for the copy moved to the origin |
 | building a shape | 256 per unit of shape work, the spans it can make; building stops at what the total still admits |
 | a QuickTime image | its pixels, and `jpeglib`'s share for its own buffers |

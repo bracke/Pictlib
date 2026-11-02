@@ -57,9 +57,10 @@ package Pictlib.Internal.Sessions.Accounting is
    --  A unit of a region's size, for a copy of it: at most a 12-byte scanline record, as an empty scanline is.
    Region_Unit_Bytes : constant := 12;
    --  Each byte of a region read: its scanlines and inversion points, reserved exactly, and while it is walked
-   --  the active points and their merge. A scanline of 4 bytes read is a 12-byte record; an inversion point of
-   --  2 bytes is 4 bytes stored and up to 8 more walked: 6 a byte either way.
-   Region_Payload_Factor : constant := 6;
+   --  as a clip or mask the active points, their merge, the row's spans cut from them and those spans' share of
+   --  the intersection with the drawn row, each reserved exactly. A scanline of 4 bytes read is a 12-byte
+   --  record; an inversion point of 2 bytes is 4 bytes stored and up to 16 more walked: at most 10 a byte.
+   Region_Payload_Factor : constant := 10;
    --  A unit of shape-building work: the spans it can make.
    Shape_Bytes_Per_Work_Unit : constant := 256;
 end Pictlib.Internal.Sessions.Accounting;
