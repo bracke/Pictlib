@@ -460,6 +460,32 @@ package body Pictlib_Testing.Test_Text is
       --  ChExtra 3 after every character but the space, SpExtra 4 after the space.
       Ink (Spaced_Out, Sans, 12, 2.0, 15, Points ("a b"), Pen_End, Space_Extra => 4.0, Char_Extra => 3.0);
       Canvases.Expect_Raster (Spaced, Width, Height, Image (Spaced_Out), "ChExtra and SpExtra", With_Fonts);
+
+      --  Text that starts 8 million pixels left of the frame and is brought into it by 254 spaces, each widened by
+      --  SpExtra 32767.25: the pen keeps every fraction, where a Float would lose a quarter pixel a space there.
+      declare
+         Moved : constant := 32_767 * 254;
+         Extra : constant Long_Float := 32_767.25;
+         Spaces : constant := 254;
+         Font : Textrender.Renderer;
+         Metric : Textrender.Glyph_Metric;
+         Far_Out : Grid := Blank;
+      begin
+         Assert (Font.Load_Font (Sans, 12, 26, 26, 256, 256) = Textrender.Success
+                 and then Font.Get_Glyph (Character'Pos (' '), Metric) = Textrender.Success,
+                 "the space's advance is unknown");
+         declare
+            Run : constant Long_Float := Long_Float (Spaces) * (Long_Float (Metric.Advance_X) + Extra);
+            --  The local start that brings the pen to about 5 in the frame.
+            Start : constant Integer := Integer (Long_Float'Floor (Long_Float (Moved) + 5.0 - Run));
+            Picture : aliased constant Bytes :=
+              Pic (Repeat (Origin (32_767, 0), 254) & W (16#06#) & L (32_767 * 16#1_0000# + 16#4000#)
+                   & Long_Text (15, Start, [1 .. Spaces => ' '] & "a"));
+         begin
+            Ink (Far_Out, Sans, 12, Float (Long_Float (Start - Moved) + Run), 15, Points ("a"), Pen_End);
+            Canvases.Expect_Raster (Picture, Width, Height, Image (Far_Out), "text far from the frame", With_Fonts);
+         end;
+      end;
    end Spacing_And_Clipping;
 
    --  Text is drawing work wherever it lands: each font loaded, each glyph asked for. Everything here is drawn

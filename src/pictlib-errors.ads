@@ -90,15 +90,17 @@ package Pictlib.Errors is
    --  @param Context Diagnostic context recorded with the error.
    --  @return Error carrying Code, its identifier and Context.
    function Make (Code : Error_Code; Context : Diagnostic_Context := (others => <>)) return Error;
+   --  Severity of.
+   --  @param Code Warning code.
+   --  @return The severity every warning of Code has: Informational for a reserved opcode skipped and the
+   --  default Generic_Warning, Compatibility for a compatibility issue, Recovery for a recovery applied, and
+   --  Data_Loss for the rest.
+   function Severity_Of (Code : Warning_Code) return Warning_Severity;
    --  Make warning.
    --  @param Code Warning code.
-   --  @param Severity Warning severity.
    --  @param Context Diagnostic context recorded with the warning.
-   --  @return Warning carrying Code, its identifier, Severity and Context.
-   function Make_Warning
-     (Code : Warning_Code;
-      Severity : Warning_Severity;
-      Context : Diagnostic_Context := (others => <>)) return Warning;
+   --  @return Warning carrying Code, its identifier, its fixed severity and Context.
+   function Make_Warning (Code : Warning_Code; Context : Diagnostic_Context := (others => <>)) return Warning;
    --  Is fatal.
    --  @param Item Error to inspect.
    --  @return True when Item reports a failure.

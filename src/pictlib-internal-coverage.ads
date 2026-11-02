@@ -28,7 +28,7 @@ package Pictlib.Internal.Coverage is
    --  @param Item Shape.
    --  @return Its window.
    function Window_Of (Item : Shape) return Area;
-   --  Row.
+   --  Row: what the tests inspect a shape through; drawing uses Copy_Row.
    --  @param Item Shape.
    --  @param Y Row within the window.
    --  @return The row's spans, sorted and disjoint; none once the shape is exhausted, so an incomplete shape
@@ -107,7 +107,6 @@ package Pictlib.Internal.Coverage is
    --  @param Item Shape to cut.
    --  @param Other Pixels to remove.
    procedure Subtract (Item : in out Shape; Other : Shape);
-
 
 private
    package Row_Vectors is new Ada.Containers.Vectors (Natural, Span_List, Regions.Span_Vectors."=");

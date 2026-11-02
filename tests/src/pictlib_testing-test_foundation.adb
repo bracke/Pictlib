@@ -281,8 +281,7 @@ package body Pictlib_Testing.Test_Foundation is
    procedure Warning_Identifiers (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
       Item : constant Pictlib.Errors.Warning :=
-        Pictlib.Errors.Make_Warning
-          (Pictlib.Errors.Reserved_Opcode_Skipped, Pictlib.Errors.Compatibility, (Op => 16#0024#, others => <>));
+        Pictlib.Errors.Make_Warning (Pictlib.Errors.Reserved_Opcode_Skipped, (Op => 16#0024#, others => <>));
    begin
       for Code in Pictlib.Errors.Warning_Code loop
          declare
@@ -294,9 +293,21 @@ package body Pictlib_Testing.Test_Foundation is
          end;
       end loop;
       Assert (Item.Code = Pictlib.Errors.Reserved_Opcode_Skipped
-              and then Item.Severity = Pictlib.Errors.Compatibility
+              and then Item.Severity = Pictlib.Errors.Informational
               and then Item.Context.Op = 16#0024#,
               "warning lost its code, severity or context");
+      --  Each code's one severity, as the specification's table of warnings gives it.
+      for Code in Pictlib.Errors.Warning_Code loop
+         Assert (Pictlib.Errors.Make_Warning (Code).Severity = Pictlib.Errors.Severity_Of (Code)
+                 and then Pictlib.Errors.Severity_Of (Code)
+                          = (case Code is
+                                when Pictlib.Errors.Generic_Warning | Pictlib.Errors.Reserved_Opcode_Skipped =>
+                                  Pictlib.Errors.Informational,
+                                when Pictlib.Errors.Compatibility_Issue => Pictlib.Errors.Compatibility,
+                                when Pictlib.Errors.Recovery_Applied => Pictlib.Errors.Recovery,
+                                when others => Pictlib.Errors.Data_Loss),
+                 "the severity of " & Code'Image & " is not the specification's");
+      end loop;
       Assert (Pictlib.Errors.Identifiers.To_String (Item.Identifier) = "pict.warning.reserved_opcode",
               "warning identifier changed");
    end Warning_Identifiers;

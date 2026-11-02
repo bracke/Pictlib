@@ -123,7 +123,8 @@ are retained, never interpreted.
   - line: the pen rectangle at every point of the Bresenham line between the endpoints, both
     included;
   - frame: the shape less the shape inset by the pen (`pnSize` width horizontally, height
-    vertically); a framed round rect's inner oval is `OvSize` less twice the pen; `framePoly`
+    vertically); a framed round rect's inner oval is `OvSize` less twice the pen; a framed arc is
+    the framed oval's ring within the sweep, stretched by the arc's own rectangle, with no radii; `framePoly`
     draws the polygon's lines without closing it; `frameRgn` erodes the region by the pen,
     separably.
 - Verbs: `frame` and `paint` use the pen pattern and pen mode (a source mode `0 .. 7` acts as the
@@ -261,8 +262,9 @@ are retained, never interpreted.
   font lacks advances half the size and records one `Data_Loss` warning per opcode.
 - Layout, per character: the glyph's left edge is `round (pen + bearing)`, its top is the baseline
   less its bearing, and the pen advances by the glyph's advance plus the face's width change and,
-  after a space, `SpExtra`, or after any other character, `ChExtra`. There is no kerning and no antialiasing: coverage of 128 or
-  more is ink. The character's cell — from its left edge or the pen, whichever is less, to its
+  after a space, `SpExtra`, or after any other character, `ChExtra`, the pen keeping every fraction
+  wherever the text lies (a 64-bit float). There is no kerning and no antialiasing: coverage of 128
+  or more is ink. The character's cell — from its left edge or the pen, whichever is less, to its
   right edge or the advanced pen, and from the font's ascent above the baseline to its descent
   below, stretched to the glyph's ink where that reaches further — is drawn through the text mode with ink as a black source and the rest as a white one, so
   `srcOr` changes only ink and `srcCopy` paints the cell in the background color.
@@ -310,7 +312,9 @@ are retained, never interpreted.
 - While rendering, QuickTime payloads are read by the decoder and are not retained as metadata;
   enumeration retains them when the policy asks.
 - `jpeglib` errors keep the `jpeglib` code as the underlying code and map to pictlib's: its pixel
-  limit to `Limit_Exceeded` on `Max_Embedded_Image_Pixels`; its buffers outgrowing their share to
+  limit, which is the description's pixels (the description having been held to
+  `Max_Embedded_Image_Pixels`), to `Embedded_Image_Failed`, a JPEG larger than its description,
+  whose expected and actual counts are the description's pixels and the JPEG's; its buffers outgrowing their share to
   `Limit_Exceeded` on `Max_Allocation_Bytes`, whose expected count is the image's pixels plus that
   share; a frame of more components than it decodes, and its other unsupported features, to
   `Unsupported_Feature`; its own invariants to `Internal_Invariant_Failed`; and malformed JPEG data,
@@ -492,8 +496,9 @@ in the wrong state fail with `Invalid_State` (`Operation_Cancelled` after `Cance
 found before the destination is written to (an invalid view or a non-positive resolution, an image
 too wide, too many colors, a frame, allocation or output limit) leaves the encoder `Ready`, so
 another image or encoder can be tried, and does not set `Last_Error`; a failure while writing
-leaves it `Failed`, as does an exception the destination raises once writing began, or from
-`Flush` in `Finish`, which propagates with `Destination_Write_Failed` as the last error;
+leaves it `Failed`, as does an exception once writing began, the destination's or the encoder's
+own (`Storage_Error` setting aside row buffers), or from `Flush` in `Finish`, which propagates
+with `Destination_Write_Failed` as the last error, meaning a write in progress did not return;
 `Bytes_Written` is then not known. While `Encode` or `Finish` runs the destination, a nested
 `Encode` or `Finish` fails with `Invalid_State`, and a `Cancel`, `Reset`, `Initialize` or
 `Finalize` it makes stands, the call returning `Operation_Cancelled` after `Cancel` and
@@ -565,7 +570,7 @@ before or as the work is done, whether or not anything is drawn, and nothing is 
 | a copied pixmap | for every row converted, its pixels or the bytes it unpacks to, whichever is more, plus 1; every destination row walked; 1 for every row a copy skips, a QuickTime placeholder's included |
 | a pattern | 1, plus, for every row of a color `PixPat` tile decoded, its pixels or the bytes it unpacks to, whichever is more, plus 1 |
 | a QuickTime image | every pixel and row decoded, and every byte of its compressed data |
-| text | every font loaded: its atlas bytes, its file bytes and 65 536; every glyph asked for, wherever it lands: 16 per pixel of its cell |
+| text | every font loaded: its atlas bytes, its file bytes and 65 536; every glyph asked for, wherever it lands: 16 per pixel of its raster cell, (2 × size + 2)² |
 | a region walk | every inversion point and line passed |
 
 A unit is meant to be about one pixel's work; measured, it is 50–150 ns, so the default of 2^30
@@ -609,7 +614,7 @@ Every limit kind but `Warning_Record_Limit` can be reported by `Limit_Exceeded`;
 a picture saturate instead of overflowing, so an overflowing size is reported as the limit it
 exceeds; `Integer_Overflow` is kept for callers and for parity with `jpeglib`.
 
-Warnings, each with its fixed severity. A reserved opcode and a character textrender cannot draw
+Warnings, each with its fixed severity (`Errors.Severity_Of`). A reserved opcode and a character textrender cannot draw
 warn in every mode; the rest are recorded only by a lenient decoder, where a strict one fails with
 the error named:
 

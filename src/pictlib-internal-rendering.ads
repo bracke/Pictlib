@@ -120,6 +120,17 @@ package Pictlib.Internal.Rendering is
    --  @return Item in picture coordinates.
    function To_Picture (P : Painter; Item : Geometry.Rect) return Area is
      (Regions.To_Area (Item, -P.Port.Origin_H, -P.Port.Origin_V));
+   --  To picture.
+   --  @param P Painter.
+   --  @param H A local column.
+   --  @param V A local row.
+   --  @return The point in picture coordinates.
+   function To_Picture (P : Painter; H, V : Integer) return Coverage.Point is
+     ((H => H - P.Port.Origin_H, V => V - P.Port.Origin_V));
+   --  To picture.
+   --  @param P Painter.
+   --  @param Item A local region, moved to picture coordinates.
+   procedure To_Picture (P : Painter; Item : in out Regions.Region);
 
    --  Sampled: the nearest-neighbour rule copies and images scale by.
    --  @param Offset A destination pixel's offset from the destination's first pixel, from 0.

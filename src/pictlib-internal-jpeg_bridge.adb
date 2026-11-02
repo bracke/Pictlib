@@ -39,14 +39,14 @@ package body Pictlib.Internal.JPEG_Bridge is
       Free_Buffer (Pixels);
    end Free;
 
-   --  What jpeglib's failure means for the picture. Its pixel and buffer limits are pictlib's limits, a JPEG
-   --  feature it lacks is an unsupported feature and its own invariants are an internal failure, none of them
-   --  recovered; malformed JPEG data, its metadata included, is Embedded_Image_Failed. jpeglib's code is kept
+   --  What jpeglib's failure means for the picture. Its pixel limit is the description's pixels, so a JPEG over
+   --  it is larger than its description, which is Embedded_Image_Failed, like malformed JPEG data, its metadata
+   --  included. Its buffer limit is pictlib's limit, a JPEG feature it lacks is an unsupported feature and its
+   --  own invariants are an internal failure, none of them recovered. jpeglib's code is kept
    --  as the underlying one. A failure of the picture's own reading, which jpeglib saw as its source failing, is
    --  Source_Failure, and stands.
    function Rejected
-     (S : Sessions.Session;
-      Event : Pictures.Opcode_Event;
+     (Event : Pictures.Opcode_Event;
       Item : Image;
       Share : Byte_Count;
       Decoded : Jpeglib.Results.Result;
@@ -70,8 +70,12 @@ package body Pictlib.Internal.JPEG_Bridge is
       if not Results.Succeeded (Source_Failure) then
          return Source_Failure;
       elsif Code = Jpeglib.Errors.Pixel_Count_Exceeded then
-         return Failures.Over_Limit
-           (Context, Embedded_Image_Pixel_Limit, Byte_Count (S.Budget.Max_Embedded_Image_Pixels), Pixels_Of);
+         return Results.Failure
+           (Errors.Make
+              (Errors.Embedded_Image_Failed,
+               (Context with delta
+                  Expected => Pixels_Of,
+                  Actual => Byte_Count (Long_Long_Integer'Max (0, Decoded.First_Error.Context.Detail)))));
       elsif Code = Jpeglib.Errors.Output_Limit_Exceeded and then not At_Frame then
          return Failures.Over_Limit
            (Context, Allocation_Byte_Limit, Allowed, Checked_Arithmetic.Saturating_Add (Allowed, 1));
@@ -236,7 +240,6 @@ package body Pictlib.Internal.JPEG_Bridge is
       Decoder : Jpeglib.Decoding.Decoder;
       Decoded : Jpeglib.Results.Result;
       Bytes : constant Natural := Natural (Pixel_Bytes (Item));
-
    begin
       Pixels := null;
       Input.Remaining := Byte_Count (Item.Data_Size);
@@ -244,7 +247,9 @@ package body Pictlib.Internal.JPEG_Bridge is
         (Decoder, Input'Access,
          (Output_Format => Jpeglib.Images.RGB_24, others => <>),
          (Jpeglib.Limits.Default_Limits with delta
-            Max_Pixels => Jpeglib.Pixel_Count (S.Budget.Max_Embedded_Image_Pixels),
+            --  The description's pixels, which Max_Embedded_Image_Pixels bounded: a larger JPEG is refused at
+            --  its frame header, before anything is set aside for it.
+            Max_Pixels => Jpeglib.Pixel_Count (Byte_Count (Item.Width) * Byte_Count (Item.Height)),
             --  Its own caps are pictlib's: the coefficients come out of its share, and its output is the pixels.
             Max_Allocation_Bytes => Jpeglib.Byte_Count (Share),
             Max_Coefficient_Bytes => Jpeglib.Byte_Count (Share),
@@ -282,7 +287,7 @@ package body Pictlib.Internal.JPEG_Bridge is
       Jpeglib.Decoding.Finalize (Decoder);
       if not Jpeglib.Results.Succeeded (Decoded) then
          Free (Pixels);
-         return Rejected (S, Event, Item, Share, Decoded, Input.Failure);
+         return Rejected (Event, Item, Share, Decoded, Input.Failure);
       end if;
       --  What jpeglib left of the image data; the pixels are no one's if it cannot be skipped.
       if Input.Remaining > 0 then

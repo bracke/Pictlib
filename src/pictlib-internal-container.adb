@@ -118,7 +118,7 @@ package body Pictlib.Internal.Container is
                Info.Vertical_Resolution := Geometry.Fixed_72;
             end if;
             return Sessions.Reject_Or_Warn
-              (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility, Header_Op_Context);
+              (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Header_Op_Context);
          end if;
          return Outcome;
       end if;
@@ -126,7 +126,7 @@ package body Pictlib.Internal.Container is
       --  An unknown HeaderOp version: leniently version 2, its fields skipped.
       Info.Version := Version_2;
       Outcome := Sessions.Reject_Or_Warn
-        (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility, Header_Op_Context);
+        (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Header_Op_Context);
       return (if Results.Succeeded (Outcome) then Streams.Skip_Exact (S.Stream.all, Header_Op_Bytes - 4) else Outcome);
    end Read_Header_Op_Data;
 
@@ -241,14 +241,14 @@ package body Pictlib.Internal.Container is
          --  The input ends right after the version opcode, at an opcode boundary: the picture has no
          --  HeaderOp, and leniently it then ends without its end opcode, as the opcode reader reports.
          return Sessions.Reject_Or_Warn
-           (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility,
+           (S, Errors.Header_Invalid, Errors.Compatibility_Issue,
             In_Place_Of_Header_Op (Opcodes.Header_Op));
       elsif not Results.Succeeded (Outcome) then
          return Outcome;
       elsif Opcode (Word) /= Opcodes.Header_Op then
          --  Leniently the opcode found is the first one the opcode reader reads.
          Outcome := Sessions.Reject_Or_Warn
-           (S, Errors.Header_Invalid, Errors.Compatibility_Issue, Errors.Compatibility,
+           (S, Errors.Header_Invalid, Errors.Compatibility_Issue,
             In_Place_Of_Header_Op (Opcode (Word)));
          if Results.Succeeded (Outcome) then
             Sessions.Defer_Opcode (S, Opcode (Word), Header_Offset);

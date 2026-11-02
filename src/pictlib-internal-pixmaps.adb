@@ -192,7 +192,7 @@ package body Pictlib.Internal.Pixmaps is
                declare
                   Outcome : constant Results.Result :=
                     Sessions.Reject_Or_Warn
-                      (S, Errors.Color_Table_Invalid, Errors.Recovery_Applied, Errors.Recovery,
+                      (S, Errors.Color_Table_Invalid, Errors.Recovery_Applied,
                        (Expected => 255, Actual => Byte_Count (Index), others => <>));
                begin
                   if not Results.Succeeded (Outcome) then
@@ -389,12 +389,22 @@ package body Pictlib.Internal.Pixmaps is
    function Buffer_Bytes (Header : Bits_Header) return Byte_Count is
      (Byte_Count (Stored_Length (Header)) + Byte_Count (Unpacked_Length (Header)) + 3 * Byte_Count (Header.Width));
 
-   function Classify_Pattern
-     (S : Sessions.Session;
-      Pattern_Type : Interfaces.Unsigned_16;
-      Kind : out PixPat_Type) return Results.Result is
+   function Read_Pattern_Start
+     (S : in out Sessions.Session;
+      Fallback : out Streams.Byte_Array;
+      Kind : out PixPat_Type) return Results.Result
+   is
+      Pattern_Type : Interfaces.Unsigned_16 := 0;
+      Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
    begin
       Kind := Tile_Pixpat;
+      Fallback := [others => 0];
+      if Results.Succeeded (Outcome) then
+         Outcome := Sessions.Read_Into (S, Fallback);
+      end if;
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
       case Pattern_Type is
          when Color_Pattern_Type => return Results.Success;
          when Dither_Pattern_Type =>
@@ -403,7 +413,7 @@ package body Pictlib.Internal.Pixmaps is
          when others =>
             return Sessions.Fail (S, Errors.Pattern_Invalid, Dither_Pattern_Type, Byte_Count (Pattern_Type));
       end case;
-   end Classify_Pattern;
+   end Read_Pattern_Start;
 
    function Read_Pattern_Header
      (S : in out Sessions.Session;
@@ -494,7 +504,7 @@ package body Pictlib.Internal.Pixmaps is
                         if not Decoder.Bad_Index_Reported then
                            declare
                               Verdict : constant Results.Result := Sessions.Reject_Or_Warn
-                                (S, Errors.Color_Table_Invalid, Errors.Recovery_Applied, Errors.Recovery,
+                                (S, Errors.Color_Table_Invalid, Errors.Recovery_Applied,
                                  (Row => Row_Index (Row), Has_Row => True, Actual => Byte_Count (Index), others => <>));
                            begin
                               if not Results.Succeeded (Verdict) then

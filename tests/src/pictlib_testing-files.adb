@@ -15,13 +15,20 @@ package body Pictlib_Testing.Files is
    function Load_Path (Path : String) return Bytes_Access is
       use Ada.Streams.Stream_IO;
       Size : constant Natural := Natural (Ada.Directories.Size (Path));
-      Result : constant Bytes_Access := new Pictlib.Streams.Byte_Array (1 .. Size);
+      Result : Bytes_Access := new Pictlib.Streams.Byte_Array (1 .. Size);
       File : File_Type;
    begin
       Open (File, In_File, Path);
       Pictlib.Streams.Byte_Array'Read (Stream (File), Result.all);
       Close (File);
       return Result;
+   exception
+      when others =>
+         if Is_Open (File) then
+            Close (File);
+         end if;
+         Free (Result);
+         raise;
    end Load_Path;
 
    procedure Save_Path (Path : String; Data : Pictlib.Streams.Byte_Array) is
@@ -46,6 +53,7 @@ package body Pictlib_Testing.Files is
       if Data'Length < 3 or else Character'Val (Data (Data'First)) /= 'P'
         or else Character'Val (Data (Data'First + 1)) not in '4' | '6'
       then
+         Free (Data);
          return False;
       end if;
       Item.Kind := Character'Val (Data (Data'First + 1));
@@ -64,11 +72,17 @@ package body Pictlib_Testing.Files is
          end loop;
       end loop;
       --  One whitespace byte ends the header.
-      Item := (Data => Data, Kind => Item.Kind, Width => Fields (1), Height => Fields (2),
-               First_Pixel => Position + 1);
-      return Fields (3) = 255 and then Fields (1) > 0 and then Fields (2) > 0
+      if Fields (3) = 255 and then Fields (1) > 0 and then Fields (2) > 0
         and then Data'Last - Position
-                 >= (if Item.Kind = '6' then 3 * Fields (1) else (Fields (1) + 7) / 8) * Fields (2);
+                 >= (if Item.Kind = '6' then 3 * Fields (1) else (Fields (1) + 7) / 8) * Fields (2)
+      then
+         Item := (Data => Data, Kind => Item.Kind, Width => Fields (1), Height => Fields (2),
+                  First_Pixel => Position + 1);
+         return True;
+      end if;
+      Free (Data);
+      Item := (others => <>);
+      return False;
    end Read_Raster;
 
    function Load_Raster (Name : String) return Raster is

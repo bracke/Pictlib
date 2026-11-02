@@ -56,16 +56,19 @@ package body Pictlib.Errors is
          Context => Context);
    end Make;
 
-   function Make_Warning
-     (Code : Warning_Code;
-      Severity : Warning_Severity;
-      Context : Diagnostic_Context := (others => <>)) return Warning
-   is
+   function Severity_Of (Code : Warning_Code) return Warning_Severity is
+     (case Code is
+         when Generic_Warning | Reserved_Opcode_Skipped => Informational,
+         when Compatibility_Issue => Compatibility,
+         when Recovery_Applied => Recovery,
+         when Approximated_Rendering | Partial_Picture | Data_Loss | Warnings_Suppressed => Data_Loss);
+
+   function Make_Warning (Code : Warning_Code; Context : Diagnostic_Context := (others => <>)) return Warning is
    begin
       return
         (Code => Code,
          Identifier => Identifiers.To_Bounded_String (Identifier_For (Code)),
-         Severity => Severity,
+         Severity => Severity_Of (Code),
          Context => Context);
    end Make_Warning;
 end Pictlib.Errors;

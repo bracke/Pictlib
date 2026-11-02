@@ -86,7 +86,8 @@ package body Pictlib_Testing.Test_PackBits is
    begin
       Assert (Unpack ([16#FD#, 7], 1, Output, Written) = PackBits.Exact and then Output = [7, 7, 7, 7],
               "a run did not unpack");
-      Assert (Unpack ([16#80#, 16#FD#, 7], 1, Output, Written) = PackBits.Exact,
+      Assert (Unpack ([16#80#, 16#FD#, 9], 1, Output, Written) = PackBits.Exact
+              and then Written = 4 and then Output = [9, 9, 9, 9],
               "flag 128 is not a no-op");
       Assert (Unpack ([16#FE#, 7], 1, Output, Written) = PackBits.Underrun
               and then Written = 3 and then Output = [7, 7, 7, 0],

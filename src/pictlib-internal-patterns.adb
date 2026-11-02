@@ -1,6 +1,5 @@
 with Pictlib.Internal.Sessions.Accounting;
 with Pictlib.Internal.Failures;
-with Interfaces;
 with Pictlib.Errors;
 with Pictlib.Internal.Pixmaps;
 with Pictlib.Streams;
@@ -93,7 +92,7 @@ package body Pictlib.Internal.Patterns is
                Work := 0;
             end if;
             if Results.Succeeded (Outcome) then
-               Sessions.Warn (S, Errors.Approximated_Rendering, Errors.Data_Loss, Context);
+               Sessions.Warn (S, Errors.Approximated_Rendering, Context);
             end if;
             return Outcome;
          end;
@@ -134,21 +133,18 @@ package body Pictlib.Internal.Patterns is
       Allowance : Pixel_Count;
       Work : out Pixel_Count) return Results.Result
    is
-      Pattern_Type : Interfaces.Unsigned_16 := 0;
+      Fallback : Streams.Byte_Array (1 .. Bit_Pattern_Bytes);
       Kind : Pixmaps.PixPat_Type;
-      Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
+      Outcome : Results.Result := Pixmaps.Read_Pattern_Start (S, Fallback, Kind);
    begin
       --  Every PixPat costs a unit, whatever its type.
       Work := 1;
       Item := (others => <>);
       if Results.Succeeded (Outcome) then
-         --  pat1Data, the 1-bit fallback for black-and-white ports.
-         Outcome := Read_Bit_Pattern (S, Item);
-      end if;
-      if Results.Succeeded (Outcome) then
-         Outcome := Pixmaps.Classify_Pattern (S, Pattern_Type, Kind);
-      end if;
-      if Results.Succeeded (Outcome) then
+         --  pat1Data, kept for a tile too large to decode.
+         for Row in Bit_Rows'Range loop
+            Item.Bits (Row) := Fallback (Row + 1);
+         end loop;
          case Kind is
             when Pixmaps.Tile_Pixpat =>
                Outcome := Read_Color_Tile (S, Event, Item, Allowance, Work);

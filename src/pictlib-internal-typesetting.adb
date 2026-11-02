@@ -26,7 +26,7 @@ package body Pictlib.Internal.Typesetting is
 
    function Unavailable (S : in out Sessions.Session; Event : Pictures.Opcode_Event) return Results.Result is
      (Sessions.Reject_Or_Warn
-        (S, Errors.Font_Unavailable, Errors.Approximated_Rendering, Errors.Data_Loss, Failures.Context_Of (Event)));
+        (S, Errors.Font_Unavailable, Errors.Approximated_Rendering, Failures.Context_Of (Event)));
 
    --  The characters, with the font in Slot loaded; called under the textrender lock, which Held is.
    function Draw_Characters
@@ -112,18 +112,19 @@ package body Pictlib.Internal.Typesetting is
    type Cell_Array_Access is access Cell_Array;
    procedure Free is new Ada.Unchecked_Deallocation (Cell_Array, Cell_Array_Access);
 
-   --  The cell of a glyph drawn at Pen, Advance wide, on Baseline, emboldened by Bold columns.
+   --  The cell of a glyph drawn at Pen, Advance wide, on Baseline, emboldened by Bold columns. The pen is a
+   --  Long_Float: text may start millions of pixels off the frame, where a Float could not hold a fraction.
    function Cell_At
      (Code : Textrender.Codepoint;
       Metric : Textrender.Glyph_Metric;
       Drawable : Boolean;
-      Pen, Advance : Float;
+      Pen, Advance : Long_Float;
       Baseline, Ascent, Descent : Integer;
       Bold : Natural) return Cell
    is
-      Cell_Left : constant Integer := Integer (Float'Rounding (Pen));
-      Cell_Right : constant Integer := Integer (Float'Rounding (Pen + Advance));
-      Glyph_Left : constant Integer := Integer (Float'Rounding (Pen + Metric.Bearing_X));
+      Cell_Left : constant Integer := Integer (Long_Float'Rounding (Pen));
+      Cell_Right : constant Integer := Integer (Long_Float'Rounding (Pen + Advance));
+      Glyph_Left : constant Integer := Integer (Long_Float'Rounding (Pen + Long_Float (Metric.Bearing_X)));
       Glyph_Top : constant Integer := Baseline - Integer (Metric.Bearing_Y);
    begin
       return
@@ -144,11 +145,11 @@ package body Pictlib.Internal.Typesetting is
      (Item : Byte;
       Glyph_Advance : Float;
       Width_Change : Integer;
-      State : Text.Text_State) return Float
+      State : Text.Text_State) return Long_Float
    is
-     (Glyph_Advance + Float (Width_Change)
-      + (if Item = Space then Float (State.Space_Extra) / Float (Geometry.Fixed_One)
-         else Float (State.Char_Extra) / Char_Extra_Unit));
+     (Long_Float (Glyph_Advance) + Long_Float (Width_Change)
+      + (if Item = Space then Long_Float (State.Space_Extra) / Long_Float (Geometry.Fixed_One)
+         else Long_Float (State.Char_Extra) / Char_Extra_Unit));
 
    function Draw_Characters
      (P : in out Rendering.Painter;
@@ -171,7 +172,7 @@ package body Pictlib.Internal.Typesetting is
       Ascent : constant Integer := Integer (Float'Ceiling (Font.Ascent));
       Descent : constant Integer := Integer (Float'Ceiling (abs Font.Descent));
       Start_X : constant Integer := State.Origin_H;
-      Pen : Float := Float (State.Origin_H);
+      Pen : Long_Float := Long_Float (State.Origin_H);
       Missing_Reported : Boolean := False;
       Outcome : Results.Result := Results.Success;
 
@@ -280,7 +281,7 @@ package body Pictlib.Internal.Typesetting is
       --  The row below the baseline, under the whole string, after every glyph.
       function Paint_Underline return Results.Result is
          Result : constant Results.Result :=
-           Rendering.Begin_Row (P, S, Baseline + 1, Start_X, Integer (Float'Rounding (Pen)));
+           Rendering.Begin_Row (P, S, Baseline + 1, Start_X, Integer (Long_Float'Rounding (Pen)));
       begin
          return (if Results.Succeeded (Result) then Paint_Ink (P, S, Baseline + 1) else Result);
       end Paint_Underline;
@@ -303,12 +304,12 @@ package body Pictlib.Internal.Typesetting is
             Metric : Textrender.Glyph_Metric :=
               (X | Y | W | H => 0, U0 | V0 | U1 | V1 | Advance_X | Bearing_X | Bearing_Y => 0.0);
             Status : constant Textrender.Status_Code := Font.Get_Glyph (Text.To_Unicode (Item), Metric, Style);
-            Advance : constant Float :=
+            Advance : constant Long_Float :=
               Advance_Of (Item, (if Status = Textrender.Success then Metric.Advance_X else Float (Size) / 2.0),
                           Width_Change, State);
          begin
             if Status /= Textrender.Success and then not Missing_Reported then
-               Sessions.Warn (S, Errors.Data_Loss, Errors.Data_Loss,
+               Sessions.Warn (S, Errors.Data_Loss,
                               (Failures.Context_Of (Event) with delta Actual => Byte_Count (Item)));
                Missing_Reported := True;
             end if;

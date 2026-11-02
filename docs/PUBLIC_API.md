@@ -17,7 +17,8 @@ Available since Gate M0:
 - `Pictlib.Version`, `Pictlib.Capabilities`.
 - `Pictlib.Errors` — `Error_Code`, `Warning_Code`, `Diagnostic_Context`
   (offsets, opcode, opcode ordinal, row, expected/actual counts, limit kind,
-  underlying code), stable `pict.*` identifiers.
+  underlying code), stable `pict.*` identifiers, and each warning code's one
+  severity (`Severity_Of`, which `Make_Warning` applies).
 - `Pictlib.Results`, `Pictlib.Limits`.
 - `Pictlib.Streams` — `Source`/`Destination` interfaces, `Memory_Source`,
   `Fixed_Buffer_Destination`, `Read_Exact`, `Skip_Exact`, `Write_All`.

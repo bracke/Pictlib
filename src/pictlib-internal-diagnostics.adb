@@ -20,7 +20,7 @@ package body Pictlib.Internal.Diagnostics is
          Log.Dropped := 2;
          Log.Items.Replace_Element
            (Log.Items.Last_Index,
-            Errors.Make_Warning (Errors.Warnings_Suppressed, Errors.Data_Loss, Log.Items.Last_Element.Context));
+            Errors.Make_Warning (Errors.Warnings_Suppressed, Log.Items.Last_Element.Context));
       end if;
       --  The suppression record names the first warning suppressed and, as its Actual, how many have been.
       if Max_Records > 0 then

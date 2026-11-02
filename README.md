@@ -61,32 +61,41 @@ builds and `pictlib_check` runs, so the code stays true to the API
    if not Pictlib.Results.Succeeded (Outcome) then
       Ada.Text_IO.Put_Line ("encode failed: " & Outcome.First_Error.Code'Image);
       Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-      return;
+   else
+      --  Decode: read the header for the frame, then render into a view of the frame's size.
+      declare
+         Length : constant Natural := Natural (Pictlib.Encoding.Bytes_Written (Encoder));
+         Data : Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array'(Picture (1 .. Length));
+         Input : aliased Pictlib.Streams.Memory_Source;
+         Decoder : Pictlib.Decoding.Decoder;
+         Canvas : Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Image_Bytes);
+      begin
+         Pictlib.Streams.Open (Input, Pictlib.Streams.Const_Byte_Array_Access (Data));
+         Pictlib.Decoding.Initialize (Decoder, Input'Access);
+         Outcome := Pictlib.Decoding.Read_Header (Decoder);
+         if Pictlib.Results.Succeeded (Outcome) then
+            Outcome := Pictlib.Decoding.Render (Decoder, (Descriptor => Layout, Storage => Canvas));
+         end if;
+         if not Pictlib.Results.Succeeded (Outcome) then
+            Ada.Text_IO.Put_Line ("decode failed: " & Outcome.First_Error.Code'Image);
+            Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         elsif Canvas.all /= Pixels.all then
+            Ada.Text_IO.Put_Line ("decoded pixels differ from the encoded ones");
+            Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
+         else
+            Ada.Text_IO.Put_Line ("a" & Length'Image & "-byte picture decoded back to its pixels");
+         end if;
+         --  The decoder lets go of its source before the source's bytes go.
+         Pictlib.Decoding.Finalize (Decoder);
+         Free (Canvas);
+         Free (Data);
+      end;
    end if;
 
-   --  Decode: read the header for the frame, then render into a view of the frame's size.
-   declare
-      Length : constant Natural := Natural (Pictlib.Encoding.Bytes_Written (Encoder));
-      Input : aliased Pictlib.Streams.Memory_Source;
-      Decoder : Pictlib.Decoding.Decoder;
-      Canvas : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Image_Bytes);
-   begin
-      Pictlib.Streams.Open (Input, new Pictlib.Streams.Byte_Array'(Picture (1 .. Length)));
-      Pictlib.Decoding.Initialize (Decoder, Input'Access);
-      Outcome := Pictlib.Decoding.Read_Header (Decoder);
-      if Pictlib.Results.Succeeded (Outcome) then
-         Outcome := Pictlib.Decoding.Render (Decoder, (Descriptor => Layout, Storage => Canvas));
-      end if;
-      if not Pictlib.Results.Succeeded (Outcome) then
-         Ada.Text_IO.Put_Line ("decode failed: " & Outcome.First_Error.Code'Image);
-         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-      elsif Canvas.all /= Pixels.all then
-         Ada.Text_IO.Put_Line ("decoded pixels differ from the encoded ones");
-         Ada.Command_Line.Set_Exit_Status (Ada.Command_Line.Failure);
-      else
-         Ada.Text_IO.Put_Line ("a" & Length'Image & "-byte picture decoded back to its pixels");
-      end if;
-   end;
+   --  The encoder lets go of its destination before the destination's room goes.
+   Pictlib.Encoding.Finalize (Encoder);
+   Free (Picture);
+   Free (Pixels);
 ```
 
 Run it with `alr --chdir=tests exec -- ./bin/pictlib_example`.

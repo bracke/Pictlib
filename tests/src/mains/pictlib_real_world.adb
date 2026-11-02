@@ -6,6 +6,7 @@
 with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Files;
 with Pictlib_Testing.Fonts;
+with Pictlib_Testing.Recorders;
 with Pictlib_Testing.Tools;
 with Ada.Characters.Handling;
 with Ada.Containers.Indefinite_Ordered_Maps;
@@ -86,8 +87,8 @@ procedure Pictlib_Real_World is
       return Code_Of (Outcome);
    end Enumerate;
 
-   --  Render Data, and when Reference names a raster, require the render to match it within the JPEG decoders'
-   --  tolerance, pixel for pixel.
+   --  Render Data, and when Reference names a raster, require the render to match it within
+   --  Reference_Tolerance, pixel for pixel.
    function Render (Data : Bytes_Access; Strictness : Pictlib.Strictness_Mode; Reference : String := "")
      return String
    is
@@ -139,13 +140,10 @@ procedure Pictlib_Real_World is
             end;
          end if;
          Free (Storage);
-         if Pictlib.Results.Succeeded (Outcome) then
-            for Index in 1 .. Pictlib.Decoding.Warning_Count (Decoder) loop
-               if Pictlib.Errors."=" (Pictlib.Decoding.Warning_At (Decoder, Index).Code, Pictlib.Errors.Partial_Picture)
-               then
-                  return "partial";
-               end if;
-            end loop;
+         if Pictlib.Results.Succeeded (Outcome)
+           and then Pictlib_Testing.Recorders.Has_Warning (Decoder, Pictlib.Errors.Partial_Picture)
+         then
+            return "partial";
          end if;
          return Code_Of (Outcome);
       end;

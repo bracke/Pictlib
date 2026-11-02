@@ -35,10 +35,11 @@ package Pictlib.Internal is
    --  @return 1 for version 1, 2 otherwise.
    function Opcode_Bytes (Version : PICT_Version) return Positive is (if Version = Version_1 then 1 else 2);
 
-   --  The version opcode's data in version 2, and the HeaderOp version of an extended version 2 picture (-2).
+   --  The version opcode's data in version 2.
    Version_2_Word : constant := 16#02FF#;
    --  Version 1's version opcode carries this byte.
    Version_1_Number : constant := 1;
+   --  The HeaderOp version of an extended version 2 picture (-2).
    Extended_Header_Version : constant := 16#FFFE#;
 
    --  The application header of a PICT file, before the picture.

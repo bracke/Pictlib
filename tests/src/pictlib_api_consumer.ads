@@ -169,9 +169,10 @@ package Pictlib_API_Consumer is
      (Code : Pictlib.Errors.Error_Code;
       Context : Pictlib.Errors.Diagnostic_Context := (others => <>)) return Pictlib.Errors.Error
      renames Pictlib.Errors.Make;
+   function Severity_Of (Code : Pictlib.Errors.Warning_Code) return Pictlib.Errors.Warning_Severity
+     renames Pictlib.Errors.Severity_Of;
    function Make_Warning
      (Code : Pictlib.Errors.Warning_Code;
-      Severity : Pictlib.Errors.Warning_Severity;
       Context : Pictlib.Errors.Diagnostic_Context := (others => <>)) return Pictlib.Errors.Warning
      renames Pictlib.Errors.Make_Warning;
    function Is_Fatal (Item : Pictlib.Errors.Error) return Boolean renames Pictlib.Errors.Is_Fatal;

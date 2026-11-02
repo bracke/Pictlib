@@ -181,10 +181,23 @@ package body Pictlib_Testing.Test_Coverage is
          end loop;
       end loop;
       for Trial in 1 .. 30 loop
-         --  Long and shallow, long and steep, and long both ways, each crossing the window.
-         Check ((Far, Near), (Far, Near));
-         Check ((Near, Far), (Near, Far));
-         Check ((-1_000_000, -1_000_000 + Near), (1_000_000, 1_000_000 + Near));
+         --  Long and shallow, long and steep, and long both ways, each crossing the window: the far ends lie on
+         --  either side of it. Each value is drawn on its own, in this order, since Ada does not order the
+         --  evaluation of an aggregate's or a call's parts.
+         declare
+            Before : constant Integer := -1 - abs Far;
+            After : constant Integer := 1 + abs Far;
+            Near_1 : constant Integer := Near;
+            Near_2 : constant Integer := Near;
+            Near_3 : constant Integer := Near;
+            Near_4 : constant Integer := Near;
+            Near_5 : constant Integer := Near;
+            Near_6 : constant Integer := Near;
+         begin
+            Check ((Before, Near_1), (After, Near_2));
+            Check ((Near_3, After), (Near_4, Before));
+            Check ((-1_000_000, -1_000_000 + Near_5), (1_000_000, 1_000_000 + Near_6));
+         end;
       end loop;
    end Line_Path;
 end Pictlib_Testing.Test_Coverage;

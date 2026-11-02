@@ -38,7 +38,7 @@ package Pictlib.Internal.Bytes is
      (Object : in out Streams.Source'Class;
       Value : out Interfaces.Unsigned_32) return Results.Result;
 
-   --  Read coordinate.
+   --  Read coordinate: Read_Rect's reader, public for the tests of its sign.
    --  @param Object Source to read from.
    --  @param Value Two's-complement big-endian 16-bit coordinate; 0 on failure.
    --  @return Operation result.

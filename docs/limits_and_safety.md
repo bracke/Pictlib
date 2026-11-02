@@ -19,7 +19,7 @@ bounds a read, a skip, an allocation or a loop.
 | `Max_Total_Allocation_Bytes` | every allocation of a session, counted when admitted and never given back, and the storage the specification's section 9 counts at fixed rates; unlimited by default | `Limit_Exceeded` |
 | `Max_Drawing_Work` | all rendering work, drawn or not, before or as it is done: the specification, section 9, lists what each piece costs | `Limit_Exceeded` |
 | `Max_Embedded_Image_Bytes` | a QuickTime image's dataSize, before decoding | `Limit_Exceeded` |
-| `Max_Embedded_Image_Pixels` | a QuickTime image's width × height, before decoding, and jpeglib's pixel limit | `Limit_Exceeded` |
+| `Max_Embedded_Image_Pixels` | a QuickTime image's width × height, before decoding (a JPEG larger than its description is `Embedded_Image_Failed`) | `Limit_Exceeded` |
 | `Max_Warning_Records` | the warning log | the last slot becomes `Warnings_Suppressed`; no warning is otherwise dropped |
 
 Coordinates are bounded rather than budgeted: line ends and the text origin

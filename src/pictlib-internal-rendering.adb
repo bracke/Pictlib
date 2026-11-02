@@ -25,13 +25,18 @@ package body Pictlib.Internal.Rendering is
       Text.Clear (P.Font_Cache);
    end Start;
 
+   procedure To_Picture (P : Painter; Item : in out Regions.Region) is
+   begin
+      Regions.Translate (Item, -P.Port.Origin_H, -P.Port.Origin_V);
+   end To_Picture;
+
    function Unsupported
      (S : in out Sessions.Session;
       Event : Pictures.Opcode_Event;
       Expected, Actual : Byte_Count := 0) return Results.Result is
    begin
       return Sessions.Reject_Or_Warn
-        (S, Errors.Unsupported_Feature, Errors.Approximated_Rendering, Errors.Data_Loss,
+        (S, Errors.Unsupported_Feature, Errors.Approximated_Rendering,
          (Failures.Context_Of (Event) with delta Expected => Expected, Actual => Actual));
    end Unsupported;
 
@@ -47,7 +52,7 @@ package body Pictlib.Internal.Rendering is
       --  Leniently an unknown mode is copy.
       Kind := Transfer_Modes.Copy;
       return Sessions.Reject_Or_Warn
-        (S, Errors.Transfer_Mode_Invalid, Errors.Recovery_Applied, Errors.Recovery,
+        (S, Errors.Transfer_Mode_Invalid, Errors.Recovery_Applied,
          (Failures.Context_Of (Event) with delta Actual => Byte_Count (Value)));
    end Mode;
 
@@ -147,31 +152,44 @@ package body Pictlib.Internal.Rendering is
       return Outcome;
    end Begin_Masked_Row;
 
-   function Paint_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result is
+   --  Each span of the begun row charged, then painted by Paint_Span, in order; none past the budget.
+   generic
+      with procedure Paint_Span (P : in out Painter; Left, Right : Integer);
+   function Charged_Spans (P : in out Painter; S : in out Sessions.Session) return Results.Result;
+
+   function Charged_Spans (P : in out Painter; S : in out Sessions.Session) return Results.Result is
       Outcome : Results.Result := Results.Success;
    begin
       for Span of P.Machine.Row_Spans loop
          Outcome := Accounting.Charge_Work (S, Span.Right - Span.Left);
          exit when not Results.Succeeded (Outcome);
-         for X in Span.Left .. Span.Right - 1 loop
-            Put (P, X, Y, Color_At (X, Y, Get (P, X, Y)));
-         end loop;
+         Paint_Span (P, Span.Left, Span.Right);
       end loop;
       return Outcome;
+   end Charged_Spans;
+
+   function Paint_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result is
+      procedure Paint_Span (P : in out Painter; Left, Right : Integer) is
+      begin
+         for X in Left .. Right - 1 loop
+            Put (P, X, Y, Color_At (X, Y, Get (P, X, Y)));
+         end loop;
+      end Paint_Span;
+      function Paint is new Charged_Spans (Paint_Span);
+   begin
+      return Paint (P, S);
    end Paint_Row;
 
    function Paint_Row_Color (P : in out Painter; S : in out Sessions.Session; Y : Integer; Color : Images.RGB_Color)
      return Results.Result
    is
-      Outcome : Results.Result := Results.Success;
+      procedure Paint_Span (P : in out Painter; Left, Right : Integer) is
+      begin
+         Canvas.Put_Span (P.Machine.Target, Left - P.Window.Left, Right - P.Window.Left, Y - P.Window.Top, Color);
+      end Paint_Span;
+      function Paint is new Charged_Spans (Paint_Span);
    begin
-      for Span of P.Machine.Row_Spans loop
-         Outcome := Accounting.Charge_Work (S, Span.Right - Span.Left);
-         exit when not Results.Succeeded (Outcome);
-         Canvas.Put_Span
-           (P.Machine.Target, Span.Left - P.Window.Left, Span.Right - P.Window.Left, Y - P.Window.Top, Color);
-      end loop;
-      return Outcome;
+      return Paint (P, S);
    end Paint_Row_Color;
 
    function Fill
@@ -249,7 +267,9 @@ package body Pictlib.Internal.Rendering is
    end Fill;
 
    --  Paint the destination rows that sample source row Source_Y of Decoder, srcRect mapped onto Destination;
-   --  only columns Painted.Left .. Painted.Right - 1, those sampling the bounds, are painted.
+   --  only columns Painted.Left .. Painted.Right - 1, those sampling the bounds, are painted. Rows need no such
+   --  bound: Copy_Bits reads only the bounds' rows, so Painted's top and bottom only tell it whether anything is
+   --  painted at all.
    function Put_Row
      (P : in out Painter;
       S : in out Sessions.Session;
@@ -320,7 +340,7 @@ package body Pictlib.Internal.Rendering is
          Bottom => Coordinate'Min (Wanted.Bottom, Bounds.Bottom), Right => Coordinate'Min (Wanted.Right, Bounds.Right));
       if Source /= Wanted and then not Geometry.Is_Empty (Wanted) then
          return Sessions.Reject_Or_Warn
-           (S, Errors.Pixmap_Invalid, Errors.Recovery_Applied, Errors.Recovery, Failures.Context_Of (Event));
+           (S, Errors.Pixmap_Invalid, Errors.Recovery_Applied, Failures.Context_Of (Event));
       end if;
       return Results.Success;
    end Source_Rect;
@@ -399,7 +419,7 @@ package body Pictlib.Internal.Rendering is
          end if;
       end if;
       if Header.Masked then
-         Regions.Translate (Mask, -P.Port.Origin_H, -P.Port.Origin_V);
+         To_Picture (P, Mask);
       end if;
 
       Outcome := Pixmaps.Start (S, Decoder, Header);

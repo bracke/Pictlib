@@ -82,8 +82,7 @@ package body Pictlib_Testing.Source_Policy is
                exit;
             end if;
          end loop;
-         return Unit (Unit'First .. Root_End) in "ada" | "interfaces" | "gnat" | "system" | "pictlib" | "jpeglib"
-                                                 | "textrender"
+         return Unit (Unit'First .. Root_End) in "ada" | "interfaces" | "pictlib" | "jpeglib" | "textrender"
            and then Unit /= "interfaces.c"
            and then not (Unit'Length > 13 and then Unit (Unit'First .. Unit'First + 12) = "interfaces.c.");
       end Allowed;
@@ -113,7 +112,8 @@ package body Pictlib_Testing.Source_Policy is
                   Fail (Path & ": production code binds foreign code (" & Word & ")");
                end if;
                --  What would turn the checks off, or reach memory around them.
-               if (Word = "suppress" and then To_String (Previous) = "pragma")
+               if (Word in "suppress" | "suppress_all" | "assertion_policy" | "check_policy"
+                   and then To_String (Previous) = "pragma")
                  or else Word = "unchecked_conversion"
                  or else (Word'Length > 21 and then Word (Word'Last - 20 .. Word'Last) = ".unchecked_conversion")
                  or else (To_String (Previous) = "'" and then Word in "address" | "unrestricted_access")
@@ -576,6 +576,7 @@ package body Pictlib_Testing.Source_Policy is
                   begin
                      if Command'Length = 0 or else Command (Command'First) in '|' | '>'
                        or else (for some C of Command => C in ';' | '|' | '&' | '<' | '>' | '`')
+                       or else Ada.Strings.Fixed.Index (Command, "$(") > 0
                      then
                         Fail (Workflow & ": a CI step is not a single command: " & Line);
                      end if;

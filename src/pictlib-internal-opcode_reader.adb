@@ -34,18 +34,12 @@ package body Pictlib.Internal.Opcode_Reader is
    end Skip_Polygon;
 
    function Skip_Pixel_Pattern (S : in out Session) return Results.Result is
-      Pattern_Type : Interfaces.Unsigned_16;
+      Fallback : Streams.Byte_Array (1 .. Bit_Pattern_Bytes);
       Kind : Pixmaps.PixPat_Type;
       --  The rows are laid out, and checked, as rendering decodes them, so both agree where the opcode ends.
       Header : Pixmaps.Bits_Header;
-      Outcome : Results.Result := Sessions.Read_Word (S, Pattern_Type);
+      Outcome : Results.Result := Pixmaps.Read_Pattern_Start (S, Fallback, Kind);
    begin
-      if Results.Succeeded (Outcome) then
-         Outcome := Sessions.Skip_Data (S, Bit_Pattern_Bytes);  --  pat1Data, the 1-bit fallback pattern
-      end if;
-      if Results.Succeeded (Outcome) then
-         Outcome := Pixmaps.Classify_Pattern (S, Pattern_Type, Kind);
-      end if;
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
@@ -121,7 +115,7 @@ package body Pictlib.Internal.Opcode_Reader is
          begin
             Bytes.Free (Data);
             return Sessions.Reject_Or_Warn
-              (S, Errors.Opcode_Length_Invalid, Errors.Data_Loss, Errors.Data_Loss,
+              (S, Errors.Opcode_Length_Invalid, Errors.Data_Loss,
                (Failures.Context_Of (Event) with delta Expected => Length, Actual => Needed));
          end;
       end if;
@@ -316,7 +310,7 @@ package body Pictlib.Internal.Opcode_Reader is
          return Sessions.Attributed (Outcome, Event);
       end if;
       if Event.Reserved then
-         Sessions.Warn (S, Errors.Reserved_Opcode_Skipped, Errors.Informational,
+         Sessions.Warn (S, Errors.Reserved_Opcode_Skipped,
                         (Failures.Context_Of (Event) with delta Actual => Event.Data_Length));
       end if;
       return Results.Success;

@@ -98,15 +98,22 @@ package body Pictlib.Decoding is
       end if;
       declare
          Guard : Call_Guard (Ready, Object.Current_State'Access, Object.Busy'Access, Object.Binds'Access);
+         --  Read aside and kept only once read whole for this binding: a source that resets the decoder under
+         --  the read leaves it the new binding's, not half of the old picture's header.
+         Info : Pictures.Header_Info;
+         Events : Internal.Container.Header_Events;
+         Event_Count : Natural;
          Outcome : constant Results.Result :=
            Internal.Container.Read_Header
-             (Object.Inner.Session, Object.Decode_Options.File_Header, Object.Inner.Info, Object.Inner.Header_Events,
-              Object.Inner.Header_Event_Count);
+             (Object.Inner.Session, Object.Decode_Options.File_Header, Info, Events, Event_Count);
       begin
          --  The source cancelled, reset or finalized the decoder under it: that stands.
          if Object.Current_State /= Ready or else Rebound (Guard) then
             return Wrong_State (Object);
          elsif Results.Succeeded (Outcome) then
+            Object.Inner.Info := Info;
+            Object.Inner.Header_Events := Events;
+            Object.Inner.Header_Event_Count := Event_Count;
             Object.Current_State := Header_Read;
          end if;
          return Fail (Object, Outcome);
@@ -131,7 +138,7 @@ package body Pictlib.Decoding is
          return Results.Success;
       end if;
       return Internal.Sessions.Reject_Or_Warn
-        (Object.Inner.Session, Errors.Trailing_Data, Errors.Compatibility_Issue, Errors.Compatibility,
+        (Object.Inner.Session, Errors.Trailing_Data, Errors.Compatibility_Issue,
          (Source => Object.Inner.Session.Offset - 1, others => <>));
    end Check_Trailing_Data;
 
@@ -155,7 +162,7 @@ package body Pictlib.Decoding is
       elsif At_End then
          Kind := Ended_By_Input;
          return Internal.Sessions.Reject_Or_Warn
-           (Object.Inner.Session, Errors.Missing_End_Opcode, Errors.Compatibility_Issue, Errors.Compatibility,
+           (Object.Inner.Session, Errors.Missing_End_Opcode, Errors.Compatibility_Issue,
             (Ordinal => Internal.Sessions.Opcodes_Read (Object.Inner.Session), others => <>));
       elsif Event.Op = Opcodes.End_Picture then
          Kind := Ended_By_End_Opcode;
@@ -248,7 +255,7 @@ package body Pictlib.Decoding is
      (Pixel_Count (Geometry.Width (Object.Inner.Info.Frame)) * Pixel_Count (Geometry.Height (Object.Inner.Info.Frame)));
 
    --  The frame against the canvas limit: a frame over it no view can render.
-   function Check_Frame (Object : Decoder) return Results.Result is
+   function Check_Canvas (Object : Decoder) return Results.Result is
       Budget : Limits.Limit_Set renames Object.Inner.Session.Budget;
       Pixels : constant Pixel_Count := Frame_Pixels (Object);
    begin
@@ -257,7 +264,7 @@ package body Pictlib.Decoding is
            (Canvas_Pixel_Limit, Byte_Count (Budget.Max_Canvas_Pixels), Byte_Count (Pixels));
       end if;
       return Results.Success;
-   end Check_Frame;
+   end Check_Canvas;
 
    --  The view against the frame and the output limit: a caller's mistake, which another view can correct.
    function Check_View (Object : Decoder; Output : Images.Mutable_Image_View) return Results.Result is
@@ -295,12 +302,12 @@ package body Pictlib.Decoding is
       end if;
       --  The frame first: no view can render a frame over the canvas limit, so no view is worth correcting.
       declare
-         Frame_Checked : constant Results.Result := Check_Frame (Object);
+         Canvas_Checked : constant Results.Result := Check_Canvas (Object);
          View_Checked : constant Results.Result :=
-           (if Results.Succeeded (Frame_Checked) then Check_View (Object, Output) else Results.Success);
+           (if Results.Succeeded (Canvas_Checked) then Check_View (Object, Output) else Results.Success);
       begin
-         if not Results.Succeeded (Frame_Checked) then
-            return Fail (Object, Frame_Checked);
+         if not Results.Succeeded (Canvas_Checked) then
+            return Fail (Object, Canvas_Checked);
          elsif not Results.Succeeded (View_Checked) then
             --  The picture is untouched and can still be rendered.
             return View_Checked;
@@ -344,7 +351,7 @@ package body Pictlib.Decoding is
            and then Is_Recoverable (Outcome.First_Error.Code)
          then
             Internal.Sessions.Warn
-              (Object.Inner.Session, Errors.Partial_Picture, Errors.Data_Loss, Outcome.First_Error.Context);
+              (Object.Inner.Session, Errors.Partial_Picture, Outcome.First_Error.Context);
             Outcome := Results.Success;
          end if;
          if Results.Succeeded (Outcome) then

@@ -22,10 +22,16 @@ package Pictlib.Encoding is
    Default_Mono_Threshold : constant Byte := 128;
 
    type Options is record
+      --  The layout written; Auto chooses it from the image's colors and alpha.
       Layout : Layout_Kind := Auto;
+      --  Write the 512-byte application header of a PICT file, all zeros, before the picture.
       File_Header : Boolean := True;
+      --  The resolution recorded in the extended version 2 HeaderOp, positive; it labels the picture only, whose
+      --  frame and rectangles stay in pixels.
       Horizontal_Resolution : Geometry.Fixed := Geometry.Fixed_72;
       Vertical_Resolution : Geometry.Fixed := Geometry.Fixed_72;
+      --  Mono_1 given: the luminance below which a pixel is black. Auto writes Mono_1 only for black-and-white
+      --  images, with Default_Mono_Threshold.
       Mono_Threshold : Byte := Default_Mono_Threshold;
       --  Direct_32 from a 32-bit view: write its alpha as a fourth component plane.
       Keep_Alpha : Boolean := False;
@@ -61,12 +67,17 @@ package Pictlib.Encoding is
    --  @param Image A valid caller view.
    --  @return Success; Invalid_Argument for an invalid view, a non-positive resolution or an image too wide for
    --  the layout's rowBytes; Too_Many_Colors for Indexed_8 above 256 colors (counted up to 257);
-   --  Limit_Exceeded above the frame, output or allocation limits; the destination's failure.
+   --  Limit_Exceeded above the frame, output or allocation limits; Invalid_State in another state, while a call
+   --  runs the destination, or when the destination resets, finalizes or initializes Object; Operation_Cancelled
+   --  after Cancel, the destination's included; Destination_Zero_Progress for a destination that takes nothing
+   --  and Internal_Invariant_Failed for one that claims more than it was given; the destination's failure.
    function Encode (Object : in out Encoder; Image : Images.Image_View) return Results.Result;
    --  Finish.
    --  @param Object Encoder in state Encoded; Finished on success, Failed when the flush fails or raises (which
    --  propagates).
-   --  @return Success, or the destination's flush failure.
+   --  @return Success; Invalid_State in another state, while a call runs the destination, or when the destination
+   --  resets, finalizes or initializes Object; Operation_Cancelled after Cancel, the destination's included; the
+   --  destination's flush failure.
    function Finish (Object : in out Encoder) return Results.Result;
    --  Layout used.
    --  @param Object Encoder.

@@ -1,3 +1,4 @@
+with Ada.Finalization;
 with Pictlib.Encoding;
 with Pictlib.Images;
 with Pictlib.Limits;
@@ -41,13 +42,16 @@ package Pictlib_Testing.Samples is
       Width, Height : Positive;
       Format : Pictlib.Pixel_Format := Pictlib.RGB_24) return Pictlib.Images.Image_View;
 
-   --  An encoded picture: what the encoder wrote, also when it failed.
-   type Encoded is record
+   --  An encoded picture: what the encoder wrote, also when it failed. It owns Data, copied with it and freed
+   --  with it.
+   type Encoded is new Ada.Finalization.Controlled with record
       Data : Bytes_Access;
       Outcome : Pictlib.Results.Result;
       Layout : Pictlib.Encoding.Layout_Kind := Pictlib.Encoding.Auto;
       Bytes_Written : Pictlib.Byte_Count := 0;
    end record;
+   overriding procedure Adjust (Item : in out Encoded);
+   overriding procedure Finalize (Item : in out Encoded);
 
    --  Encode Image with a fresh encoder into a buffer of Room bytes, finishing it when encoding succeeds.
    function Encode

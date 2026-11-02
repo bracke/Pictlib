@@ -125,14 +125,16 @@ procedure Pictlib_Conformance is
       use Ada.Streams.Stream_IO;
       Marker : constant String := "data:image/png;base64,";
       File : File_Type;
+      --  On the heap: an SVG holding a large picture's PNG is larger than a stack holds. Released on every path.
+      Text_Buffer : String_Access;
+      Decoded_Buffer : Pictlib.Streams.Byte_Array_Access;
    begin
       if not Ada.Directories.Exists (SVG_File) then
          return False;
       end if;
+      Text_Buffer := new String (1 .. Natural (Ada.Directories.Size (SVG_File)));
       declare
-         Size : constant Natural := Natural (Ada.Directories.Size (SVG_File));
-         --  On the heap: an SVG holding a large picture's PNG is larger than a stack holds.
-         Text_Buffer : String_Access := new String (1 .. Size);
+         Size : constant Natural := Text_Buffer'Length;
          Text : String renames Text_Buffer.all;
          Start : Natural := 0;
       begin
@@ -149,8 +151,8 @@ procedure Pictlib_Conformance is
             Free (Text_Buffer);
             return False;
          end if;
+         Decoded_Buffer := new Pictlib.Streams.Byte_Array (1 .. Size);
          declare
-            Decoded_Buffer : Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Size);
             Decoded : Pictlib.Streams.Byte_Array renames Decoded_Buffer.all;
             Count : Natural := 0;
             Bits : Natural := 0;
@@ -187,6 +189,14 @@ procedure Pictlib_Conformance is
             return Count > 0;
          end;
       end;
+   exception
+      when others =>
+         if Is_Open (File) then
+            Close (File);
+         end if;
+         Free (Decoded_Buffer);
+         Free (Text_Buffer);
+         raise;
    end Extract_PNG;
 
    --  Encode the case, writing its picture; Used is the layout the encoder chose.

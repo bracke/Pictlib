@@ -38,7 +38,6 @@ package body Pictlib.Internal.Sessions is
    procedure Warn
      (S : in out Session;
       Code : Errors.Warning_Code;
-      Severity : Errors.Warning_Severity;
       Context : Errors.Diagnostic_Context := (others => <>))
    is
       Item : Errors.Diagnostic_Context := Context;
@@ -56,7 +55,7 @@ package body Pictlib.Internal.Sessions is
       end if;
       --  Max_Warning_Records bounds the log, so it needs no allocation quota; past it the last record says how
       --  many warnings were suppressed.
-      Diagnostics.Add (S.Kept.Log, Errors.Make_Warning (Code, Severity, Item), S.Budget.Max_Warning_Records);
+      Diagnostics.Add (S.Kept.Log, Errors.Make_Warning (Code, Item), S.Budget.Max_Warning_Records);
    end Warn;
 
    function Fail (S : Session; Code : Errors.Error_Code; Expected, Actual : Byte_Count := 0) return Results.Result
@@ -71,7 +70,6 @@ package body Pictlib.Internal.Sessions is
      (S : in out Session;
       Code : Errors.Error_Code;
       Warning : Errors.Warning_Code;
-      Severity : Errors.Warning_Severity;
       Context : Errors.Diagnostic_Context) return Results.Result
    is
       Item : constant Errors.Diagnostic_Context :=
@@ -80,7 +78,7 @@ package body Pictlib.Internal.Sessions is
       if not Is_Lenient (S) then
          return Results.Failure (Errors.Make (Code, Item));
       end if;
-      Warn (S, Warning, Severity, Item);
+      Warn (S, Warning, Item);
       return Results.Success;
    end Reject_Or_Warn;
 

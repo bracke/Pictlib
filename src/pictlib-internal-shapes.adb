@@ -155,7 +155,7 @@ package body Pictlib.Internal.Shapes is
       end if;
       Coverage.Start (Shape, P.Window, Accounting.Shape_Work_Left (S));
       for Item of P.Port.Last_Polygon loop
-         Points.Append (Point'(H => Item.H - P.Port.Origin_H, V => Item.V - P.Port.Origin_V));
+         Points.Append (Rendering.To_Picture (P, Item.H, Item.V));
       end loop;
       if Verb /= Framed then
          Coverage.Polygon (Shape, Points);
@@ -198,7 +198,7 @@ package body Pictlib.Internal.Shapes is
          Region : Regions.Region := P.Port.Last_Region;
       begin
          Coverage.Start (Shape, P.Window, Accounting.Shape_Work_Left (S));
-         Regions.Translate (Region, -P.Port.Origin_H, -P.Port.Origin_V);
+         Rendering.To_Picture (P, Region);
          if Verb = Framed then
             Coverage.Region_Frame (Shape, Region, P.Port.Pen_Width, P.Port.Pen_Height);
          else

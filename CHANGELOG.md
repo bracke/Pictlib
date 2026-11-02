@@ -58,6 +58,18 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Fixed
 
+- A JPEG larger than its QuickTime description is `Embedded_Image_Failed`,
+  which `Recover_When_Safe` recovers, as the specification says: jpeglib is
+  held to the description's pixels, and the error names both counts. It was
+  a limit failure that named the description's 48 pixels against a limit of
+  268 million.
+- Text that starts far off the frame lands where its advances put it: the
+  pen is a 64-bit float, where a 32-bit one dropped a fraction of each
+  advance millions of pixels out and could lose a glyph whole.
+- `Read_Header` keeps a header only once read whole for the decoder's
+  binding, so a source that resets the decoder under it never leaves a half
+  read header of the old picture behind.
+
 - A non-positive resolution in an extended header falls back to 72 dpi
   alone; the other, when it is positive, is kept (a zero vertical
   resolution reset a 144 dpi horizontal one).
@@ -110,8 +122,8 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   new hand-assembled seeds found it.
 - A destination that resets, cancels or finalizes its encoder mid-write
   receives none of the rest of the picture, and a reset keeps its
-  `Bytes_Written` of 0; `Cancel` steps the encoder's binding so the write in
-  progress sees it.
+  `Bytes_Written` of 0; `Cancel` steps a stop generation the write in
+  progress watches.
 - A source whose `Offset` raises as `Initialize` or `Reset` binds the
   decoder leaves it `Stopped` and bound to nothing, instead of claiming the
   earlier picture over a cleared session.
@@ -350,6 +362,14 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 
 ### Documentation
 
+- `Encode` and `Finish` list every result they return, `Encoding.Options`
+  documents each field, and the specification says what an exception after
+  writing began means, how a framed arc is drawn and which cell text's work
+  is charged for. Comments on the HeaderOp version, version 1's opcodes, a
+  session's records, the real-world tolerance and a copy's row bounds say
+  what the code does; an entry below on the encoder's `Cancel` no longer
+  contradicts a later one.
+
 - The specification says a malformed pattern tile is judged before its
   size, and which resolution falls back; the plan says why shapes have no
   external pixel oracle.
@@ -422,6 +442,16 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   Netpbm versions and the check that reproduces them.
 
 ### Internal structure
+
+- `Errors.Severity_Of` gives each warning code its one severity, which
+  `Make_Warning` and the session apply; no call names a severity. The
+  encoder plans a picture once, a given layout before the survey. One
+  helper reads a PixPat's start for enumeration and rendering, one prelude
+  serves the picture stream's `Read` and `Skip`, one step judgment serves
+  `Read_Exact` and `Skip_Exact`, one loop charges and paints spans, and
+  `Rendering.To_Picture` converts points and regions as it does rectangles.
+  The decoder's canvas check is `Check_Canvas`, apart from the container's
+  `Check_Frame`.
 
 - A row of a pixmap no longer copies its header, color table and all;
   1–4 bit pixels are unpacked by shifting. `Pixmaps.PixPat_Type` names
@@ -719,3 +749,16 @@ All tooling is Ada, in the `tests` crate:
   2.1.1, which CI installs, refuses the directory as a separate argument, and
   so failed every proof. CI runs `pictlib_complete` through `alr exec`, as
   `alr run` reports it "not built by this release" on Windows.
+- `pictlib_fuzz` waits for a stuck input's save to end before deciding to
+  save it again, so a save that fails no longer loses the input. CI keeps
+  the fuzzer's slow and stuck inputs on every run, not only failed ones.
+- The source policy no longer admits `System` and `GNAT` to production code
+  and refuses `pragma Suppress_All`, `Assertion_Policy` and `Check_Policy`,
+  and a CI step with a command substitution.
+- The long lines of `coverage.line_path` cross the window every trial, each
+  value drawn on its own. `Expect_Pixels` and `Expect_Lenient` require the
+  decoder to finish; the flag 128 case checks what it unpacked.
+- The README example, `Samples.Encoded`, the file helpers, the conformance
+  tool and the benchmark release what they allocate; the benchmark times
+  encoding alone, through one encoder and destination, and reads each
+  picture's header once.

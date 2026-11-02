@@ -229,17 +229,19 @@ procedure Pictlib_Fuzz is
    protected Current is
       procedure Start (Input : Input_Access; Iteration : Positive);
       procedure Finish;
-      --  The input, when one has run longer than Stuck_Seconds and was not handed out yet; else empty.
+      --  The input, when one has run longer than Stuck_Seconds and was not handed out yet; else empty. The
+      --  watchdog saves it, then says whether it could with Save_Ended.
       procedure Take_Stuck (Input : out Bytes_Holders.Holder; Iteration : out Natural);
-      --  The watchdog could not save iteration Iteration: the main loop saves it, should it return.
-      procedure Not_Saved (Iteration : Positive);
-      --  Whether the watchdog saved iteration Iteration, the last one started.
-      function Saved (Iteration : Positive) return Boolean;
+      procedure Save_Ended (Iteration : Positive; Saved : Boolean);
+      --  Whether the watchdog saved iteration Iteration, the last one started; while it is still saving one,
+      --  the answer waits for it, so a save that fails is never taken for one that will succeed.
+      entry Saved (Iteration : Positive; Result : out Boolean);
    private
       Running : Input_Access;
       Number : Natural := 0;
       Started : Ada.Calendar.Time;
       Taken : Boolean := False;
+      Saving : Boolean := False;
       Failed : Boolean := False;
    end Current;
 
@@ -266,17 +268,22 @@ procedure Pictlib_Fuzz is
             Input := Bytes_Holders.To_Holder (Running.all);
             Iteration := Number;
             Taken := True;
+            Saving := True;
          end if;
       end Take_Stuck;
 
-      procedure Not_Saved (Iteration : Positive) is
+      procedure Save_Ended (Iteration : Positive; Saved : Boolean) is
       begin
-         if Number = Iteration then
+         Saving := False;
+         if Number = Iteration and then not Saved then
             Failed := True;
          end if;
-      end Not_Saved;
+      end Save_Ended;
 
-      function Saved (Iteration : Positive) return Boolean is (Number = Iteration and then Taken and then not Failed);
+      entry Saved (Iteration : Positive; Result : out Boolean) when not Saving is
+      begin
+         Result := Number = Iteration and then Taken and then not Failed;
+      end Saved;
    end Current;
 
    --  Watches Input for as long as it lives: declared around a call, it ends the watch however the call ends, so
@@ -316,11 +323,12 @@ procedure Pictlib_Fuzz is
             if Iteration > 0 then
                begin
                   Save (Input_Name ("stuck", Iteration), Input.Element);
+                  Current.Save_Ended (Iteration, Saved => True);
                   Say ("still running after" & Stuck_Seconds'Image & " s: iteration" & Iteration'Image
                        & ", saved as " & Artifacts & "/" & Input_Name ("stuck", Iteration));
                exception
                   when Error : others =>
-                     Current.Not_Saved (Iteration);
+                     Current.Save_Ended (Iteration, Saved => False);
                      Say ("could not save the stuck input of iteration" & Iteration'Image & ": "
                           & Ada.Exceptions.Exception_Message (Error), Failure => True);
                end;
@@ -677,10 +685,7 @@ procedure Pictlib_Fuzz is
             Check (Decoder, Outcome, Pictlib.Decoding.Finished, "Render");
             if Pictlib.Results.Succeeded (Outcome) and then Strictness = Pictlib.Recover_When_Safe then
                --  Any warning may be the partial picture's: an overflowing log ends with its own marker.
-               if (for some Index in 1 .. Pictlib.Decoding.Warning_Count (Decoder) =>
-                     Pictlib.Errors."=" (Pictlib.Decoding.Warning_At (Decoder, Index).Code,
-                                         Pictlib.Errors.Partial_Picture))
-               then
+               if Pictlib_Testing.Recorders.Has_Warning (Decoder, Pictlib.Errors.Partial_Picture) then
                   Partial := Partial + 1;
                else
                   Rendered := Rendered + 1;
@@ -827,10 +832,16 @@ begin
                Took := Ada.Calendar.Clock - Started;
                if Took > Stuck_Seconds then
                   Stuck := Stuck + 1;
-                  --  The watchdog saved it while it ran, unless it returned between two of its looks.
-                  if not Current.Saved (Iteration) then
-                     Keep (Input_Name ("stuck", Iteration), Input, Iteration);
-                  end if;
+                  --  The watchdog saved it while it ran, unless it returned between two of its looks or its save
+                  --  failed.
+                  declare
+                     Saved : Boolean;
+                  begin
+                     Current.Saved (Iteration, Saved);
+                     if not Saved then
+                        Keep (Input_Name ("stuck", Iteration), Input, Iteration);
+                     end if;
+                  end;
                elsif Took > Slow_Seconds then
                   Slow := Slow + 1;
                   Keep (Input_Name ("slow", Iteration), Input, Iteration);

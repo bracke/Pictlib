@@ -26,7 +26,6 @@ package body Pictlib.Internal.QuickTime is
    Fixed_One : constant Long_Long_Integer := Long_Long_Integer (Geometry.Fixed_One);
    Fract_One : constant := 16#4000_0000#;
 
-
    --  A 16.16 coordinate, rounded to the nearest pixel.
    function Round_Fixed (Value : Long_Long_Integer) return Integer is
      (Integer ((if Value >= 0 then (Value + Fixed_One / 2) / Fixed_One
@@ -88,10 +87,10 @@ package body Pictlib.Internal.QuickTime is
    --  The description's fixed fields; the caller skips what follows them.
    function Read_Description (S : in out Sessions.Session; Item : out Description) return Results.Result is
       Fields : Streams.Byte_Array (1 .. Description_Bytes - 8);
-      Outcome : Results.Result := Sessions.Read_Long (S, Item.Size);
-
+      Outcome : Results.Result;
    begin
-      Item := (Size => Item.Size, others => <>);
+      Item := (others => <>);
+      Outcome := Sessions.Read_Long (S, Item.Size);
       if Results.Succeeded (Outcome) then
          Outcome := Sessions.Read_Long (S, Item.Codec);
       end if;
@@ -256,7 +255,7 @@ package body Pictlib.Internal.QuickTime is
          return Outcome;
       end if;
       Has_Mask := True;
-      Regions.Translate (Mask, -P.Port.Origin_H, -P.Port.Origin_V);
+      Rendering.To_Picture (P, Mask);
       return Results.Success;
    end Read_Mask;
 

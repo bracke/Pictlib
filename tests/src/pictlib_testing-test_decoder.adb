@@ -554,6 +554,30 @@ package body Pictlib_Testing.Test_Decoder is
          end loop;
       end loop;
 
+      --  A source that resets its decoder once the header's look-ahead is read, its version and frame known, leaves
+      --  none of that header behind.
+      declare
+         use type Pictlib.Pictures.Header_Info;
+         Filed : aliased constant Bytes := Zeros (512) & Skipped;
+         Inside : aliased Decoding.Decoder;
+         Faulty : aliased Raising;
+         Fresh : aliased Pictlib.Streams.Memory_Source;
+         Unread : Pictlib.Pictures.Header_Info;
+      begin
+         Pictlib.Streams.Open (Faulty.Inner, Filed'Unchecked_Access);
+         Pictlib.Streams.Open (Fresh, Other'Access);
+         Faulty.After := Pictlib.Byte_Count (Pictlib.Internal.Picture_Stream.Lookahead_Capacity);
+         Faulty.Move := Resets;
+         Faulty.Target := Inside'Unchecked_Access;
+         Faulty.Again := Fresh'Unchecked_Access;
+         Decoding.Initialize (Inside, Faulty'Access);
+         Outcome := Decoding.Read_Header (Inside);
+         Assert (Faulty.Done and then Outcome.First_Error.Code = Pictlib.Errors.Invalid_State
+                 and then Decoding.State (Inside) = Decoding.Ready,
+                 "a source's reset after the look-ahead did not stand: " & Outcome.First_Error.Code'Image);
+         Assert (Decoding.Header (Inside) = Unread, "a header half read for the old binding is kept");
+      end;
+
       --  A source that calls into its decoder is refused; one that cancels it mid-render leaves it cancelled.
       for Move in Reenters .. Cancels loop
          declare

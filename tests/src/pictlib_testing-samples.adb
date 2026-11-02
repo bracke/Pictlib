@@ -101,6 +101,19 @@ package body Pictlib_Testing.Samples is
          then Pictlib.Images.Black else Pictlib.Images.White);
    end Expected_Color;
 
+   overriding procedure Adjust (Item : in out Encoded) is
+      use type Bytes_Access;
+   begin
+      if Item.Data /= null then
+         Item.Data := new Pictlib.Streams.Byte_Array'(Item.Data.all);
+      end if;
+   end Adjust;
+
+   overriding procedure Finalize (Item : in out Encoded) is
+   begin
+      Free (Item.Data);
+   end Finalize;
+
    function Encode
      (Image : Pictlib.Images.Image_View;
       Settings : Pictlib.Encoding.Options := (others => <>);

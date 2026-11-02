@@ -382,20 +382,22 @@ package body Pictlib.Encoding is
       Settings : in out Options;
       Layout : out Layout_Kind) is
    begin
-      Layout := Settings.Layout;
-      if Layout = Auto then
-         Layout :=
-           (if Alpha_Kept (Image, Settings) then Direct_32
-            elsif Colors.Black_And_White then Mono_1
-            elsif Natural (Colors.Colors.Length) <= Largest_Colors then Indexed_8
-            else Direct_32);
-         if Layout = Mono_1 then
-            Settings.Mono_Threshold := Default_Mono_Threshold;
-         end if;
+      Layout :=
+        (if Alpha_Kept (Image, Settings) then Direct_32
+         elsif Colors.Black_And_White then Mono_1
+         elsif Natural (Colors.Colors.Length) <= Largest_Colors then Indexed_8
+         else Direct_32);
+      if Layout = Mono_1 then
+         Settings.Mono_Threshold := Default_Mono_Threshold;
       end if;
    end Choose_Layout;
 
-   --  Check plan: what the layout needs, against what a PICT and the budget allow.
+   --  The rowBytes a PixMap or BitMap can state: below 16#4000#.
+   function Check_Row_Bytes (Item : Plan) return Results.Result is
+     (if Item.Stored > Largest_Row_Bytes then Invalid (Largest_Row_Bytes, Byte_Count (Item.Stored))
+      else Results.Success);
+
+   --  Check plan: what the layout needs of the colors and the budget, its rowBytes already checked.
    function Check_Plan (Item : Plan; Colors : Palette; Budget : Limits.Limit_Set) return Results.Result is
       Buffers : constant Byte_Count := Row_Buffer_Bytes (Item);
    begin
@@ -404,9 +406,6 @@ package body Pictlib.Encoding is
            (Errors.Make
               (Errors.Too_Many_Colors,
                (Expected => Largest_Colors, Actual => Byte_Count (Colors.Colors.Length), others => <>)));
-      elsif Item.Stored > Largest_Row_Bytes then
-         --  rowBytes must stay below 16#4000#.
-         return Invalid (Largest_Row_Bytes, Byte_Count (Item.Stored));
       elsif Buffers > Budget.Max_Allocation_Bytes then
          return Internal.Failures.Over_Limit (Allocation_Byte_Limit, Budget.Max_Allocation_Bytes, Buffers);
       end if;
@@ -463,7 +462,8 @@ package body Pictlib.Encoding is
 
    --  Guards a call that runs the destination, as Call_Guards describes: one that used the destination and did
    --  not return leaves the encoder Failed with Destination_Write_Failed, so no second picture follows a part of
-   --  the first.
+   --  the first. The error means a write in progress did not return, whoever raised: the destination, or the
+   --  encoder itself, out of storage for its row buffers once the header was written.
    type Write_Guard
      (From : Encoder_State;
       State : not null access Encoder_State;
@@ -487,7 +487,8 @@ package body Pictlib.Encoding is
       --  The settings the picture is written with.
       Settings : Options := Object.Encode_Options;
       Colors : Palette;
-      Layout : Layout_Kind;
+      Layout : Layout_Kind := Settings.Layout;
+      Item : Plan;
       Outcome : Results.Result;
    begin
       --  Nothing before the write runs caller code: a failure here leaves the encoder Ready.
@@ -505,55 +506,56 @@ package body Pictlib.Encoding is
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
-      --  A layout given is checked against the rowBytes a PixMap can state before any pixel is surveyed.
-      if Settings.Layout /= Auto then
-         declare
-            Given : constant Plan := Plan_For (Image, Settings, Settings.Layout);
-         begin
-            if Given.Stored > Largest_Row_Bytes then
-               return Invalid (Largest_Row_Bytes, Byte_Count (Given.Stored));
-            end if;
-         end;
-      end if;
-      --  Only an indexed palette and Auto's choice, unless alpha decides it, need the colors; the other layouts
-      --  write pixels as they are.
-      if Settings.Layout = Indexed_8 or else (Settings.Layout = Auto and then not Alpha_Kept (Image, Settings)) then
-         Survey (Image, Colors);
-      end if;
-      Choose_Layout (Image, Colors, Settings, Layout);
-      declare
-         Item : constant Plan := Plan_For (Image, Settings, Layout);
-      begin
-         Outcome := Check_Plan (Item, Colors, Object.Encode_Limits);
+      --  A layout given is planned, and checked against the rowBytes a PixMap can state, before any pixel is
+      --  surveyed; Auto's once the colors choose it.
+      if Layout /= Auto then
+         Item := Plan_For (Image, Settings, Layout);
+         Outcome := Check_Row_Bytes (Item);
          if not Results.Succeeded (Outcome) then
             return Outcome;
          end if;
-         declare
-            --  Whether the destination was written to: a failure before leaves the encoder Ready.
-            Started : aliased Boolean := False;
-            Guard : Write_Guard
-              (Ready, Object.Current_State'Access, Object.First_Error'Access, Started'Access, Object.Busy'Access,
-               Object.Binds'Access);
-            Written : Byte_Count := 0;
-         begin
-            Outcome := Write (Object, Image, Settings, Item, Colors, Started'Access, Written);
-            --  The destination cancelled, reset or finalized the encoder under it: that stands. A rebinding set
-            --  the count; an encoder cancelled and not rebound keeps what its destination took.
-            if Object.Current_State = Cancelled and then not Rebound (Guard) then
-               Object.Written := Written;
-            end if;
-            if Object.Current_State /= Ready or else Rebound (Guard) then
-               return Wrong_State (Object);
-            end if;
+      end if;
+      --  Only an indexed palette and Auto's choice, unless alpha decides it, need the colors; the other layouts
+      --  write pixels as they are.
+      if Layout = Indexed_8 or else (Layout = Auto and then not Alpha_Kept (Image, Settings)) then
+         Survey (Image, Colors);
+      end if;
+      if Layout = Auto then
+         Choose_Layout (Image, Colors, Settings, Layout);
+         Item := Plan_For (Image, Settings, Layout);
+         Outcome := Check_Row_Bytes (Item);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Outcome := Check_Plan (Item, Colors, Object.Encode_Limits);
+      end if;
+      if not Results.Succeeded (Outcome) then
+         return Outcome;
+      end if;
+      declare
+         --  Whether the destination was written to: a failure before leaves the encoder Ready.
+         Started : aliased Boolean := False;
+         Guard : Write_Guard
+           (Ready, Object.Current_State'Access, Object.First_Error'Access, Started'Access, Object.Busy'Access,
+            Object.Binds'Access);
+         Written : Byte_Count := 0;
+      begin
+         Outcome := Write (Object, Image, Settings, Item, Colors, Started'Access, Written);
+         --  The destination cancelled, reset or finalized the encoder under it: that stands. A rebinding set
+         --  the count; an encoder cancelled and not rebound keeps what its destination took.
+         if Object.Current_State = Cancelled and then not Rebound (Guard) then
             Object.Written := Written;
-            if Results.Succeeded (Outcome) then
-               Object.Layout := Layout;
-               Object.Current_State := Encoded;
-            elsif not Started then
-               return Outcome;
-            end if;
-            return Fail (Object, Outcome);
-         end;
+         end if;
+         if Object.Current_State /= Ready or else Rebound (Guard) then
+            return Wrong_State (Object);
+         end if;
+         Object.Written := Written;
+         if Results.Succeeded (Outcome) then
+            Object.Layout := Layout;
+            Object.Current_State := Encoded;
+         elsif not Started then
+            return Outcome;
+         end if;
+         return Fail (Object, Outcome);
       end;
    end Encode_Picture;
 

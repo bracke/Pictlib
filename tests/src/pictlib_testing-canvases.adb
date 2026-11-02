@@ -130,6 +130,7 @@ package body Pictlib_Testing.Canvases is
       Label : String)
    is
       use AUnit.Assertions;
+      use type Pictlib.Decoding.Decoder_State;
       Storage : aliased Pictlib.Streams.Byte_Array := [1 .. 3 * Width * Height => 16#EE#];
       Output : constant Pictlib.Images.Mutable_Image_View := View (Storage'Access, Width, Height);
       Decoder : Pictlib.Decoding.Decoder;
@@ -137,6 +138,7 @@ package body Pictlib_Testing.Canvases is
    begin
       Render (Input, Decoder, Output, Outcome);
       Assert (Pictlib.Results.Succeeded (Outcome), Label & ": render failed with " & Outcome.First_Error.Code'Image);
+      Assert (Pictlib.Decoding.State (Decoder) = Pictlib.Decoding.Finished, Label & ": the decoder did not finish");
       for Item of Probes loop
          declare
             Got : constant Pictlib.Images.RGB_Color := Pixel (Output, Item.X, Item.Y);
@@ -192,6 +194,7 @@ package body Pictlib_Testing.Canvases is
       Strictness : Pictlib.Strictness_Mode := Pictlib.Compatible)
    is
       use AUnit.Assertions;
+      use type Pictlib.Decoding.Decoder_State;
       Storage : aliased Pictlib.Streams.Byte_Array := [1 .. 3 * Width * Height => 0];
       Output : constant Pictlib.Images.Mutable_Image_View := View (Storage'Access, Width, Height);
       Decoder : Pictlib.Decoding.Decoder;
@@ -200,6 +203,7 @@ package body Pictlib_Testing.Canvases is
       Render (Input, Decoder, Output, Outcome, (Strictness => Strictness, others => <>));
       Assert (Pictlib.Results.Succeeded (Outcome), Label & ": lenient render failed with "
               & Outcome.First_Error.Code'Image);
+      Assert (Pictlib.Decoding.State (Decoder) = Pictlib.Decoding.Finished, Label & ": the decoder did not finish");
       Assert (Recorders.Has_Warning (Decoder, Code), Label & ": no " & Code'Image & " warning");
       Assert (Picture_Of (Output) = Expected, Label & ": rendered " & Picture_Of (Output) & ", expected " & Expected);
    end Expect_Lenient;

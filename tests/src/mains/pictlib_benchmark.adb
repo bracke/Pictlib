@@ -39,86 +39,99 @@ procedure Pictlib_Benchmark is
 
    procedure Free (Item : in out Pictlib.Streams.Byte_Array_Access) renames Pictlib_Testing.Files.Free;
 
-   --  Render Data into a view of its frame, allocated once and kept in Storage across calls.
+   --  Render Data into a view of its frame, allocated once and kept in Storage across calls; Pixels is the frame's
+   --  count.
    function Render
      (Data : Pictlib.Streams.Byte_Array_Access;
-      Storage : in out Pictlib.Streams.Byte_Array_Access) return Boolean
+      Storage : in out Pictlib.Streams.Byte_Array_Access;
+      Pixels : out Natural) return Boolean
    is
       Source : aliased Pictlib.Streams.Memory_Source;
       Decoder : Pictlib.Decoding.Decoder;
       Outcome : Pictlib.Results.Result;
    begin
+      Pixels := 0;
       Pictlib.Streams.Open (Source, Pictlib.Streams.Const_Byte_Array_Access (Data));
       Pictlib.Decoding.Initialize (Decoder, Source'Access);
       Outcome := Pictlib.Decoding.Read_Header (Decoder);
       if Pictlib.Results.Succeeded (Outcome) then
+         declare
+            Frame : constant Pictlib.Geometry.Rect := Pictlib.Decoding.Header (Decoder).Frame;
+         begin
+            Pixels := Pictlib.Geometry.Width (Frame) * Pictlib.Geometry.Height (Frame);
+         end;
          Outcome := Pictlib_Testing.Canvases.Render_Frame (Decoder, Storage);
       end if;
       return Pictlib.Results.Succeeded (Outcome);
    end Render;
 
+   --  Encode Item in layout Kind Rounds times through one encoder and one destination, so only the encoding is
+   --  timed, then render the picture back Rounds times.
    procedure Layout (Item : Pictlib_Testing.Samples.Kind; Kind : Pictlib.Encoding.Layout_Kind) is
-      Source : constant Pictlib_Testing.Samples.Bytes_Access := Pictlib_Testing.Samples.Make (Item, Width, Height);
+      Source : Pictlib_Testing.Samples.Bytes_Access := Pictlib_Testing.Samples.Make (Item, Width, Height);
+      Room : Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. 8 * Width * Height);
+      Output : aliased Pictlib.Streams.Fixed_Buffer_Destination;
+      Encoder : Pictlib.Encoding.Encoder;
+      Outcome : Pictlib.Results.Result;
       Started : Ada.Calendar.Time;
-      Picture : Pictlib_Testing.Samples.Encoded;
       Encoded : Pictlib.Streams.Byte_Array_Access;
       Storage : Pictlib.Streams.Byte_Array_Access;
+      Pixels : Natural;
+
+      procedure Release is
+      begin
+         Pictlib.Encoding.Finalize (Encoder);
+         Free (Source);
+         Free (Room);
+         Free (Encoded);
+         Free (Storage);
+      end Release;
    begin
+      Pictlib.Streams.Open (Output, Room);
+      Pictlib.Encoding.Initialize (Encoder, Output'Access, (Layout => Kind, others => <>));
       Started := Ada.Calendar.Clock;
       for Round in 1 .. Rounds loop
-         Picture := Pictlib_Testing.Samples.Encode
-           (Pictlib_Testing.Samples.View (Source, Width, Height), (Layout => Kind, others => <>),
-            Room => 8 * Width * Height);
-         if not Pictlib.Results.Succeeded (Picture.Outcome) then
-            Pictlib_Testing.Tools.Fail (Kind'Image & ": encode failed");
-            return;
+         if Round > 1 then
+            Pictlib.Streams.Open (Output, Room);
+            Pictlib.Encoding.Reset (Encoder, Output'Access);
          end if;
-         --  Every round's picture but the last, which is rendered below.
-         if Round < Rounds then
-            Free (Picture.Data);
+         Outcome := Pictlib.Encoding.Encode (Encoder, Pictlib_Testing.Samples.View (Source, Width, Height));
+         if Pictlib.Results.Succeeded (Outcome) then
+            Outcome := Pictlib.Encoding.Finish (Encoder);
+         end if;
+         if not Pictlib.Results.Succeeded (Outcome) then
+            Pictlib_Testing.Tools.Fail (Kind'Image & ": encode failed");
+            Release;
+            return;
          end if;
       end loop;
       Report (Kind'Image & " encode", Rounds * Width * Height, Ada.Calendar.Clock - Started);
-      Encoded := Picture.Data;
+      Encoded := new Pictlib.Streams.Byte_Array'(Room (1 .. Natural (Output.Offset)));
       Started := Ada.Calendar.Clock;
       for Round in 1 .. Rounds loop
-         if not Render (Encoded, Storage) then
+         if not Render (Encoded, Storage, Pixels) then
             Pictlib_Testing.Tools.Fail (Kind'Image & ": render failed");
-            Free (Storage);
+            Release;
             return;
          end if;
       end loop;
       Report (Kind'Image & " render", Rounds * Width * Height, Ada.Calendar.Clock - Started);
-      Free (Storage);
+      Release;
    end Layout;
 
    procedure Vector_Picture (Path : String) is
-      Data : constant Pictlib_Testing.Files.Bytes_Access := Pictlib_Testing.Files.Load_Path (Path);
-      Started : Ada.Calendar.Time;
-      Source : aliased Pictlib.Streams.Memory_Source;
-      Decoder : Pictlib.Decoding.Decoder;
+      Data : Pictlib_Testing.Files.Bytes_Access := Pictlib_Testing.Files.Load_Path (Path);
+      Started : constant Ada.Calendar.Time := Ada.Calendar.Clock;
       Storage : Pictlib.Streams.Byte_Array_Access;
+      Pixels : Natural;
    begin
-      Pictlib.Streams.Open (Source, Pictlib.Streams.Const_Byte_Array_Access (Data));
-      Pictlib.Decoding.Initialize (Decoder, Source'Access);
-      if not Pictlib.Results.Succeeded (Pictlib.Decoding.Read_Header (Decoder)) then
-         Pictlib_Testing.Tools.Fail (Ada.Directories.Simple_Name (Path) & ": header failed");
-         return;
+      if Render (Data, Storage, Pixels) then
+         Report (Ada.Directories.Simple_Name (Path) & " render", Pixels, Ada.Calendar.Clock - Started);
+      else
+         Pictlib_Testing.Tools.Fail (Ada.Directories.Simple_Name (Path) & ": render failed");
       end if;
-      declare
-         Frame : constant Pictlib.Geometry.Rect := Pictlib.Decoding.Header (Decoder).Frame;
-         Frame_Width : constant Positive := Pictlib.Geometry.Width (Frame);
-         Frame_Height : constant Positive := Pictlib.Geometry.Height (Frame);
-      begin
-         Started := Ada.Calendar.Clock;
-         if Render (Pictlib.Streams.Byte_Array_Access (Data), Storage) then
-            Report (Ada.Directories.Simple_Name (Path) & " render", Frame_Width * Frame_Height,
-                    Ada.Calendar.Clock - Started);
-         else
-            Pictlib_Testing.Tools.Fail (Ada.Directories.Simple_Name (Path) & ": render failed");
-         end if;
-         Free (Storage);
-      end;
+      Free (Storage);
+      Free (Data);
    end Vector_Picture;
 begin
    if not Pictlib_Testing.Tools.Enter_Tests_Directory then

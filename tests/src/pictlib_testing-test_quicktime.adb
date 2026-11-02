@@ -452,6 +452,8 @@ package body Pictlib_Testing.Test_QuickTime is
       Truncated : aliased constant Bytes := Image (Plain (Whole (1 .. 100)), 8, 6);
       Garbage : aliased constant Bytes := Image (Plain (Text ("not a JPEG")), 8, 6);
       Wrong_Size : aliased constant Bytes := Image (QuickTime ("jpeg", 9, 6, Whole), 9, 6);
+      --  The 8 x 6 JPEG under a description of 8 x 5: larger than it says, though within every limit.
+      Too_Large : aliased constant Bytes := Image (QuickTime ("jpeg", 8, 5, Whole), 8, 5);
       Short_Description : aliased constant Bytes :=
         Image (QuickTime ("jpeg", Image_Width, Image_Height, Whole, Description_Size => 80), 8, 6);
       Overlong : constant Bytes := Plain (Whole);
@@ -482,6 +484,20 @@ package body Pictlib_Testing.Test_QuickTime is
       Canvases.Expect_Failure (Garbage, 8, 6, Errors.Embedded_Image_Failed, "not a JPEG", 16#8200#);
       Canvases.Expect_Failure (Wrong_Size, 9, 6, Errors.Embedded_Image_Failed, "description size disagrees",
                                16#8200#);
+      Canvases.Expect_Failure (Too_Large, 8, 5, Errors.Embedded_Image_Failed, "a JPEG larger than described",
+                               16#8200#);
+      Canvases.Render (Too_Large, Decoder, Canvases.View (Storage'Access, 8, 5), Outcome);
+      declare
+         use type Pictlib.Byte_Count;
+      begin
+         Assert (Outcome.First_Error.Context.Expected = 40 and then Outcome.First_Error.Context.Actual = 48,
+                 "a JPEG larger than described names" & Outcome.First_Error.Context.Expected'Image & " and"
+                 & Outcome.First_Error.Context.Actual'Image & " pixels");
+      end;
+      Canvases.Render (Too_Large, Decoder, Canvases.View (Storage'Access, 8, 5), Outcome,
+                       (Strictness => Pictlib.Recover_When_Safe, others => <>));
+      Assert (Pictlib.Results.Succeeded (Outcome) and then Recorders.Has_Warning (Decoder, Errors.Partial_Picture),
+              "a JPEG larger than described did not leave a partial picture");
       Canvases.Expect_Failure (Short_Description, 8, 6, Errors.Opcode_Length_Invalid, "idSize 80", 16#8200#);
       Canvases.Expect_Failure (Past_The_Opcode, 8, 6, Errors.Opcode_Length_Invalid, "dataSize too large", 16#8200#);
       Canvases.Render (Truncated, Decoder, Canvases.View (Storage'Access, 8, 6), Outcome,

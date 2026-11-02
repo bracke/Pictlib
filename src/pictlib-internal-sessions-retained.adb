@@ -23,7 +23,7 @@ package body Pictlib.Internal.Sessions.Retained is
       Keep := False;
       if not Results.Succeeded (Admission) then
          return Reject_Or_Warn
-           (S, Admission.First_Error.Code, Errors.Data_Loss, Errors.Data_Loss,
+           (S, Admission.First_Error.Code, Errors.Data_Loss,
             (Admission.First_Error.Context with delta Source => S.Stream.Offset));
       end if;
       Keep := True;

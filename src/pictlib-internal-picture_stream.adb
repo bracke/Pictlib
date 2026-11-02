@@ -142,32 +142,52 @@ package body Pictlib.Internal.Picture_Stream is
 
    function Picture_Offset (Object : Reader) return Byte_Count is (Object.Consumed - Object.Picture_Origin);
 
+   --  What Read and Skip answer without asking the source, for Wanted bytes: nothing to read from, nothing wanted,
+   --  the input ended or the budget spent. False when the look-ahead or the source must give them.
+   function Answered (Object : Reader; Wanted : Byte_Count; Reply : out Streams.Source_Result) return Boolean is
+   begin
+      Reply := (Error => Errors.Make (Errors.No_Error), Count => 0, End_Of_Input => False);
+      if Object.Input = null then
+         Reply := Unbound_Reply;
+      elsif Wanted = 0 then
+         null;
+      elsif Buffered (Object) = 0 and then Object.Input_Ended then
+         Reply.End_Of_Input := True;
+      elsif Remaining_Budget (Object) = 0 then
+         Reply.Error := Over_Budget (Object);
+      else
+         return False;
+      end if;
+      return True;
+   end Answered;
+
+   --  Up to Wanted bytes of a look-ahead that holds some, consumed.
+   function Take_Buffered (Object : in out Reader; Wanted : Byte_Count) return Streams.Source_Result is
+      Count : constant Natural :=
+        (if Wanted < Byte_Count (Buffered (Object)) then Natural (Wanted) else Buffered (Object));
+   begin
+      Object.First := Object.First + Count;
+      Object.Consumed := Object.Consumed + Byte_Count (Count);
+      return
+        (Error => Errors.Make (Errors.No_Error),
+         Count => Byte_Count (Count),
+         End_Of_Input => Buffered (Object) = 0 and then Object.Input_Ended);
+   end Take_Buffered;
+
    --  Only the bytes delivered are defined: clearing the rest on every call would make a caller that asks again
    --  for what is left, as Read_Exact does, clear the same bytes over and over.
    overriding function Read (Object : in out Reader; Buffer : out Streams.Byte_Array) return Streams.Source_Result is
+      Reply : Streams.Source_Result;
    begin
-      if Object.Input = null then
-         return Unbound_Reply;
-      elsif Buffer'Length = 0 then
-         return (Error => Errors.Make (Errors.No_Error), Count => 0, End_Of_Input => False);
-      end if;
-
-      if Buffered (Object) = 0 and then Object.Input_Ended then
-         return (Error => Errors.Make (Errors.No_Error), Count => 0, End_Of_Input => True);
-      elsif Remaining_Budget (Object) = 0 then
-         return (Error => Over_Budget (Object), Count => 0, End_Of_Input => False);
+      if Answered (Object, Byte_Count (Buffer'Length), Reply) then
+         return Reply;
       elsif Buffered (Object) > 0 then
          declare
             Count : constant Natural := Natural'Min (Buffer'Length, Buffered (Object));
          begin
             Buffer (Buffer'First .. Buffer'First + Count - 1) :=
               Object.Buffer (Object.First .. Object.First + Count - 1);
-            Object.First := Object.First + Count;
-            Object.Consumed := Object.Consumed + Byte_Count (Count);
-            return
-              (Error => Errors.Make (Errors.No_Error),
-               Count => Byte_Count (Count),
-               End_Of_Input => Buffered (Object) = 0 and then Object.Input_Ended);
+            return Take_Buffered (Object, Byte_Count (Count));
          end;
       end if;
 
@@ -207,29 +227,12 @@ package body Pictlib.Internal.Picture_Stream is
      (At_Offset (Object));
 
    overriding function Skip (Object : in out Reader; Count : Byte_Count) return Streams.Source_Result is
+      Reply : Streams.Source_Result;
    begin
-      if Object.Input = null then
-         return Unbound_Reply;
-      elsif Count = 0 then
-         return (Error => Errors.Make (Errors.No_Error), Count => 0, End_Of_Input => False);
-      end if;
-
-      if Buffered (Object) = 0 and then Object.Input_Ended then
-         return (Error => Errors.Make (Errors.No_Error), Count => 0, End_Of_Input => True);
-      elsif Remaining_Budget (Object) = 0 then
-         return (Error => Over_Budget (Object), Count => 0, End_Of_Input => False);
+      if Answered (Object, Count, Reply) then
+         return Reply;
       elsif Buffered (Object) > 0 then
-         declare
-            Taken : constant Natural :=
-              (if Count < Byte_Count (Buffered (Object)) then Natural (Count) else Buffered (Object));
-         begin
-            Object.First := Object.First + Taken;
-            Object.Consumed := Object.Consumed + Byte_Count (Taken);
-            return
-              (Error => Errors.Make (Errors.No_Error),
-               Count => Byte_Count (Taken),
-               End_Of_Input => Buffered (Object) = 0 and then Object.Input_Ended);
-         end;
+         return Take_Buffered (Object, Count);
       end if;
 
       declare

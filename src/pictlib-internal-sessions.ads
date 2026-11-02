@@ -18,7 +18,8 @@ package Pictlib.Internal.Sessions is
    --  What a session counts, kept by this package alone: allocations, drawing work, opcodes, and where the
    --  current opcode's data begins.
    type Counters is private;
-   --  What a session keeps for its caller, reached only through this package: retained metadata and warnings.
+   --  What a session keeps for its caller, reached only through this package and its children: retained metadata
+   --  and warnings.
    type Records is limited private;
 
    --  Tagged so its operations read as S.Budget, S.Version and the like.
@@ -79,13 +80,11 @@ package Pictlib.Internal.Sessions is
 
    --  Warn.
    --  @param S Session whose log records the warning.
-   --  @param Code Warning code.
-   --  @param Severity Warning severity.
+   --  @param Code Warning code, which fixes its severity.
    --  @param Context Diagnostic context; the current source offset when it names none.
    procedure Warn
      (S : in out Session;
       Code : Errors.Warning_Code;
-      Severity : Errors.Warning_Severity;
       Context : Errors.Diagnostic_Context := (others => <>));
 
    --  Is lenient.
@@ -121,14 +120,12 @@ package Pictlib.Internal.Sessions is
    --  @param S Session whose strictness decides and whose log records the warning.
    --  @param Code The error a strict session fails with.
    --  @param Warning The warning a lenient one records instead.
-   --  @param Severity The warning's severity.
    --  @param Context Diagnostic context of either; the current source offset when it names none.
    --  @return The failure strictly, Success otherwise.
    function Reject_Or_Warn
      (S : in out Session;
       Code : Errors.Error_Code;
       Warning : Errors.Warning_Code;
-      Severity : Errors.Warning_Severity;
       Context : Errors.Diagnostic_Context) return Results.Result;
 
    --  Attributed: a failure while an opcode is read names that opcode.

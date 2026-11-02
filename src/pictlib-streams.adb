@@ -1,27 +1,38 @@
 with Pictlib.Internal.Replies;
 
 package body Pictlib.Streams is
+   --  One step of Read_Exact or Skip_Exact, Completed of Total bytes done before it: the source's failure, the end
+   --  of the input short of Total, or Success when the step gave some.
+   function Judged_Step
+     (Object : Source'Class;
+      Step : Source_Result;
+      Total, Completed : Byte_Count) return Results.Result
+   is
+      Failure : constant Errors.Error := Internal.Replies.Judged (Step, Total - Completed, Object.Offset);
+   begin
+      if Errors.Is_Fatal (Failure) then
+         return Results.Failure (Failure);
+      elsif Step.Count = 0 then
+         --  Nothing, at the end of the input.
+         return Results.Failure
+           (Errors.Make
+              (Errors.Source_Unexpected_End,
+               (Source => Object.Offset, Expected => Total, Actual => Completed, others => <>)));
+      end if;
+      return Results.Success;
+   end Judged_Step;
+
    function Read_Exact (Object : in out Source'Class; Buffer : out Byte_Array) return Results.Result is
       Completed : Natural := 0;
    begin
       while Completed < Buffer'Length loop
          declare
-            Step : constant Source_Result :=
-              Object.Read (Buffer (Buffer'First + Completed .. Buffer'Last));
-            Failure : constant Errors.Error :=
-              Internal.Replies.Judged (Step, Byte_Count (Buffer'Length - Completed), Object.Offset);
+            Step : constant Source_Result := Object.Read (Buffer (Buffer'First + Completed .. Buffer'Last));
+            Outcome : constant Results.Result :=
+              Judged_Step (Object, Step, Byte_Count (Buffer'Length), Byte_Count (Completed));
          begin
-            if Errors.Is_Fatal (Failure) then
-               return Results.Failure (Failure);
-            elsif Step.Count = 0 then
-               --  Nothing, at the end of the input.
-               return Results.Failure
-                 (Errors.Make
-                    (Errors.Source_Unexpected_End,
-                     (Source => Object.Offset,
-                      Expected => Byte_Count (Buffer'Length),
-                      Actual => Byte_Count (Completed),
-                      others => <>)));
+            if not Results.Succeeded (Outcome) then
+               return Outcome;
             end if;
             Completed := Completed + Natural (Step.Count);
          end;
@@ -35,16 +46,10 @@ package body Pictlib.Streams is
       while Completed < Count loop
          declare
             Step : constant Source_Result := Object.Skip (Count - Completed);
-            Failure : constant Errors.Error := Internal.Replies.Judged (Step, Count - Completed, Object.Offset);
+            Outcome : constant Results.Result := Judged_Step (Object, Step, Count, Completed);
          begin
-            if Errors.Is_Fatal (Failure) then
-               return Results.Failure (Failure);
-            elsif Step.Count = 0 then
-               --  Nothing, at the end of the input.
-               return Results.Failure
-                 (Errors.Make
-                    (Errors.Source_Unexpected_End,
-                     (Source => Object.Offset, Expected => Count, Actual => Completed, others => <>)));
+            if not Results.Succeeded (Outcome) then
+               return Outcome;
             end if;
             Completed := Completed + Step.Count;
          end;

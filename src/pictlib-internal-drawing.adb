@@ -34,7 +34,7 @@ package body Pictlib.Internal.Drawing is
       V, H : Integer;
       Outcome : constant Results.Result := Sessions.Read_Pair (S, V, H);
    begin
-      Item := (H => H - P.Port.Origin_H, V => V - P.Port.Origin_V);
+      Item := Rendering.To_Picture (P, H, V);
       return Outcome;
    end Read_Point;
 

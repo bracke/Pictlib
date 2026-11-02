@@ -1,10 +1,10 @@
 --  The day-to-day gate: the library builds on its own, the sources keep the policy, and the AUnit suite passes.
 --  The policy holds independent of what an incremental build recompiled: lines of at most 120 characters in
 --  every Ada source of both crates, GNATdoc tags on every public subprogram of the public packages,
---  production units that depend only on Ada, Interfaces, GNAT, pictlib, jpeglib's public packages and
---  textrender, an invariant registry true to the suite, and a README whose example is the example program,
---  which runs. --policy-only checks the sources alone. Run from
---  anywhere below the pictlib tree, after `alr --chdir=tests build`.
+--  production units that depend only on Ada, Interfaces (not Interfaces.C), pictlib, jpeglib's public packages
+--  and textrender and turn no check off, an invariant registry true to the suite, and a README whose example is
+--  the example program, which runs. --policy-only checks the sources alone. Run from anywhere below the pictlib
+--  tree, after `alr --chdir=tests build`.
 with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Strings.Unbounded;

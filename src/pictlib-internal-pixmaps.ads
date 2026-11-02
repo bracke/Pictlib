@@ -84,15 +84,17 @@ package Pictlib.Internal.Pixmaps is
    --  Patterns.Pattern_Kind, which is what a pattern draws as.
    type PixPat_Type is (Tile_Pixpat, Dither_Pixpat);
 
-   --  Classify pattern, for enumeration and rendering alike.
-   --  @param S Session, positioned after pat1Data.
-   --  @param Pattern_Type A PixPat's patType.
+   --  Read pattern start: a PixPat's patType and pat1Data, read alike for enumeration and rendering, so both
+   --  agree on what follows.
+   --  @param S Session positioned at the PixPat.
+   --  @param Fallback pat1Data, the 1-bit pattern for black-and-white ports.
    --  @param Kind Tile_Pixpat for type 1, Dither_Pixpat for type 2.
-   --  @return Success, or Pattern_Invalid for any other type.
-   function Classify_Pattern
-     (S : Sessions.Session;
-      Pattern_Type : Interfaces.Unsigned_16;
-      Kind : out PixPat_Type) return Results.Result;
+   --  @return Success, Pattern_Invalid for any other type, or the read's failure.
+   function Read_Pattern_Start
+     (S : in out Sessions.Session;
+      Fallback : out Streams.Byte_Array;
+      Kind : out PixPat_Type) return Results.Result
+     with Pre => Fallback'Length = Bit_Pattern_Bytes;
 
    --  Read pattern header: a type 1 PixPat's rowBytes, bounds, PixMap tail and color table, laid out and checked
    --  alike for enumeration and rendering, so both agree where the opcode ends.
