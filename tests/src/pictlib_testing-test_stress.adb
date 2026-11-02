@@ -45,7 +45,7 @@ package body Pictlib_Testing.Test_Stress is
          & W (16#34#) & Rect (4, 30, 20, 46)
          & Bitmap_2x8 (Destination => Rect (22, 0, 24, 8))
          & W (16#28#) & W (18) & W (4) & B (2) & Text ("Hi") & B (0)
-         & QuickTime ("jpeg", 8, 6, Files.Load ("external/small.jpg").all, Move_H => 36 * 16#1_0000#,
+         & QuickTime ("jpeg", 8, 6, Files.Contents ("external/small.jpg"), Move_H => 36 * 16#1_0000#,
                       Move_V => 16#1_0000#)));
 
    --  Render Input with the test fonts, task-safely.
@@ -215,13 +215,13 @@ package body Pictlib_Testing.Test_Stress is
       end Decode;
 
       procedure Encode (Budget : Pictlib.Limits.Limit_Set) is
-         Source : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 40, 4);
-         Storage : constant Pictlib.Streams.Byte_Array_Access := new Bytes (1 .. 10_000);
+         Source : constant Samples.Pixels := Samples.Made (Samples.Gradient, 40, 4);
+         Storage : constant Files.Owned := Files.Allocated (10_000);
          Output : aliased Pictlib.Streams.Fixed_Buffer_Destination;
          Encoder : Pictlib.Encoding.Encoder;
          Outcome : Pictlib.Results.Result;
       begin
-         Pictlib.Streams.Open (Output, Storage);
+         Pictlib.Streams.Open (Output, Storage.Data);
          Pictlib.Encoding.Initialize (Encoder, Output'Access, Encode_Limits => Budget);
          Outcome := Pictlib.Encoding.Encode (Encoder, Samples.View (Source, 40, 4));
          Assert (Outcome.First_Error.Code = Pictlib.Errors.Limit_Exceeded
@@ -305,7 +305,8 @@ package body Pictlib_Testing.Test_Stress is
       Huge_Frame : aliased constant Bytes := V2_Picture (0, 0, 16_384, 16_384, [1 .. 0 => 0]);
       Source : aliased Pictlib.Streams.Memory_Source;
       Decoder : Decoding.Decoder;
-      Visitor : Null_Visitor;
+      --  Every opcode, the version opcode, HeaderOp and the end opcode around the NOPs.
+      Visitor : Recorders.Recorder;
       Small : aliased Bytes := [1 .. 3 => 0];
       Outcome : Pictlib.Results.Result;
    begin
@@ -316,6 +317,9 @@ package body Pictlib_Testing.Test_Stress is
          Outcome := Decoding.Enumerate (Decoder, Visitor);
       end if;
       Assert (Pictlib.Results.Succeeded (Outcome), "100_000 NOPs did not enumerate");
+      Assert ((for all Index in 3 .. 100_002 => Pictlib."=" (Visitor.Events (Index).Op, 0))
+              and then Natural (Visitor.Events.Length) = 100_003,
+              "100_000 NOPs enumerated as" & Natural'Image (Natural (Visitor.Events.Length)) & " opcodes");
 
       Pictlib.Streams.Open (Source, Huge_Frame'Unchecked_Access);
       Decoding.Initialize (Decoder, Source'Access);

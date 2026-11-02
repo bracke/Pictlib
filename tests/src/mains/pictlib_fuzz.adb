@@ -175,6 +175,10 @@ procedure Pictlib_Fuzz is
    begin
       if Pictlib.Results.Succeeded (Picture.Outcome) then
          Seeds.Append (Picture.Data.all);
+      else
+         --  An encoder that fails here would shrink the seeds unseen.
+         Fail ("an encoded seed (" & Item'Image & ", " & Layout'Image & ") failed: "
+               & Pictlib.Errors.Identifiers.To_String (Picture.Outcome.First_Error.Identifier));
       end if;
    end Add_Encoded;
 

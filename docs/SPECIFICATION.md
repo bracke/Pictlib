@@ -457,7 +457,9 @@ the call left in the state it began in, its stream partly read, is then `Stopped
 again after `Reset` or `Initialize`. The same holds for the source: while `Read_Header`,
 `Enumerate` or `Render` runs it, a nested call of any of them fails with `Invalid_State`, and a
 `Cancel`, `Reset`, `Initialize` or `Finalize` it makes stands: the call returns what one in the
-state it left gets (`Operation_Cancelled` after `Cancel`), and what the source delivered for the
+state it left gets (`Operation_Cancelled` after `Cancel`; `Invalid_State` from a `Read_Header`
+whose source reset or initialized the decoder, which leaves the new binding's header unread), and
+what the source delivered for the
 binding it replaced is dropped, so a reset decoder reads its new source from the start. After a
 `Cancel` the decoder asks its source for nothing more, not even the rest of the opcode it was
 reading, and what the source delivered for the call it cancelled is dropped.
@@ -575,7 +577,7 @@ before or as the work is done, whether or not anything is drawn, and nothing is 
 | building a shape | every row walked and every unit of span, region, polygon and line work, every row held moved when a row is added above them; building stops at the budget left, and a shape that stops covers nothing |
 | painting | every pixel painted, underlines included |
 | a copied pixmap | for every row converted, its pixels or the bytes it unpacks to, whichever is more, plus 1; every destination row walked; 1 for every row a copy skips, a QuickTime placeholder's included |
-| a pattern | 1, plus, for every row of a color `PixPat` tile decoded, its pixels or the bytes it unpacks to, whichever is more, plus 1 |
+| a pattern | 1, plus, for every row of a color `PixPat` tile decoded, its pixels or the bytes it unpacks to, whichever is more, plus 1; 1 for every row of a tile too large to decode, skipped leniently |
 | a QuickTime image | every pixel and row decoded, and every byte of its compressed data |
 | text | every font loaded: its atlas bytes, its file bytes and 65 536; every glyph asked for, wherever it lands: 16 per pixel of its raster cell, (2 × size + 2)² |
 | a region walk | every inversion point and line passed |
@@ -592,7 +594,7 @@ and storage that is no single allocation at fixed rates:
 | a polygon read | 8 per point |
 | a polygon drawn | 8 per point again, for the copy drawn, plus 152 per edge when it is filled |
 | a region read | 6 per byte of it, for its scanlines and inversion points |
-| a region shape drawn | 8 per unit of its region's size, for the copy moved to the origin |
+| a region shape drawn | 12 per unit of its region's size, for the copy moved to the origin |
 | building a shape | 256 per unit of shape work, the spans it can make; building stops at what the total still admits |
 | a QuickTime image | its pixels, and `jpeglib`'s share for its own buffers |
 

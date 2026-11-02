@@ -25,6 +25,7 @@ package body Pictlib.Internal.Rendering is
       Text.Clear (P.Font_Cache);
    end Start;
 
+   --  Item, a local region, moved to picture coordinates: uncharged, so only Region_To_Picture calls it.
    procedure To_Picture (P : Painter; Item : in out Regions.Region) is
    begin
       Regions.Translate (Item, -P.Port.Origin_H, -P.Port.Origin_V);
@@ -37,6 +38,24 @@ package body Pictlib.Internal.Rendering is
    begin
       if Results.Succeeded (Outcome) then
          To_Picture (P, Item);
+      end if;
+      return Outcome;
+   end Region_To_Picture;
+
+   function Region_To_Picture
+     (P : Painter;
+      S : in out Sessions.Session;
+      Source : Regions.Region;
+      Moved : out Regions.Region) return Results.Result
+   is
+      Outcome : constant Results.Result := Accounting.Charge_Work (S, Regions.Size (Source));
+      Empty : Regions.Region;
+   begin
+      if Results.Succeeded (Outcome) then
+         Moved := Source;
+         To_Picture (P, Moved);
+      else
+         Moved := Empty;
       end if;
       return Outcome;
    end Region_To_Picture;

@@ -61,7 +61,7 @@ package body Pictlib.Internal.JPEG_Bridge is
       Pixels_Of : constant Byte_Count := Pixel_Total (Item);
       --  The pixels and jpeglib's share are what the image was allowed: the configured limit itself when
       --  nothing capped the share.
-      Allowed : constant Byte_Count := Checked_Arithmetic.Saturating_Add (Bytes_Per_Pixel * Pixels_Of, Share);
+      Allowed : constant Byte_Count := Checked_Arithmetic.Saturating_Add (Pixel_Bytes (Item), Share);
       Context : constant Errors.Diagnostic_Context :=
         (Failures.Context_Of (Event) with delta
            Underlying_Code => Long_Long_Integer (Jpeglib.Errors.Error_Code'Pos (Code)),
@@ -102,7 +102,7 @@ package body Pictlib.Internal.JPEG_Bridge is
       Share : Byte_Count;
       Info : Jpeglib.Decoding.Image_Info) return Results.Result
    is
-      Bytes : constant Natural := Natural (Pixel_Bytes (Item));
+      Bytes : constant Byte_Count := Pixel_Bytes (Item);
       Blocks : constant Byte_Count := Byte_Count (Info.Coefficient_Blocks);
       --  A hierarchical image's continuation frames may be progressive whatever its first frame is.
       Progressive : constant Boolean :=
@@ -128,9 +128,9 @@ package body Pictlib.Internal.JPEG_Bridge is
          --  against its share.
          return Failures.Over_Limit
            (Failures.Context_Of (Event), Allocation_Byte_Limit,
-            Checked_Arithmetic.Saturating_Add (Byte_Count (Bytes), Share),
+            Checked_Arithmetic.Saturating_Add (Bytes, Share),
             Checked_Arithmetic.Saturating_Add
-              (Byte_Count (Bytes), Checked_Arithmetic.Saturating_Multiply (2 * Coefficient_Block_Bytes, Blocks)));
+              (Bytes, Checked_Arithmetic.Saturating_Multiply (2 * Coefficient_Block_Bytes, Blocks)));
       end if;
       return Results.Success;
    end Check_Header;

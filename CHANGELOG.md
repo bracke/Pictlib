@@ -375,6 +375,11 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   region with no pen walks nothing, as a framed polygon does. A glyph lost
   when its atlas is retaken gets the data-loss warning.
 - `Fonts.Add` ignores an empty family name.
+- A tile too large to decode, skipped leniently, charges a unit a row, as
+  a skipped copy does. A same-region shape charges its region's move
+  before copying it, and the copy counts 12 bytes a unit against the
+  total-allocation quota, a scanline record's size. A polygon whose points
+  are cut short keeps no junk point.
 
 ### Documentation
 
@@ -471,6 +476,13 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
   output limit and the ninth font while one loads. The `Limit_Set` fields,
   `Error`, `Warning`, `Warning_Severity`, the stream replies and
   `Length_Rule` are documented.
+- The specification says `Read_Header` fails with `Invalid_State` after
+  its source resets or initializes the decoder, and `Read_Header` lists
+  what it returns; `Fonts.Add` says family names match as Mac Roman bytes;
+  `Read_Payload` names the picture byte budget; the warning-offset comment
+  is corrected; the source policy's comment no longer admits `GNAT` and
+  `System`, and an older entry here no longer says CI keeps fuzz inputs
+  only on failure.
 
 ### Internal structure
 
@@ -605,6 +617,10 @@ place:
   failure, and `Judged_Step` asks once; the font cache finds a slot in one
   place, and the picture's font names are `Family_Maps`; QuickTime builds
   its image through `Image_Of`; the version opcode skips its own length.
+- The uncharged region move is private to `Rendering`, behind a copying
+  `Region_To_Picture`; pen-less frames are decided in one place;
+  QuickTime places its image through `To_Picture`; the JPEG bridge uses
+  `Pixel_Bytes` throughout.
 
 ### Tooling
 
@@ -719,8 +735,8 @@ All tooling is Ada, in the `tests` crate:
   staging first and reports a failure partway. `pictlib_conformance`,
   `pictlib_generate` and `pictlib_prove` print the versions of the external
   programs they run; CI installs `gnatprove=15.1.0`, fuzzes from its run
-  number (`PICTLIB_FUZZ_SEED`) and keeps the fuzzer's inputs when it fails
-  or is cancelled.
+  number (`PICTLIB_FUZZ_SEED`) and keeps the fuzzer's slow and stuck
+  inputs.
 - `pictlib_fuzz` fails without its fixture seeds and refuses seed 0 and no
   iterations; the generator draws from its high bits. `pictlib_check` runs
   every policy step and the suite whatever one of them raises, requires the
@@ -819,3 +835,7 @@ All tooling is Ada, in the `tests` crate:
   seed's file after it is saved; `pictlib_real_world` refuses a corpus name
   with a space and a picture recorded twice; `Read_Raster` skips Netpbm
   comments; the JPEG capability probe uses `Canvases.Compare`.
+- `Files.Save_Path` closes its file when a write fails; `Files.Contents`
+  and `Files.Owned` free fixture copies, sample images and destination
+  buffers the tests used to leak. The fuzzer fails when an encoded seed
+  cannot be made; `stress.large_inputs` checks every NOP is enumerated.

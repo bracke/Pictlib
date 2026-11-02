@@ -5,6 +5,14 @@ with Ada.Unchecked_Deallocation;
 package body Pictlib_Testing.Files is
    function Load (Name : String) return Bytes_Access is (Load_Path ("fixtures/" & Name));
 
+   function Contents (Name : String) return Pictlib.Streams.Byte_Array is
+      Data : Bytes_Access := Load (Name);
+   begin
+      return Result : constant Pictlib.Streams.Byte_Array := Data.all do
+         Free (Data);
+      end return;
+   end Contents;
+
    procedure Release is new Ada.Unchecked_Deallocation (Pictlib.Streams.Byte_Array, Bytes_Access);
 
    procedure Free (Item : in out Bytes_Access) is
@@ -38,7 +46,25 @@ package body Pictlib_Testing.Files is
       Create (File, Out_File, Path);
       Pictlib.Streams.Byte_Array'Write (Stream (File), Data);
       Close (File);
+   exception
+      when others =>
+         if Is_Open (File) then
+            Close (File);
+         end if;
+         raise;
    end Save_Path;
+
+   overriding procedure Finalize (Item : in out Owned) is
+   begin
+      Free (Item.Data);
+   end Finalize;
+
+   function Allocated (Length : Natural) return Owned is
+   begin
+      return Result : Owned do
+         Result.Data := new Pictlib.Streams.Byte_Array'(1 .. Length => 0);
+      end return;
+   end Allocated;
 
    overriding procedure Adjust (Item : in out Raster) is
       use type Bytes_Access;

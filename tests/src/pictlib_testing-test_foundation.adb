@@ -110,7 +110,7 @@ package body Pictlib_Testing.Test_Foundation is
       Written : aliased constant Bytes :=
         Pic (24, 20, W (16#28#) & W (15) & W (2) & B (2) & Text ("Hi") & B (0));
       Compressed : aliased constant Bytes :=
-        Pic (8, 6, QuickTime ("jpeg", 8, 6, Files.Load ("external/small.jpg").all));
+        Pic (8, 6, QuickTime ("jpeg", 8, 6, Files.Contents ("external/small.jpg")));
       Commented : aliased constant Bytes := Pic (4, 1, W (16#A0#) & W (200));
       Output : Pictlib.Images.Mutable_Image_View;
 

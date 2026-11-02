@@ -1,4 +1,3 @@
-with Pictlib_Testing.Files;
 
 package body Pictlib_Testing.Samples is
    procedure Free (Item : in out Pictlib.Streams.Byte_Array_Access) renames Pictlib_Testing.Files.Free;
@@ -60,6 +59,22 @@ package body Pictlib_Testing.Samples is
       end loop;
       return Result;
    end Make;
+
+   function Made
+     (Item : Kind;
+      Width, Height : Positive;
+      Format : Pictlib.Pixel_Format := Pictlib.RGB_24) return Pixels is
+   begin
+      return Result : Pixels do
+         Result.Data := Make (Item, Width, Height, Format);
+      end return;
+   end Made;
+
+   function View
+     (Item : Pixels;
+      Width, Height : Positive;
+      Format : Pictlib.Pixel_Format := Pictlib.RGB_24) return Pictlib.Images.Image_View
+   is (View (Item.Data, Width, Height, Format));
 
    function View
      (Storage : not null Bytes_Access;

@@ -12,6 +12,7 @@ with Pictlib.Results;
 with Pictlib.Streams;
 with Pictlib_Testing.Builders;
 with Pictlib_Testing.Canvases;
+with Pictlib_Testing.Files;
 with Pictlib_Testing.Recorders;
 with Pictlib_Testing.Samples;
 
@@ -91,7 +92,7 @@ package body Pictlib_Testing.Test_Encoding is
                Encoding.Cancel (Object.Target.all);
             when others =>
                declare
-                  Again : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 2, 2);
+                  Again : constant Samples.Pixels := Samples.Made (Samples.Gradient, 2, 2);
                begin
                   Object.Nested := Encoding.Encode (Object.Target.all, Samples.View (Again, 2, 2));
                end;
@@ -421,7 +422,7 @@ package body Pictlib_Testing.Test_Encoding is
       Defaults : constant Pictlib.Limits.Limit_Set := Pictlib.Limits.Default_Limits;
       Picture : Encoded;
       Output : aliased Pictlib.Streams.Fixed_Buffer_Destination;
-      Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. 1000);
+      Storage : constant Files.Owned := Files.Allocated (1000);
       Encoder : Encoding.Encoder;
       Outcome : Pictlib.Results.Result;
    begin
@@ -473,7 +474,7 @@ package body Pictlib_Testing.Test_Encoding is
                          Budget => (Defaults with delta Max_Allocation_Bytes => 81));
       Assert (Pictlib.Results.Succeeded (Picture.Outcome), "indexed row buffers were sized as direct ones");
 
-      Pictlib.Streams.Open (Output, Storage);
+      Pictlib.Streams.Open (Output, Storage.Data);
       Encoding.Initialize (Encoder, Output'Access);
       Outcome := Encoding.Encode (Encoder, (Descriptor => (Width => 4, Height => 4, Format => Pictlib.RGB_24,
                                                           Stride => 12, Accessible_Bytes => 48), Storage => null));
@@ -484,8 +485,8 @@ package body Pictlib_Testing.Test_Encoding is
               "an invalid view did not report the bytes a valid one holds against its own");
       --  A failure found before anything is written leaves the encoder Ready for another image.
       declare
-         Many : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
-         Few : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 4, 4);
+         Many : constant Samples.Pixels := Samples.Made (Samples.Gradient, 37, 23);
+         Few : constant Samples.Pixels := Samples.Made (Samples.Gradient, 4, 4);
       begin
          Encoding.Initialize (Encoder, Output'Access, (Layout => Encoding.Indexed_8, others => <>));
          Outcome := Encoding.Encode (Encoder, Samples.View (Many, 37, 23));
@@ -515,13 +516,13 @@ package body Pictlib_Testing.Test_Encoding is
       --  A destination that fails once and would take the rest is written nothing more: no gap, no end opcode
       --  after one.
       declare
-         Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
-         Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
+         Image_Data : constant Samples.Pixels := Samples.Made (Samples.Gradient, 37, 23);
+         Storage : constant Files.Owned := Files.Allocated (Capacity);
          Output : aliased Flaky;
          Encoder : Encoding.Encoder;
          Outcome : Pictlib.Results.Result;
       begin
-         Pictlib.Streams.Open (Output.Inner, Storage);
+         Pictlib.Streams.Open (Output.Inner, Storage.Data);
          Output.Fail_At := 40;
          Encoding.Initialize (Encoder, Output'Access);
          Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 37, 23));
@@ -549,8 +550,8 @@ package body Pictlib_Testing.Test_Encoding is
       --  no more.
       for Overclaims in Boolean loop
          declare
-            Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
-            Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
+            Image_Data : constant Samples.Pixels := Samples.Made (Samples.Gradient, 37, 23);
+            Storage : constant Files.Owned := Files.Allocated (Capacity);
             Output : aliased Flaky;
             Encoder : Encoding.Encoder;
             Outcome : Pictlib.Results.Result;
@@ -558,7 +559,7 @@ package body Pictlib_Testing.Test_Encoding is
               (if Overclaims then Pictlib.Errors.Internal_Invariant_Failed
                else Pictlib.Errors.Destination_Zero_Progress);
          begin
-            Pictlib.Streams.Open (Output.Inner, Storage);
+            Pictlib.Streams.Open (Output.Inner, Storage.Data);
             Output.Fail_At := 40;
             Output.Stalls := not Overclaims;
             Output.Overclaims := Overclaims;
@@ -577,14 +578,14 @@ package body Pictlib_Testing.Test_Encoding is
       --  A destination that raises part-way propagates its exception and fails the encoder, so no second picture
       --  can follow the part of the first it took.
       declare
-         Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
-         Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
+         Image_Data : constant Samples.Pixels := Samples.Made (Samples.Gradient, 37, 23);
+         Storage : constant Files.Owned := Files.Allocated (Capacity);
          Output : aliased Flaky;
          Encoder : Encoding.Encoder;
          Outcome : Pictlib.Results.Result;
          Raised : Boolean := False;
       begin
-         Pictlib.Streams.Open (Output.Inner, Storage);
+         Pictlib.Streams.Open (Output.Inner, Storage.Data);
          Output.Fail_At := 40;
          Output.Raises := True;
          Encoding.Initialize (Encoder, Output'Access);
@@ -608,10 +609,9 @@ package body Pictlib_Testing.Test_Encoding is
       for Short in Boolean loop
          for Move in 1 .. 4 loop
             declare
-               Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
-               Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
-               Other_Storage : constant Pictlib.Streams.Byte_Array_Access :=
-                 new Pictlib.Streams.Byte_Array (1 .. Capacity);
+               Image_Data : constant Samples.Pixels := Samples.Made (Samples.Gradient, 37, 23);
+               Storage : constant Files.Owned := Files.Allocated (Capacity);
+               Other_Storage : constant Files.Owned := Files.Allocated (Capacity);
                Output : aliased Flaky;
                Other : aliased Pictlib.Streams.Fixed_Buffer_Destination;
                Encoder : aliased Encoding.Encoder;
@@ -625,8 +625,8 @@ package body Pictlib_Testing.Test_Encoding is
                  (if Move in 1 | 4 then Pictlib.Errors.Operation_Cancelled else Pictlib.Errors.Invalid_State);
             begin
                Pictlib.Streams.Open
-                 (Output.Inner, Storage, Max_Transfer => (if Short then 1 else Pictlib.Byte_Count'Last));
-               Pictlib.Streams.Open (Other, Other_Storage);
+                 (Output.Inner, Storage.Data, Max_Transfer => (if Short then 1 else Pictlib.Byte_Count'Last));
+               Pictlib.Streams.Open (Other, Other_Storage.Data);
                Output.Fail_At := 40;
                Output.Target := Encoder'Unchecked_Access;
                Output.Move := Move;
@@ -651,17 +651,17 @@ package body Pictlib_Testing.Test_Encoding is
          end loop;
       end loop;
       declare
-         Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Black_And_White, 8, 2);
-         Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
+         Image_Data : constant Samples.Pixels := Samples.Made (Samples.Black_And_White, 8, 2);
+         Storage : constant Files.Owned := Files.Allocated (Capacity);
          Output : aliased Pictlib.Streams.Fixed_Buffer_Destination;
          Encoder : Encoding.Encoder;
          Outcome : Pictlib.Results.Result;
       begin
-         Pictlib.Streams.Open (Output, Storage);
+         Pictlib.Streams.Open (Output, Storage.Data);
          Encoding.Initialize (Encoder, Output'Access, (Layout => Encoding.Indexed_8, others => <>));
          Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 8, 2));
          Assert (Pictlib.Results.Succeeded (Outcome), "the first picture was not encoded");
-         Pictlib.Streams.Open (Output, Storage);
+         Pictlib.Streams.Open (Output, Storage.Data);
          Encoding.Reset (Encoder, Output'Access);
          Outcome := Encoding.Encode (Encoder, Samples.View (Image_Data, 8, 2));
          Assert (Pictlib.Results.Succeeded (Outcome) and then Encoding.Layout_Used (Encoder) = Encoding.Indexed_8,
@@ -671,14 +671,14 @@ package body Pictlib_Testing.Test_Encoding is
       --  A destination that calls Encode on its encoder is refused; a flush that fails or raises fails the encoder.
       for Move in 1 .. 3 loop
          declare
-            Image_Data : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 37, 23);
-            Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. Capacity);
+            Image_Data : constant Samples.Pixels := Samples.Made (Samples.Gradient, 37, 23);
+            Storage : constant Files.Owned := Files.Allocated (Capacity);
             Output : aliased Flaky;
             Encoder : aliased Encoding.Encoder;
             Outcome : Pictlib.Results.Result;
             Raised : Boolean := False;
          begin
-            Pictlib.Streams.Open (Output.Inner, Storage);
+            Pictlib.Streams.Open (Output.Inner, Storage.Data);
             Output.Fail_At := (if Move = 1 then 40 else Positive'Last);
             Output.Target := (if Move = 1 then Encoder'Unchecked_Access else null);
             Output.Flush_Fails := Move = 2;
@@ -707,9 +707,9 @@ package body Pictlib_Testing.Test_Encoding is
 
    procedure States (T : in out AUnit.Test_Cases.Test_Case'Class) is
       pragma Unreferenced (T);
-      Source : constant Samples.Bytes_Access := Samples.Make (Samples.Gradient, 4, 4);
+      Source : constant Samples.Pixels := Samples.Made (Samples.Gradient, 4, 4);
       Image : constant Pictlib.Images.Image_View := Samples.View (Source, 4, 4);
-      Storage : constant Pictlib.Streams.Byte_Array_Access := new Pictlib.Streams.Byte_Array (1 .. 10_000);
+      Storage : constant Files.Owned := Files.Allocated (10_000);
       Output : aliased Pictlib.Streams.Fixed_Buffer_Destination;
       Encoder : Encoding.Encoder;
       Outcome : Pictlib.Results.Result;
@@ -717,7 +717,7 @@ package body Pictlib_Testing.Test_Encoding is
       Assert (Encoding.State (Encoder) = Encoding.Created, "a new encoder is not Created");
       Outcome := Encoding.Encode (Encoder, Image);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State, "an uninitialized encoder encoded");
-      Pictlib.Streams.Open (Output, Storage);
+      Pictlib.Streams.Open (Output, Storage.Data);
       Encoding.Initialize (Encoder, Output'Access);
       Outcome := Encoding.Finish (Encoder);
       Assert (Outcome.First_Error.Code = Pictlib.Errors.Invalid_State, "an encoder finished before encoding");

@@ -19,7 +19,8 @@ package Pictlib.Fonts is
    --  Add: the file text in a family is drawn with.
    --  @param Table Table to extend; a later entry for the same name replaces the earlier one.
    --  @param Family A Macintosh font family name, compared without regard to case; an empty name is ignored,
-   --  as no picture names it.
+   --  as no picture names it. A picture's fontName is matched byte for byte as it is stored, in Mac Roman, each
+   --  byte one Character: a name beyond ASCII must be given in those bytes, and its case is folded as Latin-1's.
    --  @param Path A TrueType font file; empty removes the name's entry, so the name resolves as if never added.
    procedure Add (Table : in out Font_Table; Family : String; Path : String);
    --  Add: the file text in a font ID is drawn with.

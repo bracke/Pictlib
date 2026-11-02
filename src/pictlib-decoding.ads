@@ -75,8 +75,11 @@ package Pictlib.Decoding is
    function State (Object : Decoder) return Decoder_State;
    --  Read header.
    --  @param Object Decoder in state Ready; Header_Read on success; Stopped, until Reset or Initialize, when an
-   --  exception from the source propagates.
-   --  @return Operation result.
+   --  exception from the source propagates. The source may Cancel, Reset, Initialize or Finalize Object, which
+   --  stands: the call then fails with Operation_Cancelled after Cancel, Invalid_State otherwise, and keeps no
+   --  header.
+   --  @return Success; Invalid_State outside Ready or after the source rebound Object; Operation_Cancelled after
+   --  Cancel; otherwise the first failure reading the container.
    function Read_Header (Object : in out Decoder) return Results.Result;
    --  Header.
    --  @param Object Decoder.

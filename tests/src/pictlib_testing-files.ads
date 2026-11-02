@@ -10,10 +10,19 @@ package Pictlib_Testing.Files is
 
    --  Load: the whole of fixtures/<Name>.
    function Load (Name : String) return Bytes_Access;
+   --  Contents: the whole of fixtures/<Name>, as a value; nothing is left to free.
+   function Contents (Name : String) return Pictlib.Streams.Byte_Array;
    --  Load path: the whole of the file at Path.
    function Load_Path (Path : String) return Bytes_Access;
    --  Free: release a buffer Load, Load_Path or a tool allocated; null after.
    procedure Free (Item : in out Bytes_Access);
+   --  A heap buffer freed when it goes out of scope, for a destination or an image too large for the stack.
+   type Owned is new Ada.Finalization.Limited_Controlled with record
+      Data : Bytes_Access;
+   end record;
+   overriding procedure Finalize (Item : in out Owned);
+   --  Allocated: a zeroed buffer of Length bytes, owned.
+   function Allocated (Length : Natural) return Owned;
    --  Save path: create or replace the file at Path with Data, byte for byte.
    procedure Save_Path (Path : String; Data : Pictlib.Streams.Byte_Array);
 

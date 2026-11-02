@@ -42,8 +42,8 @@ package body Pictlib.Internal.Sessions is
    is
       Item : Errors.Diagnostic_Context := Context;
    begin
-      --  A context without a source offset leaves it 0, which no warning's offset can be: every warning comes from
-      --  at least the frame, past picSize, so 0 means none was given.
+      --  A context that gives no source offset leaves it 0, and gets the current offset. One that does give 0, as
+      --  a file-header warning at the source's start may, gets the current offset too, which is still 0.
       if Item.Source = 0 then
          Item.Source := S.Stream.Offset;
       end if;

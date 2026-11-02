@@ -76,8 +76,8 @@ package body Pictlib.Internal.Patterns is
       end if;
       --  A tile of more than Max_Tile_Pixels is not malformed, and no budget raises the bound, so it is never
       --  decoded and its budgets do not apply. Strictly that ends the picture at once, before any row is read,
-      --  so no limit on reading them hides it. Leniently its rows are skipped, the pattern's unit is charged, and
-      --  only then is the warning recorded; Item keeps pat1Data.
+      --  so no limit on reading them hides it. Leniently its rows are skipped, the pattern's unit and a unit a row
+      --  skipped are charged, as for a skipped copy, and only then is the warning recorded; Item keeps pat1Data.
       if Pixels > Max_Tile_Pixels then
          declare
             Context : constant Errors.Diagnostic_Context :=
@@ -88,7 +88,7 @@ package body Pictlib.Internal.Patterns is
             end if;
             Outcome := Pixmaps.Skip_Pixels (S, Header);
             if Results.Succeeded (Outcome) then
-               Outcome := Accounting.Charge_Work (S, Work);
+               Outcome := Accounting.Charge_Work (S, Work + Pixel_Count (Header.Height));
                Work := 0;
             end if;
             if Results.Succeeded (Outcome) then

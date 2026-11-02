@@ -1,3 +1,4 @@
+with Pictlib_Testing.Files;
 with Ada.Finalization;
 with Pictlib.Encoding;
 with Pictlib.Images;
@@ -39,6 +40,19 @@ package Pictlib_Testing.Samples is
    --  View of storage Make returned.
    function View
      (Storage : not null Bytes_Access;
+      Width, Height : Positive;
+      Format : Pictlib.Pixel_Format := Pictlib.RGB_24) return Pictlib.Images.Image_View;
+
+   --  An image Made built, which frees its pixels when it goes out of scope.
+   subtype Pixels is Pictlib_Testing.Files.Owned;
+   --  Made: Make's image, owned.
+   function Made
+     (Item : Kind;
+      Width, Height : Positive;
+      Format : Pictlib.Pixel_Format := Pictlib.RGB_24) return Pixels;
+   --  View of an image Made returned.
+   function View
+     (Item : Pixels;
       Width, Height : Positive;
       Format : Pictlib.Pixel_Format := Pictlib.RGB_24) return Pictlib.Images.Image_View;
 

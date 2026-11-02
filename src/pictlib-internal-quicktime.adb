@@ -3,6 +3,7 @@ with Pictlib.Errors;
 with Pictlib.Geometry;
 with Pictlib.Images;
 with Pictlib.Internal.Bytes;
+with Pictlib.Internal.Coverage;
 with Pictlib.Internal.Failures;
 with Pictlib.Internal.JPEG_Bridge;
 with Pictlib.Internal.Region_Reader;
@@ -158,11 +159,19 @@ package body Pictlib.Internal.QuickTime is
         (Top => Coordinate'Max (Header.Source.Top, 0), Left => Coordinate'Max (Header.Source.Left, 0),
          Bottom => Coordinate'Min (Header.Source.Bottom, Coordinate (Natural'Min (Item.Height, Largest))),
          Right => Coordinate'Min (Header.Source.Right, Coordinate (Natural'Min (Item.Width, Largest))));
+      --  The clamped srcRect's corners through the matrix, in local coordinates, then moved to the picture's.
+      Top_Left : constant Coverage.Point :=
+        Rendering.To_Picture
+          (P,
+           H => Round_Fixed (Long_Long_Integer (Clamped.Left) * Transform (1) + Transform (7)),
+           V => Round_Fixed (Long_Long_Integer (Clamped.Top) * Transform (5) + Transform (8)));
+      Bottom_Right : constant Coverage.Point :=
+        Rendering.To_Picture
+          (P,
+           H => Round_Fixed (Long_Long_Integer (Clamped.Right) * Transform (1) + Transform (7)),
+           V => Round_Fixed (Long_Long_Integer (Clamped.Bottom) * Transform (5) + Transform (8)));
       Destination : constant Regions.Area :=
-        (Top => Round_Fixed (Long_Long_Integer (Clamped.Top) * Transform (5) + Transform (8)) - P.Port.Origin_V,
-         Left => Round_Fixed (Long_Long_Integer (Clamped.Left) * Transform (1) + Transform (7)) - P.Port.Origin_H,
-         Bottom => Round_Fixed (Long_Long_Integer (Clamped.Bottom) * Transform (5) + Transform (8)) - P.Port.Origin_V,
-         Right => Round_Fixed (Long_Long_Integer (Clamped.Right) * Transform (1) + Transform (7)) - P.Port.Origin_H);
+        (Top => Top_Left.V, Left => Top_Left.H, Bottom => Bottom_Right.V, Right => Bottom_Right.H);
       Source_Width : constant Long_Long_Integer := Long_Long_Integer (Geometry.Width (Clamped));
       Source_Height : constant Long_Long_Integer := Long_Long_Integer (Geometry.Height (Clamped));
       Destination_Width : constant Long_Long_Integer := Long_Long_Integer (Destination.Right - Destination.Left);

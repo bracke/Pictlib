@@ -34,8 +34,8 @@ package Pictlib_Testing.Source_Policy is
    --  @param Root The pictlib tree.
    procedure Check_Readme (Root : String);
 
-   --  Production units depend only on Ada, Interfaces (not Interfaces.C), GNAT, System, pictlib, jpeglib and
-   --  textrender, bind no foreign code, and neither suppress checks nor reach memory around them (pragma Suppress,
+   --  Production units depend only on Ada, Interfaces (not Interfaces.C), pictlib, jpeglib and textrender, never
+   --  GNAT or System, bind no foreign code, and neither suppress checks nor reach memory around them (pragma Suppress,
    --  Unchecked_Conversion, 'Address, 'Unrestricted_Access). The unit is read whole, without comments, strings and
    --  character literals, and lower-cased: context clauses are taken clause by clause up to the unit itself, however
    --  they are laid out, and the words that interface foreign code (Import, Export, Convention, External_Name,

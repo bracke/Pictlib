@@ -182,7 +182,8 @@ package Pictlib.Internal.Sessions is
    function Skip_Data (S : in out Session; Count : Byte_Count) return Results.Result;
    --  Read payload.
    --  @param S Session reading an opcode's data.
-   --  @param Length Bytes to read within the per-opcode and allocation budgets.
+   --  @param Length Bytes to read within the picture byte, per-opcode and allocation budgets, each checked before
+   --  the buffer is allocated.
    --  @param Data Heap buffer holding them, which the caller frees; null on failure.
    --  @param In_Opcode False for data outside any opcode, which the per-opcode byte budget does not cover.
    --  @return Operation result.

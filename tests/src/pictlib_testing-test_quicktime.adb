@@ -34,7 +34,7 @@ package body Pictlib_Testing.Test_QuickTime is
    Image_Width : constant := 8;
    Image_Height : constant := 6;
 
-   function JPEG return Bytes is (Files.Load ("external/small.jpg").all);
+   function JPEG return Bytes is (Files.Contents ("external/small.jpg"));
 
    --  The expected pixel at X, Y: the reference at Map (X, Y), or white where nothing is drawn.
    type Mapping is access function (X, Y : Natural; Source_X, Source_Y : out Natural) return Boolean;

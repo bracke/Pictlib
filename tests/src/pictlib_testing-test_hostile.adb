@@ -186,6 +186,8 @@ package body Pictlib_Testing.Test_Hostile is
       --  The same skip with every row present: drawing goes on, with the black pat1Data in the tile's place.
       declare
          Rows : constant := 32_769;
+         --  The skipped rows, the pattern's unit and the fill's few.
+         Rows_And_Fill : constant := Rows + 100;
          --  A row of 8192 zero bytes: its word count, then 64 runs of 128.
          Row : constant Bytes := W (128) & Repeat (B (16#81#) & B (0), 64);
          Head : constant Bytes :=
@@ -217,12 +219,19 @@ package body Pictlib_Testing.Test_Hostile is
          Assert (Canvases.Picture_Of (Canvases.View (Storage'Access, 8, 2)) = "BBBBBBBB/BBBBBBBB",
                  "65535 x 32769 PixPat: pat1Data did not stand in, drew "
                  & Canvases.Picture_Of (Canvases.View (Storage'Access, 8, 2)));
-         --  The skip costs only the pattern's unit, under any budget: 100 units draw the whole picture.
-         Tight.Max_Drawing_Work := 100;
+         --  The skip costs the pattern's unit and a unit a row, as a skipped copy does: the rows' budget less one
+         --  fails, while that and the fill's few units draw the whole picture.
+         Tight.Max_Drawing_Work := Rows;
+         Canvases.Render (Whole.all, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Compatible,
+                          Budget => Tight);
+         Assert (Outcome.First_Error.Code = Errors.Limit_Exceeded
+                 and then Outcome.First_Error.Context.Limit = Pictlib.Drawing_Work_Limit,
+                 "the skipped tile's rows were not charged: " & Outcome.First_Error.Code'Image);
+         Tight.Max_Drawing_Work := Rows_And_Fill;
          Canvases.Render (Whole.all, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Compatible,
                           Budget => Tight);
          Assert (Pictlib.Results.Succeeded (Outcome),
-                 "the skipped tile was charged more than its unit: " & Outcome.First_Error.Code'Image);
+                 "the skipped tile was charged more than a unit a row: " & Outcome.First_Error.Code'Image);
          --  With no budget for that unit the skip fails, and leaves no warning that the tile was approximated.
          Tight.Max_Drawing_Work := 0;
          Canvases.Render (Whole.all, Decoder, Canvases.View (Storage'Access, 8, 2), Outcome, Compatible,

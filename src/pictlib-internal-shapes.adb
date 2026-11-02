@@ -31,6 +31,7 @@ package body Pictlib.Internal.Shapes is
             V, H : Integer;
          begin
             Outcome := Sessions.Read_Pair (S, V, H);
+            exit when not Results.Succeeded (Outcome);
             --  Kept local; the origin applies when the polygon is drawn.
             Points.Append (Point'(H => H, V => V));
          end;
@@ -65,6 +66,20 @@ package body Pictlib.Internal.Shapes is
 
    --  Whether the pen draws: a frame drawn without one covers nothing.
    function Has_Pen (P : Rendering.Painter) return Boolean is (P.Port.Pen_Width > 0 and then P.Port.Pen_Height > 0);
+
+   --  A frame drawn with no pen covers nothing, and walks nothing: True, Shape started and left empty, for one.
+   function Draws_Nothing
+     (P : Rendering.Painter;
+      S : Sessions.Session;
+      Verb : Shape_Verb;
+      Shape : in out Coverage.Shape) return Boolean is
+   begin
+      if Verb = Framed and then not Has_Pen (P) then
+         Coverage.Start (Shape, P.Window, Accounting.Shape_Work_Left (S));
+         return True;
+      end if;
+      return False;
+   end Draws_Nothing;
 
    --  The pixels a shape verb changes, for the rect, round rect, oval and arc kinds.
    procedure Rect_Like
@@ -144,9 +159,7 @@ package body Pictlib.Internal.Shapes is
             return Outcome;
          end if;
       end if;
-      --  A frame drawn with no pen covers nothing, and walks nothing.
-      if Verb = Framed and then not Has_Pen (P) then
-         Coverage.Start (Shape, P.Window, Accounting.Shape_Work_Left (S));
+      if Draws_Nothing (P, S, Verb, Shape) then
          return Results.Success;
       end if;
       --  The polygon is copied and moved for drawing: work a unit a point, whether or not a line lands, and
@@ -195,21 +208,20 @@ package body Pictlib.Internal.Shapes is
             return Outcome;
          end if;
       end if;
-      --  A frame drawn with no pen covers nothing, and walks nothing.
-      if Verb = Framed and then not Has_Pen (P) then
-         Coverage.Start (Shape, P.Window, Accounting.Shape_Work_Left (S));
+      if Draws_Nothing (P, S, Verb, Shape) then
          return Results.Success;
       end if;
-      --  The region is copied and moved for drawing: storage by its size, and work like drawing it.
+      --  The region is copied and moved for drawing: storage by its size, and work like drawing it, charged
+      --  before the copy is made.
       Outcome :=
         Accounting.Admit_Aggregate (S, Accounting.Region_Unit_Bytes * Byte_Count (Regions.Size (P.Port.Last_Region)));
       if not Results.Succeeded (Outcome) then
          return Outcome;
       end if;
       declare
-         Region : Regions.Region := P.Port.Last_Region;
+         Region : Regions.Region;
       begin
-         Outcome := Rendering.Region_To_Picture (P, S, Region);
+         Outcome := Rendering.Region_To_Picture (P, S, P.Port.Last_Region, Region);
          if not Results.Succeeded (Outcome) then
             return Outcome;
          end if;

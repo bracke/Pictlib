@@ -54,8 +54,8 @@ package Pictlib.Internal.Sessions.Accounting is
    --  this row's and the next's, which swap buffers and so both grow to the most edges active at once; and its
    --  crossing.
    Polygon_Edge_Bytes : constant := 3 * 48 + 8;
-   --  A unit of a region's size, for a copy of it.
-   Region_Unit_Bytes : constant := 8;
+   --  A unit of a region's size, for a copy of it: at most a 12-byte scanline record, as an empty scanline is.
+   Region_Unit_Bytes : constant := 12;
    --  Each byte of a region read: its scanlines and inversion points, with capacity growth. An empty scanline,
    --  4 bytes read, is a 12-byte record, and growth may double it.
    Region_Payload_Factor : constant := 6;

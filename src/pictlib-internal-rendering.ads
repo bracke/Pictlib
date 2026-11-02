@@ -127,18 +127,26 @@ package Pictlib.Internal.Rendering is
    --  @return The point in picture coordinates.
    function To_Picture (P : Painter; H, V : Integer) return Coverage.Point is
      ((H => H - P.Port.Origin_H, V => V - P.Port.Origin_V));
-   --  To picture.
-   --  @param P Painter.
-   --  @param Item A local region, moved to picture coordinates.
-   procedure To_Picture (P : Painter; Item : in out Regions.Region);
-   --  Region to picture: a region drawn or masked by, moved to picture coordinates, the move charged as drawing
-   --  work first, a unit of its size.
+   --  Region to picture: a mask, moved to picture coordinates, the move charged as drawing work first, a unit of
+   --  its size. Regions move only through this and the copying form below, so every move is charged.
    --  @param P Painter.
    --  @param S Session charged.
    --  @param Item A local region, moved to picture coordinates when the charge succeeds.
    --  @return Success, or the drawing-work limit.
    function Region_To_Picture (P : Painter; S : in out Sessions.Session; Item : in out Regions.Region)
      return Results.Result;
+   --  Region to picture: a copy of a region kept in the port, moved to picture coordinates, the move charged as
+   --  drawing work before the copy is made.
+   --  @param P Painter.
+   --  @param S Session charged.
+   --  @param Source A local region, left as it is.
+   --  @param Moved Its copy in picture coordinates when the charge succeeds; empty otherwise.
+   --  @return Success, or the drawing-work limit.
+   function Region_To_Picture
+     (P : Painter;
+      S : in out Sessions.Session;
+      Source : Regions.Region;
+      Moved : out Regions.Region) return Results.Result;
 
    --  Sampled: the nearest-neighbour rule copies and images scale by.
    --  @param Offset A destination pixel's offset from the destination's first pixel, from 0.
