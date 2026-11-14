@@ -1,49 +1,22 @@
+with Pictlib.Internal.Bytes;
 with Pictlib.Internal.Replies;
 
 package body Pictlib.Streams is
-   --  One step of Read_Exact or Skip_Exact, Completed of Total bytes done before it: the source's failure, the end
-   --  of the input short of Total, or Success when the step gave some.
+   --  One step of Skip_Exact, Completed of Total bytes done before it: the source's failure, the end of the input
+   --  short of Total, or Success when the step gave some. The source's Offset, caller code, is asked only on a
+   --  failure.
    function Judged_Step
      (Object : Source'Class;
       Step : Source_Result;
       Total, Completed : Byte_Count) return Results.Result
-   is
-   begin
-      --  A sound step needs no diagnostic, so the source's Offset, caller code, is asked only on a failure.
-      if not Errors.Is_Fatal (Step.Error) and then Step.Count in 1 .. Total - Completed then
-         return Results.Success;
-      end if;
-      declare
-         Where : constant Source_Offset := Object.Offset;
-         Failure : constant Errors.Error := Internal.Replies.Judged (Step, Total - Completed, Where);
-      begin
-         if Errors.Is_Fatal (Failure) then
-            return Results.Failure (Failure);
-         end if;
-         --  Nothing, at the end of the input.
-         return Results.Failure
-           (Errors.Make
-              (Errors.Source_Unexpected_End,
-               (Source => Where, Expected => Total, Actual => Completed, others => <>)));
-      end;
-   end Judged_Step;
+   is (if Internal.Replies.Sound_Step (Step, Total - Completed) then Results.Success
+       else Internal.Replies.Step_Failure (Object, Step, Total, Completed));
 
    function Read_Exact (Object : in out Source'Class; Buffer : out Byte_Array) return Results.Result is
-      Completed : Natural := 0;
+      Outcome : Results.Result := Results.Success;
    begin
-      while Completed < Buffer'Length loop
-         declare
-            Step : constant Source_Result := Object.Read (Buffer (Buffer'First + Completed .. Buffer'Last));
-            Outcome : constant Results.Result :=
-              Judged_Step (Object, Step, Byte_Count (Buffer'Length), Byte_Count (Completed));
-         begin
-            if not Results.Succeeded (Outcome) then
-               return Outcome;
-            end if;
-            Completed := Completed + Natural (Step.Count);
-         end;
-      end loop;
-      return Results.Success;
+      Internal.Bytes.Fill (Object, Buffer, Outcome);
+      return Outcome;
    end Read_Exact;
 
    function Skip_Exact (Object : in out Source'Class; Count : Byte_Count) return Results.Result is

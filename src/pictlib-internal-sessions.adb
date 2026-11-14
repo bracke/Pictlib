@@ -142,14 +142,21 @@ package body Pictlib.Internal.Sessions is
      (Picture_Stream.Picture_Offset (S.Stream) - S.Counts.Data_Start);
 
    --  Admit More bytes of the current opcode's data against the per-opcode budget.
-   function Admit_Data (S : Session; More : Byte_Count) return Results.Result is
-      Used : constant Byte_Count := Opcode_Data_Length (S);
-      Sum : constant Byte_Count := Checked_Arithmetic.Saturating_Add (Used, More);
+   --  Admit_Data for the readers below, which leave Outcome, a success, as it is unless it fails: a field read
+   --  builds one result, its own, rather than one at every step.
+   procedure Admit (S : Session; More : Byte_Count; Outcome : in out Results.Result) is
+      Sum : constant Byte_Count := Checked_Arithmetic.Saturating_Add (Opcode_Data_Length (S), More);
    begin
       if Sum > S.Budget.Max_Opcode_Bytes then
-         return Over_Limit (S, Opcode_Byte_Limit, S.Budget.Max_Opcode_Bytes, Sum);
+         Outcome := Over_Limit (S, Opcode_Byte_Limit, S.Budget.Max_Opcode_Bytes, Sum);
       end if;
-      return Results.Success;
+   end Admit;
+
+   function Admit_Data (S : Session; More : Byte_Count) return Results.Result is
+      Outcome : Results.Result := Results.Success;
+   begin
+      Admit (S, More, Outcome);
+      return Outcome;
    end Admit_Data;
 
    function Skip_Data (S : in out Session; Count : Byte_Count) return Results.Result is
@@ -224,23 +231,25 @@ package body Pictlib.Internal.Sessions is
    end Read_Polygon_Size;
 
    function Read_Word (S : in out Session; Value : out Interfaces.Unsigned_16) return Results.Result is
-      Outcome : constant Results.Result := Admit_Data (S, 2);
+      Outcome : Results.Result := Results.Success;
    begin
       Value := 0;
-      if not Results.Succeeded (Outcome) then
-         return Outcome;
+      Admit (S, 2, Outcome);
+      if Results.Succeeded (Outcome) then
+         Bytes.Read_U16_BE (S.Stream, Value, Outcome);
       end if;
-      return Bytes.Read_U16_BE (S.Stream, Value);
+      return Outcome;
    end Read_Word;
 
    function Read_Byte (S : in out Session; Value : out Byte) return Results.Result is
-      Outcome : constant Results.Result := Admit_Data (S, 1);
+      Outcome : Results.Result := Results.Success;
    begin
       Value := 0;
-      if not Results.Succeeded (Outcome) then
-         return Outcome;
+      Admit (S, 1, Outcome);
+      if Results.Succeeded (Outcome) then
+         Bytes.Read_Byte (S.Stream, Value, Outcome);
       end if;
-      return Bytes.Read_Byte (S.Stream, Value);
+      return Outcome;
    end Read_Byte;
 
    function Read_RGB (S : in out Session; Color : out Images.RGB_Color) return Results.Result is
@@ -252,13 +261,14 @@ package body Pictlib.Internal.Sessions is
    end Read_RGB;
 
    function Read_Long (S : in out Session; Value : out Interfaces.Unsigned_32) return Results.Result is
-      Outcome : constant Results.Result := Admit_Data (S, 4);
+      Outcome : Results.Result := Results.Success;
    begin
       Value := 0;
-      if not Results.Succeeded (Outcome) then
-         return Outcome;
+      Admit (S, 4, Outcome);
+      if Results.Succeeded (Outcome) then
+         Bytes.Read_U32_BE (S.Stream, Value, Outcome);
       end if;
-      return Bytes.Read_U32_BE (S.Stream, Value);
+      return Outcome;
    end Read_Long;
 
    function Read_Data_Length (S : in out Session; Length : out Byte_Count) return Results.Result is
@@ -273,21 +283,29 @@ package body Pictlib.Internal.Sessions is
    end Read_Data_Length;
 
    function Read_Bounds (S : in out Session; Value : out Geometry.Rect) return Results.Result is
-      Outcome : constant Results.Result := Admit_Data (S, 8);
+      Outcome : Results.Result := Results.Success;
    begin
       Value := (others => 0);
-      if not Results.Succeeded (Outcome) then
-         return Outcome;
+      Admit (S, 8, Outcome);
+      if Results.Succeeded (Outcome) then
+         Bytes.Read_Rect (S.Stream, Value, Outcome);
       end if;
-      return Bytes.Read_Rect (S.Stream, Value);
+      return Outcome;
    end Read_Bounds;
 
    function Read_Pair (S : in out Session; V, H : out Integer) return Results.Result is
       Raw_V, Raw_H : Interfaces.Unsigned_16 := 0;
-      Outcome : Results.Result := Read_Word (S, Raw_V);
+      Outcome : Results.Result := Results.Success;
    begin
+      Admit (S, 2, Outcome);
       if Results.Succeeded (Outcome) then
-         Outcome := Read_Word (S, Raw_H);
+         Bytes.Read_U16_BE (S.Stream, Raw_V, Outcome);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Admit (S, 2, Outcome);
+      end if;
+      if Results.Succeeded (Outcome) then
+         Bytes.Read_U16_BE (S.Stream, Raw_H, Outcome);
       end if;
       V := Integer (Bytes.To_Coordinate (Raw_V));
       H := Integer (Bytes.To_Coordinate (Raw_H));
@@ -296,10 +314,11 @@ package body Pictlib.Internal.Sessions is
 
    --  A read that succeeds fills Buffer; only one that fails leaves it to be cleared.
    function Read_Into (S : in out Session; Buffer : out Streams.Byte_Array) return Results.Result is
-      Outcome : Results.Result := Admit_Data (S, Buffer'Length);
+      Outcome : Results.Result := Results.Success;
    begin
+      Admit (S, Buffer'Length, Outcome);
       if Results.Succeeded (Outcome) and then Buffer'Length > 0 then
-         Outcome := Streams.Read_Exact (S.Stream, Buffer);
+         Bytes.Fill (S.Stream, Buffer, Outcome);
       end if;
       if not Results.Succeeded (Outcome) then
          Buffer := [others => 0];

@@ -110,6 +110,11 @@ Output, drawing-work charges and the limits are unchanged.
   glyph's row in the atlas is worked out once a row, and ink a mode paints
   in one color, as srcOr does, is painted without reading the view (text
   23 % fewer); a shape reserves its span pool with its rows.
+- The decoder's field reads build a result only when they fail: the session's
+  readers, the byte readers and exact reads take an outcome they change only
+  on failure, the picture stream answers and judges a reply only when it
+  must, and Read_Exact and Skip_Exact share one judgement of a step. Clipped
+  ovals take 15 % fewer instructions, every vector picture somewhat fewer.
 
 ### Hostile input
 

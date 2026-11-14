@@ -28,4 +28,21 @@ package body Pictlib.Internal.Replies is
       end if;
       return Errors.Make (Errors.No_Error);
    end Judged_Write;
+
+   function Step_Failure
+     (Object : Streams.Source'Class;
+      Step : Streams.Source_Result;
+      Total, Completed : Byte_Count) return Results.Result
+   is
+      Where : constant Source_Offset := Object.Offset;
+      Failure : constant Errors.Error := Judged (Step, Total - Completed, Where);
+   begin
+      if Errors.Is_Fatal (Failure) then
+         return Results.Failure (Failure);
+      end if;
+      --  Nothing, at the end of the input.
+      return Results.Failure
+        (Errors.Make
+           (Errors.Source_Unexpected_End, (Source => Where, Expected => Total, Actual => Completed, others => <>)));
+   end Step_Failure;
 end Pictlib.Internal.Replies;

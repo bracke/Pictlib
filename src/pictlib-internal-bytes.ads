@@ -14,6 +14,51 @@ package Pictlib.Internal.Bytes is
    --  Free: releases a heap byte buffer.
    procedure Free is new Ada.Unchecked_Deallocation (Streams.Byte_Array, Streams.Byte_Array_Access);
 
+   --  The readers come twice: as functions, and as procedures for the decoder's hot paths, which leave Outcome,
+   --  a success when they are called, as it is when they succeed and make it the failure otherwise, so a field
+   --  read builds no result unless it fails.
+
+   --  Fill: Streams.Read_Exact, the procedure form.
+   --  @param Object Source to read from.
+   --  @param Buffer Filled whole when the read succeeds; only the bytes delivered are defined otherwise.
+   --  @param Outcome As above.
+   procedure Fill
+     (Object : in out Streams.Source'Class;
+      Buffer : out Streams.Byte_Array;
+      Outcome : in out Results.Result);
+   --  Read byte, the procedure form.
+   --  @param Object Source to read from.
+   --  @param Value Byte read; 0 on failure.
+   --  @param Outcome As above.
+   procedure Read_Byte
+     (Object : in out Streams.Source'Class;
+      Value : out Byte;
+      Outcome : in out Results.Result);
+   --  Read U16 BE, the procedure form.
+   --  @param Object Source to read from.
+   --  @param Value Big-endian 16-bit value read; 0 on failure.
+   --  @param Outcome As above.
+   procedure Read_U16_BE
+     (Object : in out Streams.Source'Class;
+      Value : out Interfaces.Unsigned_16;
+      Outcome : in out Results.Result);
+   --  Read U32 BE, the procedure form.
+   --  @param Object Source to read from.
+   --  @param Value Big-endian 32-bit value read; 0 on failure.
+   --  @param Outcome As above.
+   procedure Read_U32_BE
+     (Object : in out Streams.Source'Class;
+      Value : out Interfaces.Unsigned_32;
+      Outcome : in out Results.Result);
+   --  Read rect, the procedure form.
+   --  @param Object Source to read from.
+   --  @param Value Rectangle read as top, left, bottom, right; all zero on failure.
+   --  @param Outcome As above.
+   procedure Read_Rect
+     (Object : in out Streams.Source'Class;
+      Value : out Geometry.Rect;
+      Outcome : in out Results.Result);
+
    --  Read byte.
    --  @param Object Source to read from.
    --  @param Value Byte read; 0 on failure.

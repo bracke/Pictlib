@@ -76,11 +76,20 @@ package body Pictlib.Internal.Picture_Stream is
       Step : Streams.Source_Result;
       Requested : Byte_Count) return Streams.Source_Result
    is
-      Failure : constant Errors.Error :=
-        Replies.Judged (Step, Requested, At_Offset (Object));
    begin
-      if Errors.Is_Fatal (Failure) then
-         return (Error => Failure, Count => 0, End_Of_Input => False);
+      --  A sound reply, as almost every one is, is counted and passed on as it is: only one Judged would fault is
+      --  judged, and so builds a diagnostic.
+      if not (not Errors.Is_Fatal (Step.Error)
+              and then Step.Count <= Requested
+              and then (Step.Count > 0 or else Step.End_Of_Input or else Requested = 0))
+      then
+         declare
+            Failure : constant Errors.Error := Replies.Judged (Step, Requested, At_Offset (Object));
+         begin
+            if Errors.Is_Fatal (Failure) then
+               return (Error => Failure, Count => 0, End_Of_Input => False);
+            end if;
+         end;
       end if;
       Object.Consumed := Object.Consumed + Step.Count;
       Object.Input_Ended := Step.End_Of_Input;
@@ -145,24 +154,21 @@ package body Pictlib.Internal.Picture_Stream is
 
    function Picture_Offset (Object : Reader) return Byte_Count is (Object.Consumed - Object.Picture_Origin);
 
-   --  What Read and Skip answer without asking the source, for Wanted bytes: nothing to read from, nothing wanted,
-   --  the input ended or the budget spent. False when the look-ahead or the source must give them.
-   function Answered (Object : Reader; Wanted : Byte_Count; Reply : out Streams.Source_Result) return Boolean is
-   begin
-      Reply := (Error => Errors.Make (Errors.No_Error), Count => 0, End_Of_Input => False);
-      if Object.Input = null then
-         Reply := Unbound_Reply;
-      elsif Wanted = 0 then
-         null;
-      elsif Buffered (Object) = 0 and then Object.Input_Ended then
-         Reply.End_Of_Input := True;
-      elsif Remaining_Budget (Object) = 0 then
-         Reply.Error := Over_Budget (Object);
-      else
-         return False;
-      end if;
-      return True;
-   end Answered;
+   --  Whether Read and Skip must ask the look-ahead or the source for Wanted bytes: unless there is nothing to read
+   --  from, nothing wanted, the input ended or the budget spent, which Answer answers.
+   function Asks (Object : Reader; Wanted : Byte_Count) return Boolean is
+     (Object.Input /= null and then Wanted > 0
+      and then not (Buffered (Object) = 0 and then Object.Input_Ended)
+      and then Remaining_Budget (Object) > 0);
+
+   --  What Read and Skip answer when they need not ask, built only then.
+   function Answer (Object : Reader; Wanted : Byte_Count) return Streams.Source_Result is
+     (if Object.Input = null then Unbound_Reply
+      elsif Wanted = 0 then (Error => Errors.Make (Errors.No_Error), Count => 0, End_Of_Input => False)
+      elsif Buffered (Object) = 0 and then Object.Input_Ended
+      then (Error => Errors.Make (Errors.No_Error), Count => 0, End_Of_Input => True)
+      else (Error => Over_Budget (Object), Count => 0, End_Of_Input => False))
+     with Pre => not Asks (Object, Wanted);
 
    --  Up to Wanted bytes of a look-ahead that holds some, consumed.
    function Take_Buffered (Object : in out Reader; Wanted : Byte_Count) return Streams.Source_Result is
@@ -180,10 +186,9 @@ package body Pictlib.Internal.Picture_Stream is
    --  Only the bytes delivered are defined: clearing the rest on every call would make a caller that asks again
    --  for what is left, as Read_Exact does, clear the same bytes over and over.
    overriding function Read (Object : in out Reader; Buffer : out Streams.Byte_Array) return Streams.Source_Result is
-      Reply : Streams.Source_Result;
    begin
-      if Answered (Object, Byte_Count (Buffer'Length), Reply) then
-         return Reply;
+      if not Asks (Object, Byte_Count (Buffer'Length)) then
+         return Answer (Object, Byte_Count (Buffer'Length));
       elsif Buffered (Object) > 0 then
          declare
             Count : constant Natural := Natural'Min (Buffer'Length, Buffered (Object));
@@ -226,10 +231,9 @@ package body Pictlib.Internal.Picture_Stream is
      (At_Offset (Object));
 
    overriding function Skip (Object : in out Reader; Count : Byte_Count) return Streams.Source_Result is
-      Reply : Streams.Source_Result;
    begin
-      if Answered (Object, Count, Reply) then
-         return Reply;
+      if not Asks (Object, Count) then
+         return Answer (Object, Count);
       elsif Buffered (Object) > 0 then
          return Take_Buffered (Object, Count);
       end if;
