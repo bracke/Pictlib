@@ -196,7 +196,7 @@ package body Pictlib.Internal.QuickTime is
          return
            (if Copied then Pixel else Transfer_Modes.Compose (Kind, Pixel, Under, P.Port.Colors, Colorize => False));
       end Color_At;
-      function Paint is new Rendering.Paint_Row (Color_At, Reads_Under => Transfer_Modes.Reads_Destination (Kind));
+      procedure Paint is new Rendering.Paint_Row (Color_At, Reads_Under => Transfer_Modes.Reads_Destination (Kind));
    begin
       if not Results.Succeeded (Outcome) or else Geometry.Is_Empty (Clamped) or else Regions.Is_Empty (Destination)
       then
@@ -205,9 +205,9 @@ package body Pictlib.Internal.QuickTime is
       for Y in Integer'Max (Destination.Top, P.Window.Top) .. Integer'Min (Destination.Bottom, P.Window.Bottom) - 1
       loop
          exit when not Results.Succeeded (Outcome);
-         Outcome := Rendering.Begin_Masked_Row (P, S, Y, Destination.Left, Destination.Right, Mask, Has_Mask);
+         Rendering.Begin_Masked_Row (P, S, Y, Destination.Left, Destination.Right, Mask, Has_Mask, Outcome);
          if Results.Succeeded (Outcome) then
-            Outcome := Paint (P, S, Y);
+            Paint (P, S, Y, Outcome);
          end if;
       end loop;
       return Outcome;

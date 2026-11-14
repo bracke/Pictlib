@@ -26,14 +26,16 @@ package body Pictlib.Internal.Sessions.Accounting is
    function Charge_Work (S : in out Session; Units : Natural) return Results.Result is
      (Charge_Work (S, Pixel_Count (Units)));
 
-   function Charged (S : in out Session; Units : Natural) return Boolean is
+   function Charged (S : in out Session; Units : Pixel_Count) return Boolean is
    begin
-      if Pixel_Count (Units) > Work_Left (S) then
+      if Units > Work_Left (S) then
          return False;
       end if;
-      S.Counts.Work_Used := S.Counts.Work_Used + Pixel_Count (Units);
+      S.Counts.Work_Used := S.Counts.Work_Used + Units;
       return True;
    end Charged;
+
+   function Charged (S : in out Session; Units : Natural) return Boolean is (Charged (S, Pixel_Count (Units)));
 
    function Admit_Allocation (S : in out Session; Length : Byte_Count) return Results.Result is
    begin

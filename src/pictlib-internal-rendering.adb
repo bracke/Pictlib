@@ -111,70 +111,74 @@ package body Pictlib.Internal.Rendering is
       return Hilited;
    end Take_Hilite;
 
+   --  The row primitives below leave Outcome, a success when they are called, as it is when they succeed and
+   --  make it the failure otherwise: a result is built only for a failure, as one is made for every row.
+
    --  Cut Row_Spans to Item's row Row, its columns Shift to the left of the row's: the region walk is charged
    --  first, and the row is cut only once it is paid for.
-   function Cut_Row
+   procedure Cut_Row
      (S : in out Sessions.Session;
       Item : in out Regions.Region;
       Row, Shift : Integer;
-      Cut, Row_Spans, Scratch : in out Regions.Span_Vectors.Vector) return Results.Result
+      Cut, Row_Spans, Scratch : in out Regions.Span_Vectors.Vector;
+      Outcome : in out Results.Result)
    is
       Work : Pixel_Count;
-      Outcome : Results.Result;
    begin
       Regions.Row_Spans (Item, Row, Cut, Work, Accounting.Work_Left (S));
-      Outcome := Accounting.Charge_Work (S, Work);
-      if Results.Succeeded (Outcome) then
-         if Shift /= 0 then
-            for Span of Cut loop
-               Span := (Span.Left - Shift, Span.Right - Shift);
-            end loop;
-         end if;
-         Regions.Intersect (Row_Spans, Cut, Scratch);
-         Row_Spans.Move (Scratch);
+      if not Accounting.Charged (S, Work) then
+         Outcome := Accounting.Charge_Work (S, Work);
+         return;
       end if;
-      return Outcome;
+      if Shift /= 0 then
+         for Span of Cut loop
+            Span := (Span.Left - Shift, Span.Right - Shift);
+         end loop;
+      end if;
+      Regions.Intersect (Row_Spans, Cut, Scratch);
+      Row_Spans.Move (Scratch);
    end Cut_Row;
 
    --  The clip is local: picture row Y is its row Y + origin, and its columns lie origin to the right.
-   function Clip_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result is
-     (if not P.Port.Has_Clip then Results.Success
-      else Cut_Row (S, P.Port.Clip, Y + P.Port.Origin_V, P.Port.Origin_H, P.Machine.Clip_Spans, P.Machine.Row_Spans,
-                    P.Machine.Scratch));
+   procedure Clip_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer; Outcome : in out Results.Result) is
+   begin
+      if P.Port.Has_Clip then
+         Cut_Row (S, P.Port.Clip, Y + P.Port.Origin_V, P.Port.Origin_H, P.Machine.Clip_Spans, P.Machine.Row_Spans,
+                  P.Machine.Scratch, Outcome);
+      end if;
+   end Clip_Row;
 
-   function Begin_Row (P : in out Painter; S : in out Sessions.Session; Y, Left, Right : Integer)
-     return Results.Result
+   procedure Begin_Row
+     (P : in out Painter;
+      S : in out Sessions.Session;
+      Y, Left, Right : Integer;
+      Outcome : in out Results.Result)
    is
       First : constant Integer := Integer'Max (Left, P.Window.Left);
       Last : constant Integer := Integer'Min (Right, P.Window.Right);
    begin
       P.Machine.Row_Spans.Clear;
       if Y not in P.Window.Top .. P.Window.Bottom - 1 or else First >= Last then
-         return Results.Success;
+         return;
       end if;
       P.Machine.Row_Spans.Append (Regions.Span'(First, Last));
-      return Clip_Row (P, S, Y);
+      Clip_Row (P, S, Y, Outcome);
    end Begin_Row;
 
    function Row_Is_Empty (P : Painter) return Boolean is (P.Machine.Row_Spans.Is_Empty);
 
-   function Mask_Row (P : in out Painter; S : in out Sessions.Session; Mask : in out Regions.Region; Y : Integer)
-     return Results.Result is
-     (Cut_Row (S, Mask, Y, 0, P.Machine.Mask_Spans, P.Machine.Row_Spans, P.Machine.Scratch));
-
-   function Begin_Masked_Row
+   procedure Begin_Masked_Row
      (P : in out Painter;
       S : in out Sessions.Session;
       Y, Left, Right : Integer;
       Mask : in out Regions.Region;
-      Masked : Boolean) return Results.Result
-   is
-      Outcome : constant Results.Result := Begin_Row (P, S, Y, Left, Right);
+      Masked : Boolean;
+      Outcome : in out Results.Result) is
    begin
+      Begin_Row (P, S, Y, Left, Right, Outcome);
       if Results.Succeeded (Outcome) and then Masked and then not Row_Is_Empty (P) then
-         return Mask_Row (P, S, Mask, Y);
+         Cut_Row (S, Mask, Y, 0, P.Machine.Mask_Spans, P.Machine.Row_Spans, P.Machine.Scratch, Outcome);
       end if;
-      return Outcome;
    end Begin_Masked_Row;
 
    function Never (X, Y : Integer) return Boolean is
@@ -186,10 +190,9 @@ package body Pictlib.Internal.Rendering is
    --  Each span of the begun row charged, then painted by Paint_Span, in order; none past the budget.
    generic
       with procedure Paint_Span (P : in out Painter; Left, Right : Integer);
-   function Charged_Spans (P : in out Painter; S : in out Sessions.Session) return Results.Result;
+   procedure Charged_Spans (P : in out Painter; S : in out Sessions.Session; Outcome : in out Results.Result);
 
-   function Charged_Spans (P : in out Painter; S : in out Sessions.Session) return Results.Result is
-      Outcome : Results.Result := Results.Success;
+   procedure Charged_Spans (P : in out Painter; S : in out Sessions.Session; Outcome : in out Results.Result) is
    begin
       for Index in P.Machine.Row_Spans.First_Index .. P.Machine.Row_Spans.Last_Index loop
          declare
@@ -203,10 +206,14 @@ package body Pictlib.Internal.Rendering is
             Paint_Span (P, Span.Left, Span.Right);
          end;
       end loop;
-      return Outcome;
    end Charged_Spans;
 
-   function Paint_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result is
+   procedure Paint_Row
+     (P : in out Painter;
+      S : in out Sessions.Session;
+      Y : Integer;
+      Outcome : in out Results.Result)
+   is
       --  The view is stepped through a pixel at a time, its index worked out once a span.
       procedure Paint_Span (P : in out Painter; Left, Right : Integer) is
          At_Pixel : Positive;
@@ -224,21 +231,25 @@ package body Pictlib.Internal.Rendering is
             At_Pixel := At_Pixel + P.Machine.Target.Step;
          end loop;
       end Paint_Span;
-      function Paint is new Charged_Spans (Paint_Span);
+      procedure Paint is new Charged_Spans (Paint_Span);
    begin
-      return Paint (P, S);
+      Paint (P, S, Outcome);
    end Paint_Row;
 
-   function Paint_Row_Color (P : in out Painter; S : in out Sessions.Session; Y : Integer; Color : Images.RGB_Color)
-     return Results.Result
+   procedure Paint_Row_Color
+     (P : in out Painter;
+      S : in out Sessions.Session;
+      Y : Integer;
+      Color : Images.RGB_Color;
+      Outcome : in out Results.Result)
    is
       procedure Paint_Span (P : in out Painter; Left, Right : Integer) is
       begin
          Canvas.Put_Span (P.Machine.Target, Left - P.Window.Left, Right - P.Window.Left, Y - P.Window.Top, Color);
       end Paint_Span;
-      function Paint is new Charged_Spans (Paint_Span);
+      procedure Paint is new Charged_Spans (Paint_Span);
    begin
-      return Paint (P, S);
+      Paint (P, S, Outcome);
    end Paint_Row_Color;
 
    function Fill
@@ -292,7 +303,7 @@ package body Pictlib.Internal.Rendering is
                                          Bit_Source => True)
             else Transfer_Modes.Compose
                    (Kind, Patterns.Sample (Source, X, Y), Under, P.Port.Colors, Colorize, Bit_Source => Colorize));
-         function Paint is new Paint_Row
+         procedure Paint is new Paint_Row
            (Color_At, Reads_Under => not Patterned or else Transfer_Modes.Reads_Destination (Kind));
 
          --  A copied pattern does not depend on what is under it: one period of a row is composed, and copied
@@ -315,7 +326,7 @@ package body Pictlib.Internal.Rendering is
                   Patterns.Period (Source));
             end if;
          end Repeat_Span;
-         function Repeated is new Charged_Spans (Repeat_Span);
+         procedure Repeated is new Charged_Spans (Repeat_Span);
 
          --  A bit pattern under a mode where each of its two colors either paints one color or changes nothing,
          --  as or and bic do: a pixel is the dark bit's outcome or the light bit's, never read.
@@ -332,7 +343,7 @@ package body Pictlib.Internal.Rendering is
          begin
             return (if Dark then Dark_Color else Light_Color);
          end Two_Tone_Color;
-         function Two_Tone is new Paint_Row (Two_Tone_Color, Reads_Under => False, Keeps => Two_Tone_Keeps);
+         procedure Two_Tone is new Paint_Row (Two_Tone_Color, Reads_Under => False, Keeps => Two_Tone_Keeps);
          Two_Toned : Boolean := False;
       begin
          --  A uniform pattern whose result does not depend on the pixels under it paints one color, or nothing.
@@ -352,14 +363,18 @@ package body Pictlib.Internal.Rendering is
             exit when not Results.Succeeded (Outcome);
             Coverage.Copy_Row (Shape, Y, P.Machine.Row_Spans);
             if not P.Machine.Row_Spans.Is_Empty then
-               Outcome := Clip_Row (P, S, Y);
+               Clip_Row (P, S, Y, Outcome);
                if Results.Succeeded (Outcome) then
                   Current_Row := Y;
-                  Outcome :=
-                    (if Effect = Transfer_Modes.Constant_Color then Paint_Row_Color (P, S, Y, Color)
-                     elsif Patterned and then not Transfer_Modes.Reads_Destination (Kind) then Repeated (P, S)
-                     elsif Two_Toned then Two_Tone (P, S, Y)
-                     else Paint (P, S, Y));
+                  if Effect = Transfer_Modes.Constant_Color then
+                     Paint_Row_Color (P, S, Y, Color, Outcome);
+                  elsif Patterned and then not Transfer_Modes.Reads_Destination (Kind) then
+                     Repeated (P, S, Outcome);
+                  elsif Two_Toned then
+                     Two_Tone (P, S, Y, Outcome);
+                  else
+                     Paint (P, S, Y, Outcome);
+                  end if;
                end if;
             end if;
          end loop;
@@ -434,7 +449,7 @@ package body Pictlib.Internal.Rendering is
       begin
          return (if Identity then Pixel else Transfer_Modes.Compose (Kind, Pixel, Under, P.Port.Colors));
       end Color_At;
-      function Paint is new Paint_Row (Color_At, Reads_Under => Transfer_Modes.Reads_Destination (Kind));
+      procedure Paint is new Paint_Row (Color_At, Reads_Under => Transfer_Modes.Reads_Destination (Kind));
 
       --  An unscaled copy in black on white is the converted row itself: each span is written as one run.
       Run_Copy : constant Boolean := Identity and then Source_Width = Destination_Width;
@@ -449,7 +464,7 @@ package body Pictlib.Internal.Rendering is
                Pixmaps.Colors (Decoder) (First .. First + (Right - Left) - 1));
          end if;
       end Copy_Span;
-      function Copied is new Charged_Spans (Copy_Span);
+      procedure Copied is new Charged_Spans (Copy_Span);
 
       --  A BitMap's pixels are black or white. Under the boolean modes but copy each of the two either paints one
       --  color, changes nothing, or, for xor, inverts what is under it: decided once for both, not composed a
@@ -484,7 +499,7 @@ package body Pictlib.Internal.Rendering is
       begin
          return (if Xored then Transfer_Modes.Invert (Under) elsif Dark then Dark_Color else Light_Color);
       end Bit_Color;
-      function Bits is new Paint_Row (Bit_Color, Reads_Under => Xored, Keeps => Bit_Keeps);
+      procedure Bits is new Paint_Row (Bit_Color, Reads_Under => Xored, Keeps => Bit_Keeps);
       Bit_Painted : constant Boolean :=
         Two_Toned
         and then (Xored
@@ -499,14 +514,19 @@ package body Pictlib.Internal.Rendering is
             Y : constant Integer := Destination.Top + Integer (K);
          begin
             --  Every destination row a copy walks costs a unit, in the frame or not.
-            if not Accounting.Charged (S, 1) then
+            if not Accounting.Charged (S, Natural'(1)) then
                return Accounting.Charge_Work (S, Natural'(1));
             end if;
-            Outcome := Begin_Masked_Row (P, S, Y, Painted.Left, Painted.Right, Mask, Header.Masked);
+            Begin_Masked_Row (P, S, Y, Painted.Left, Painted.Right, Mask, Header.Masked, Outcome);
             if Results.Succeeded (Outcome) then
                Current_Y := Y;
-               Outcome :=
-                 (if Run_Copy then Copied (P, S) elsif Bit_Painted then Bits (P, S, Y) else Paint (P, S, Y));
+               if Run_Copy then
+                  Copied (P, S, Outcome);
+               elsif Bit_Painted then
+                  Bits (P, S, Y, Outcome);
+               else
+                  Paint (P, S, Y, Outcome);
+               end if;
             end if;
             if not Results.Succeeded (Outcome) then
                return Outcome;

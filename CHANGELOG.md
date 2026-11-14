@@ -80,6 +80,15 @@ Output, drawing-work charges and the limits are unchanged.
   straight into the rows it keeps, and packs twice instead when there is
   no memory to keep them; PackBits compares each pair of bytes once and no
   longer clears its output; a row read clears its buffer only on failure.
+- Results are built only for failures in the row loops: beginning a row,
+  cutting it by the clip or mask, and charging and painting its spans now
+  leave a success as it is, so a row of text or a clipped shape builds
+  none; an error's identifier is built as a bounded string directly, not
+  through the secondary stack. Text draws in about a sixth of the
+  instructions it took before this round, most of the rest from textrender's
+  rasterizer, which now finds each subsample row's edges once a row by a
+  sweep, not once a pixel by testing them all (textrender 0fd899a and
+  423b0ff, coverage unchanged pixel for pixel).
 
 ### Hostile input
 

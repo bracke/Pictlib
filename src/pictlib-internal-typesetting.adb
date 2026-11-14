@@ -238,14 +238,14 @@ package body Pictlib.Internal.Typesetting is
       begin
          return Through_Mode (Inked, Under);
       end Glyph_Color;
-      function Paint_Glyph is new Rendering.Paint_Row (Glyph_Color, Reads_Under => Reads, Keeps => Glyph_Keeps);
+      procedure Paint_Glyph is new Rendering.Paint_Row (Glyph_Color, Reads_Under => Reads, Keeps => Glyph_Keeps);
 
       function Ink_Color (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
          pragma Unreferenced (X, Y);
       begin
          return Through_Mode (True, Under);
       end Ink_Color;
-      function Paint_Ink is new Rendering.Paint_Row (Ink_Color, Reads_Under => Reads);
+      procedure Paint_Ink is new Rendering.Paint_Row (Ink_Color, Reads_Under => Reads);
 
       --  Paint Cells (First .. Last) row by row, top to bottom, so the clip region is walked once for them all;
       --  within a row the cells go in string order. Their metrics must all be of the atlas's current generation.
@@ -263,9 +263,9 @@ package body Pictlib.Internal.Typesetting is
             for Index in First .. Last loop
                if Y in Cells (Index).Top .. Cells (Index).Bottom - 1 then
                   Current := Cells (Index);
-                  Result := Rendering.Begin_Row (P, S, Y, Cells (Index).Left, Cells (Index).Right);
+                  Rendering.Begin_Row (P, S, Y, Cells (Index).Left, Cells (Index).Right, Result);
                   if Results.Succeeded (Result) then
-                     Result := Paint_Glyph (P, S, Y);
+                     Paint_Glyph (P, S, Y, Result);
                   end if;
                   exit when not Results.Succeeded (Result);
                end if;
@@ -317,10 +317,13 @@ package body Pictlib.Internal.Typesetting is
 
       --  The row below the baseline, under the whole string, after every glyph.
       function Paint_Underline return Results.Result is
-         Result : constant Results.Result :=
-           Rendering.Begin_Row (P, S, Baseline + 1, Start_X, Integer (Long_Float'Rounding (Pen)));
+         Result : Results.Result := Results.Success;
       begin
-         return (if Results.Succeeded (Result) then Paint_Ink (P, S, Baseline + 1) else Result);
+         Rendering.Begin_Row (P, S, Baseline + 1, Start_X, Integer (Long_Float'Rounding (Pen)), Result);
+         if Results.Succeeded (Result) then
+            Paint_Ink (P, S, Baseline + 1, Result);
+         end if;
+         return Result;
       end Paint_Underline;
 
       --  Take Item's glyph as the next cell, its request charged, and restart the run when the request emptied

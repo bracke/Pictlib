@@ -26,6 +26,11 @@ package Pictlib.Internal.Sessions.Accounting is
    --  @return True with the work counted; False with nothing counted, when Charge_Work would fail, and gives
    --  that failure.
    function Charged (S : in out Session; Units : Natural) return Boolean;
+   --  Charged.
+   --  @param S Session doing the work.
+   --  @param Units Drawing work about to be done.
+   --  @return As Charged above.
+   function Charged (S : in out Session; Units : Pixel_Count) return Boolean;
    --  Over work.
    --  @param S Session whose drawing budget was crossed.
    --  @param Units Work asked for beyond the work done.

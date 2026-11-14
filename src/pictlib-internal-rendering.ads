@@ -210,9 +210,13 @@ package Pictlib.Internal.Rendering is
    --  @param Y Picture row.
    --  @param Left First picture column.
    --  @param Right Column after the last.
-   --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
-   function Begin_Row (P : in out Painter; S : in out Sessions.Session; Y, Left, Right : Integer)
-     return Results.Result;
+   --  @param Outcome A success, left as it is, or made Limit_Exceeded when the drawing budget is crossed: these
+   --  row primitives build a result only for a failure, as one is made for every row.
+   procedure Begin_Row
+     (P : in out Painter;
+      S : in out Sessions.Session;
+      Y, Left, Right : Integer;
+      Outcome : in out Results.Result);
    --  Begin masked row: Begin_Row, then, when Masked and the row holds a span, its cut by Mask's row Y, the
    --  mask walk charged before the spans are cut.
    --  @param P Painter whose Row_Spans become the row's.
@@ -222,13 +226,14 @@ package Pictlib.Internal.Rendering is
    --  @param Right Column after the last.
    --  @param Mask Mask region, in picture coordinates.
    --  @param Masked True when Mask applies.
-   --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
-   function Begin_Masked_Row
+   --  @param Outcome As for Begin_Row.
+   procedure Begin_Masked_Row
      (P : in out Painter;
       S : in out Sessions.Session;
       Y, Left, Right : Integer;
       Mask : in out Regions.Region;
-      Masked : Boolean) return Results.Result;
+      Masked : Boolean;
+      Outcome : in out Results.Result);
    --  Never: no pixel is kept as it is, Paint_Row's default.
    --  @param X Column.
    --  @param Y Row.
@@ -240,14 +245,18 @@ package Pictlib.Internal.Rendering is
    --  @param P Painter whose begun row is painted.
    --  @param S Session whose drawing budget applies.
    --  @param Y Picture row.
-   --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
+   --  @param Outcome As for Begin_Row.
    generic
       with function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color;
       --  Whether Color_At reads Under: when not, it is given black and the view is not read.
       Reads_Under : Boolean := True;
       --  Whether pixel X, Y stays as it is: Color_At is then not asked.
       with function Keeps (X, Y : Integer) return Boolean is Never;
-   function Paint_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result;
+   procedure Paint_Row
+     (P : in out Painter;
+      S : in out Sessions.Session;
+      Y : Integer;
+      Outcome : in out Results.Result);
 
    --  Fill: a shape painted row by row, clipped, through How.
    --  @param P Painter.
