@@ -105,6 +105,11 @@ Output, drawing-work charges and the limits are unchanged.
   instructions, the layouts 29 % fewer, clipped ovals 20 % fewer and the
   real-world picture 22 % fewer; text, with textrender 594f048, which
   resolves each subsample row by each edge's prefix of samples, 32 % fewer.
+- A fifth round: a strided fill writes each pixel as one slice, with one
+  loop for each pixel size (patterned fills 35 % fewer instructions); a
+  glyph's row in the atlas is worked out once a row, and ink a mode paints
+  in one color, as srcOr does, is painted without reading the view (text
+  23 % fewer); a shape reserves its span pool with its rows.
 
 ### Hostile input
 

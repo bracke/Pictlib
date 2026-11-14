@@ -110,18 +110,28 @@ package body Pictlib.Internal.Canvas is
             when RGB_24 | RGBA_32 => [Color.Red, Color.Green, Color.Blue, 16#FF#],
             when BGR_24 | BGRA_32 => [Color.Blue, Color.Green, Color.Red, 16#FF#],
             when ARGB_32 => [16#FF#, Color.Red, Color.Green, Color.Blue]);
+      B1 : constant Byte := Bytes (1);
+      B2 : constant Byte := Bytes (2);
+      B3 : constant Byte := Bytes (3);
+      B4 : constant Byte := Bytes (4);
    begin
-      for Written in 1 .. Count loop
-         Storage (At_Byte) := Bytes (1);
-         Storage (At_Byte + 1) := Bytes (2);
-         Storage (At_Byte + 2) := Bytes (3);
-         if Size = 4 then
-            Storage (At_Byte + 3) := Bytes (4);
-         end if;
-         if Written < Count then
+      if Count = 0 then
+         return;
+      end if;
+      --  One loop for each pixel size, the last pixel written apart, so the loop tests neither.
+      if Size = 4 then
+         for Written in 1 .. Count - 1 loop
+            Storage (At_Byte .. At_Byte + 3) := [B1, B2, B3, B4];
             At_Byte := At_Byte + Step;
-         end if;
-      end loop;
+         end loop;
+         Storage (At_Byte .. At_Byte + 3) := [B1, B2, B3, B4];
+      else
+         for Written in 1 .. Count - 1 loop
+            Storage (At_Byte .. At_Byte + 2) := [B1, B2, B3];
+            At_Byte := At_Byte + Step;
+         end loop;
+         Storage (At_Byte .. At_Byte + 2) := [B1, B2, B3];
+      end if;
    end Put_Strided;
 
    function Get_At (Target : Canvas; At_Pixel : Positive) return Images.RGB_Color is

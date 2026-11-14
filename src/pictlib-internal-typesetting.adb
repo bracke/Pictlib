@@ -205,16 +205,25 @@ package body Pictlib.Internal.Typesetting is
       --  before the handler below covers it.
       Cells : Cell_Array_Access := new Cell_Array (1 .. Characters'Length);
       Cell_Count : Natural := 0;
-      --  A copy of the cell Color_At paints, read a pixel at a time.
+      --  A copy of the cell Color_At paints, and what its row being painted needs, worked out once a row: whether
+      --  the row crosses the glyph, and where in the atlas the glyph's column 0 of it lies.
       Current : Cell;
+      Row_In_Glyph : Boolean := False;
+      Row_Base : Integer := 0;
 
-      function Covered (X, Y : Integer) return Boolean is
-        (Current.Drawable
+      procedure Begin_Glyph_Row (Y : Integer) is
+      begin
+         Row_In_Glyph := Current.Drawable and then Y - Current.Glyph_Top in 0 .. Current.Metric.H - 1;
+         if Row_In_Glyph then
+            Row_Base :=
+              (Current.Metric.Y + Y - Current.Glyph_Top) * Atlas_Width + Current.Metric.X - Current.Glyph_Left;
+         end if;
+      end Begin_Glyph_Row;
+
+      function Covered (X : Integer) return Boolean is
+        (Row_In_Glyph
          and then X - Current.Glyph_Left in 0 .. Current.Metric.W - 1
-         and then Y - Current.Glyph_Top in 0 .. Current.Metric.H - 1
-         and then Atlas
-           ((Current.Metric.Y + Y - Current.Glyph_Top) * Atlas_Width + Current.Metric.X + X - Current.Glyph_Left)
-           >= Ink_Threshold);
+         and then Atlas (Row_Base + X) >= Ink_Threshold);
 
       Reads : constant Boolean := Transfer_Modes.Reads_Destination (Kind);
       --  Whether the mode leaves a pixel without ink as it is, as srcOr, text's usual mode, does: such pixels are
@@ -224,21 +233,31 @@ package body Pictlib.Internal.Typesetting is
         Transfer_Modes."="
           (Transfer_Modes.Effect (Kind, Images.White, P.Port.Colors, Colorize => True, Color => Unused),
            Transfer_Modes.Unchanged);
+      --  Whether the mode paints ink one color whatever is under it, as srcOr does: with blanks left as they
+      --  are, a glyph then paints without reading the view.
+      Ink : Images.RGB_Color;
+      Ink_Constant : constant Boolean :=
+        Transfer_Modes."="
+          (Transfer_Modes.Effect (Kind, Images.Black, P.Port.Colors, Colorize => True, Color => Ink),
+           Transfer_Modes.Constant_Color);
+      Glyph_Reads : constant Boolean := Reads and then not (Blank_Unchanged and then Ink_Constant);
       --  Whether the pixel Glyph_Keeps last looked at is inked, for Glyph_Color, asked next of the same pixel.
       Inked : Boolean := False;
 
       --  Bold smears ink one pixel right.
       function Glyph_Keeps (X, Y : Integer) return Boolean is
+         pragma Unreferenced (Y);
       begin
-         Inked := Covered (X, Y) or else (Bold = 1 and then Covered (X - 1, Y));
+         Inked := Covered (X) or else (Bold = 1 and then Covered (X - 1));
          return Blank_Unchanged and then not Inked;
       end Glyph_Keeps;
       function Glyph_Color (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
          pragma Unreferenced (X, Y);
       begin
-         return Through_Mode (Inked, Under);
+         return (if Inked and then Ink_Constant then Ink else Through_Mode (Inked, Under));
       end Glyph_Color;
-      procedure Paint_Glyph is new Rendering.Paint_Row (Glyph_Color, Reads_Under => Reads, Keeps => Glyph_Keeps);
+      procedure Paint_Glyph is new Rendering.Paint_Row
+        (Glyph_Color, Reads_Under => Glyph_Reads, Keeps => Glyph_Keeps);
 
       function Ink_Color (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
          pragma Unreferenced (X, Y);
@@ -263,6 +282,7 @@ package body Pictlib.Internal.Typesetting is
             for Index in First .. Last loop
                if Y in Cells (Index).Top .. Cells (Index).Bottom - 1 then
                   Current := Cells (Index);
+                  Begin_Glyph_Row (Y);
                   Rendering.Begin_Row (P, S, Y, Cells (Index).Left, Cells (Index).Right, Result);
                   if Results.Succeeded (Result) then
                      Paint_Glyph (P, S, Y, Result);

@@ -196,6 +196,10 @@ package body Pictlib.Internal.Coverage is
       if Wanted > Long_Long_Integer (Item.Rows.Capacity) then
          Item.Rows.Reserve_Capacity (Ada.Containers.Count_Type (Wanted));
       end if;
+      --  A span a row at least, as most shapes have, so the pool does not grow a step at a time either.
+      if Wanted - Held + Long_Long_Integer (Item.Pool.Length) > Long_Long_Integer (Item.Pool.Capacity) then
+         Item.Pool.Reserve_Capacity (Ada.Containers.Count_Type (Wanted - Held + Long_Long_Integer (Item.Pool.Length)));
+      end if;
    end Expect_Rows;
 
    --  Add pixels Left .. Right - 1 of row Y, merging with what the row holds.
