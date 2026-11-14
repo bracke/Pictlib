@@ -294,13 +294,16 @@ package body Pictlib.Internal.Sessions is
       return Outcome;
    end Read_Pair;
 
+   --  A read that succeeds fills Buffer; only one that fails leaves it to be cleared.
    function Read_Into (S : in out Session; Buffer : out Streams.Byte_Array) return Results.Result is
-      Outcome : constant Results.Result := Admit_Data (S, Buffer'Length);
+      Outcome : Results.Result := Admit_Data (S, Buffer'Length);
    begin
-      Buffer := [others => 0];
-      if not Results.Succeeded (Outcome) or else Buffer'Length = 0 then
-         return Outcome;
+      if Results.Succeeded (Outcome) and then Buffer'Length > 0 then
+         Outcome := Streams.Read_Exact (S.Stream, Buffer);
       end if;
-      return Streams.Read_Exact (S.Stream, Buffer);
+      if not Results.Succeeded (Outcome) then
+         Buffer := [others => 0];
+      end if;
+      return Outcome;
    end Read_Into;
 end Pictlib.Internal.Sessions;

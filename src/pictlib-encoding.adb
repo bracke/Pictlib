@@ -77,6 +77,12 @@ package body Pictlib.Encoding is
    procedure Survey (Image : Images.Image_View; Item : out Palette) is
       Format : constant Pixel_Format := Image.Descriptor.Format;
       Step : constant Positive := Positive (Images.Bytes_Per_Pixel (Format));
+      Places : constant Internal.Pixels.Component_Offsets := Internal.Pixels.Offsets (Format);
+      Data : Streams.Byte_Array renames Image.Storage.all;
+      --  Neighbouring pixels mostly repeat a color: one already seen needs no lookup.
+      Last : Images.RGB_Color := Images.Black;
+      Seen : Boolean := False;
+      Count : Natural := 0;
    begin
       for Y in 0 .. Natural (Image.Descriptor.Height) - 1 loop
          declare
@@ -84,24 +90,34 @@ package body Pictlib.Encoding is
          begin
             for X in 0 .. Natural (Image.Descriptor.Width) - 1 loop
                declare
-                  Color : constant Images.RGB_Color := Internal.Pixels.Color_At (Format, Image.Storage.all, At_Pixel);
-                  At_Slot : constant Slot := Slot_Of (Item, Color);
+                  Color : constant Images.RGB_Color :=
+                    (Data (At_Pixel + Places.Red), Data (At_Pixel + Places.Green), Data (At_Pixel + Places.Blue));
                begin
-                  if Color /= Images.Black and then Color /= Images.White then
-                     Item.Black_And_White := False;
-                  end if;
-                  if Item.Keys (At_Slot) = No_Key then
-                     Item.Keys (At_Slot) := Key (Color);
-                     Item.Indexes (At_Slot) := Natural (Item.Colors.Length);
-                     Item.Colors.Append (Color);
+                  if not Seen or else Color /= Last then
+                     declare
+                        At_Slot : constant Slot := Slot_Of (Item, Color);
+                     begin
+                        --  Only a new color can make the image other than black and white.
+                        if Item.Keys (At_Slot) = No_Key then
+                           Item.Keys (At_Slot) := Key (Color);
+                           Item.Indexes (At_Slot) := Count;
+                           Item.Colors.Append (Color);
+                           Count := Count + 1;
+                           if Color /= Images.Black and then Color /= Images.White then
+                              Item.Black_And_White := False;
+                           end if;
+                        end if;
+                     end;
+                     Last := Color;
+                     Seen := True;
                   end if;
                end;
-               exit when Natural (Item.Colors.Length) > Largest_Colors;
+               exit when Count > Largest_Colors;
                At_Pixel := At_Pixel + Step;
             end loop;
          end;
          --  More colors than an indexed picture holds are not all black or white.
-         exit when Natural (Item.Colors.Length) > Largest_Colors;
+         exit when Count > Largest_Colors;
       end loop;
    end Survey;
 
@@ -274,7 +290,12 @@ package body Pictlib.Encoding is
       First : constant Positive := Row'First;
       Alpha : constant Boolean := Item.Components = 4;
 
-      function Color return Images.RGB_Color is (Internal.Pixels.Color_At (Format, Data, At_Pixel));
+      Places : constant Internal.Pixels.Component_Offsets := Internal.Pixels.Offsets (Format);
+
+      function Color return Images.RGB_Color is
+        ((Data (At_Pixel + Places.Red), Data (At_Pixel + Places.Green), Data (At_Pixel + Places.Blue)));
+      --  Kept only from a view that has alpha.
+      function Alpha_Value return Byte is (Data (At_Pixel + Places.Alpha));
    begin
       case Item.Layout is
          when Direct_32 =>
@@ -284,7 +305,7 @@ package body Pictlib.Encoding is
                   declare
                      Pixel : constant Images.RGB_Color := Color;
                   begin
-                     Row (First + 4 * X) := (if Alpha then Internal.Pixels.Alpha_At (Format, Data, At_Pixel) else 0);
+                     Row (First + 4 * X) := (if Alpha then Alpha_Value else 0);
                      Row (First + 4 * X + 1) := Pixel.Red;
                      Row (First + 4 * X + 2) := Pixel.Green;
                      Row (First + 4 * X + 3) := Pixel.Blue;
@@ -302,7 +323,7 @@ package body Pictlib.Encoding is
                         Pixel : constant Images.RGB_Color := Color;
                      begin
                         if Alpha then
-                           Row (First + X) := Internal.Pixels.Alpha_At (Format, Data, At_Pixel);
+                           Row (First + X) := Alpha_Value;
                         end if;
                         Row (First + Red + X) := Pixel.Red;
                         Row (First + Green + X) := Pixel.Green;
@@ -313,12 +334,25 @@ package body Pictlib.Encoding is
                end;
             end if;
          when Indexed_8 =>
-            --  An odd width leaves a pad byte.
+            --  An odd width leaves a pad byte. A color repeated from the pixel before needs no lookup.
             Row (Row'Last) := 0;
-            for X in 0 .. Width - 1 loop
-               Row (First + X) := Byte (Index_Of (Colors, Color));
-               At_Pixel := At_Pixel + Step;
-            end loop;
+            declare
+               Last : Images.RGB_Color := Color;
+               Last_Index : Byte := Byte (Index_Of (Colors, Last));
+            begin
+               for X in 0 .. Width - 1 loop
+                  declare
+                     Pixel : constant Images.RGB_Color := Color;
+                  begin
+                     if Pixel /= Last then
+                        Last := Pixel;
+                        Last_Index := Byte (Index_Of (Colors, Pixel));
+                     end if;
+                  end;
+                  Row (First + X) := Last_Index;
+                  At_Pixel := At_Pixel + Step;
+               end loop;
+            end;
          when others =>
             --  Black where the luminance, (299 R + 587 G + 114 B) / 1000 truncated, is below the threshold: the sum
             --  against 1000 times the threshold, the same test without a division. Eight pixels make a byte, most
@@ -390,15 +424,6 @@ package body Pictlib.Encoding is
          Accumulate (Outcome, Writers.Put (Out_Bytes, Stored));
       end Put_Row;
 
-      --  Row Y put, and kept when the store has room for every row.
-      procedure Put_And_Keep (Y : Natural; Stored : Streams.Byte_Array) is
-      begin
-         Put_Row (Stored);
-         if Store.Data /= null then
-            Store.Data (Store.Ends (Y) + 1 .. Store.Ends (Y) + Stored'Length) := Stored;
-            Store.Ends (Y + 1) := Store.Ends (Y) + Stored'Length;
-         end if;
-      end Put_And_Keep;
    begin
       if Store.Kept then
          for Y in 0 .. Item.Height - 1 loop
@@ -411,12 +436,31 @@ package body Pictlib.Encoding is
       Packed := new Streams.Byte_Array (1 .. Internal.PackBits.Worst_Case (Item.Unpacked_Length));
       for Y in 0 .. Item.Height - 1 loop
          exit when not Results.Succeeded (Outcome);
-         Fill_Row (Image, Settings, Item, Colors, Y, Row.all);
-         if Item.Packed then
-            Internal.PackBits.Pack (Row.all, Packed.all, Packed_Length);
-            Put_And_Keep (Y, Packed (1 .. Packed_Length));
+         if Store.Data /= null then
+            --  Stored in place: row Y starts where row Y - 1 ended, with room for its worst case before the
+            --  room every later row needs, as the store holds every row at its worst.
+            declare
+               Start : constant Positive := Store.Ends (Y) + 1;
+               Length : Natural;
+            begin
+               if Item.Packed then
+                  Fill_Row (Image, Settings, Item, Colors, Y, Row.all);
+                  Internal.PackBits.Pack (Row.all, Store.Data (Start .. Start + Packed'Length - 1), Length);
+               else
+                  Fill_Row (Image, Settings, Item, Colors, Y, Store.Data (Start .. Start + Item.Stored - 1));
+                  Length := Item.Stored;
+               end if;
+               Store.Ends (Y + 1) := Store.Ends (Y) + Length;
+               Put_Row (Store.Data (Start .. Store.Ends (Y + 1)));
+            end;
          else
-            Put_And_Keep (Y, Row.all);
+            Fill_Row (Image, Settings, Item, Colors, Y, Row.all);
+            if Item.Packed then
+               Internal.PackBits.Pack (Row.all, Packed.all, Packed_Length);
+               Put_Row (Packed (1 .. Packed_Length));
+            else
+               Put_Row (Row.all);
+            end if;
          end if;
       end loop;
       Store.Kept := Store.Data /= null and then Results.Succeeded (Outcome);
@@ -569,9 +613,15 @@ package body Pictlib.Encoding is
    begin
       Started.all := False;
       Written := 0;
+      --  The store saves work, nothing more: a picture it has no memory for is packed twice instead.
       if Worst <= Byte_Count'Min (Budget.Max_Allocation_Bytes, Row_Store_Limit) then
-         Store.Data := new Streams.Byte_Array (1 .. Natural (Worst));
-         Store.Ends := new Row_Ends'(0 .. Item.Height => 0);
+         begin
+            Store.Data := new Streams.Byte_Array (1 .. Natural (Worst));
+            Store.Ends := new Row_Ends'(0 .. Item.Height => 0);
+         exception
+            when Storage_Error =>
+               Release;
+         end;
       end if;
       --  The dry run counts what the output will hold, the file header included, against the limit as it was
       --  set, so a picture that does not fit is reported in the caller's terms.

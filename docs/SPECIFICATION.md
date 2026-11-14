@@ -586,7 +586,7 @@ before or as the work is done, whether or not anything is drawn, and nothing is 
 | a pattern | 1, plus, for every row of a color `PixPat` tile decoded, its pixels or the bytes it unpacks to, whichever is more, plus 1; 1 for every row of a tile too large to decode, skipped leniently |
 | a QuickTime image | every pixel and row decoded, and every byte of its compressed data |
 | text | every font loaded: its atlas bytes, its file bytes and 65 536; every glyph asked for, wherever it lands: 16 per pixel of its raster cell, (2 × size + 2)² |
-| a region walk | every inversion point and line passed |
+| a region walk | every inversion point and line passed; a row above the last one walked, as walking down to it again from the region's top, however the walk gets there |
 
 A unit is meant to be about one pixel's work; measured, it is 50–150 ns, so the default of 2^30
 bounds a picture to one to three minutes.
@@ -599,8 +599,8 @@ and storage that is no single allocation at fixed rates:
 | a retained metadata item or font name | its bytes twice, the buffer it is read into and the copy kept, plus 128 |
 | a polygon read | 8 per point |
 | a polygon drawn | 8 per point again, for the copy drawn, plus 152 per edge when it is filled |
-| a region read | 10 per byte of it, for its scanlines and inversion points and, while it is walked as a clip or mask, its active points and the spans a row cuts from them |
-| a region shape drawn | 12 per unit of its region's size, for the copy moved to the origin |
+| a region read | 10 per byte of it, for its scanlines and inversion points and, while it is walked as a clip or mask, each scanline's running cost, its active points and the spans a row cuts from them |
+| a region shape drawn | 20 per unit of its region's size, for the copy moved to the origin and walked |
 | building a shape | 256 per unit of shape work, the spans it can make; building stops at what the total still admits |
 | a QuickTime image | its pixels, and `jpeglib`'s share for its own buffers |
 

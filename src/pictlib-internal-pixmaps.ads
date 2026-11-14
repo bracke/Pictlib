@@ -2,6 +2,7 @@ with Ada.Finalization;
 with Interfaces;
 with Pictlib.Geometry;
 with Pictlib.Images;
+with Pictlib.Internal.Pixels;
 with Pictlib.Internal.Regions;
 with Pictlib.Internal.Sessions;
 with Pictlib.Results;
@@ -140,12 +141,16 @@ package Pictlib.Internal.Pixmaps is
    --  @return The pixel's color.
    function Pixel (Decoder : Row_Decoder; Column : Natural) return Images.RGB_Color
      with Pre => Column < Row_Width (Decoder), Inline;
+   --  Colors: the row Next_Row converted, a column a color, for a copy that writes it as a run.
+   --  @param Decoder Decoder of a row.
+   --  @return Its colors, columns 0 .. Row_Width (Decoder) - 1.
+   function Colors (Decoder : Row_Decoder) return not null access constant Pixels.Color_Row;
    --  Finish.
    --  @param Decoder Decoder whose buffers are released.
    procedure Finish (Decoder : in out Row_Decoder);
 
 private
-   type Color_Row is array (Natural range <>) of Images.RGB_Color;
+   subtype Color_Row is Pixels.Color_Row;
 
    type Color_Row_Access is access Color_Row;
 

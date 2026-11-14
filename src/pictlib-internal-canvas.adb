@@ -1,5 +1,4 @@
 with Pictlib.Streams;
-with Pictlib.Internal.Pixels;
 
 package body Pictlib.Internal.Canvas is
    procedure Bind (Target : out Canvas; View : Images.Mutable_Image_View) is
@@ -47,6 +46,33 @@ package body Pictlib.Internal.Canvas is
             Storage (At_Pixel + 3) := Color.Blue;
       end case;
    end Put_At;
+
+   procedure Put_Run (Target : in out Canvas; At_Pixel : Positive; Colors : Pixels.Color_Row) is
+      Storage : Streams.Byte_Array renames Target.View.Storage.all;
+      At_Byte : Positive := At_Pixel;
+   begin
+      case Target.View.Descriptor.Format is
+         when RGB_24 =>
+            for Color of Colors loop
+               Storage (At_Byte) := Color.Red;
+               Storage (At_Byte + 1) := Color.Green;
+               Storage (At_Byte + 2) := Color.Blue;
+               At_Byte := At_Byte + 3;
+            end loop;
+         when BGR_24 =>
+            for Color of Colors loop
+               Storage (At_Byte) := Color.Blue;
+               Storage (At_Byte + 1) := Color.Green;
+               Storage (At_Byte + 2) := Color.Red;
+               At_Byte := At_Byte + 3;
+            end loop;
+         when RGBA_32 | BGRA_32 | ARGB_32 =>
+            for Color of Colors loop
+               Put_At (Target, At_Byte, Color);
+               At_Byte := At_Byte + 4;
+            end loop;
+      end case;
+   end Put_Run;
 
    function Get_At (Target : Canvas; At_Pixel : Positive) return Images.RGB_Color is
      (Pixels.Color_At (Target.View.Descriptor.Format, Target.View.Storage.all, At_Pixel));

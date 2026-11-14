@@ -205,16 +205,16 @@ package body Pictlib.Internal.Typesetting is
       --  before the handler below covers it.
       Cells : Cell_Array_Access := new Cell_Array (1 .. Characters'Length);
       Cell_Count : Natural := 0;
-      --  The cell Color_At paints.
-      Current : Positive := 1;
+      --  A copy of the cell Color_At paints, read a pixel at a time.
+      Current : Cell;
 
       function Covered (X, Y : Integer) return Boolean is
-        (Cells (Current).Drawable
-         and then X - Cells (Current).Glyph_Left in 0 .. Cells (Current).Metric.W - 1
-         and then Y - Cells (Current).Glyph_Top in 0 .. Cells (Current).Metric.H - 1
+        (Current.Drawable
+         and then X - Current.Glyph_Left in 0 .. Current.Metric.W - 1
+         and then Y - Current.Glyph_Top in 0 .. Current.Metric.H - 1
          and then Atlas
-           ((Cells (Current).Metric.Y + Y - Cells (Current).Glyph_Top) * Atlas_Width
-            + Cells (Current).Metric.X + X - Cells (Current).Glyph_Left) >= Ink_Threshold);
+           ((Current.Metric.Y + Y - Current.Glyph_Top) * Atlas_Width + Current.Metric.X + X - Current.Glyph_Left)
+           >= Ink_Threshold);
 
       Reads : constant Boolean := Transfer_Modes.Reads_Destination (Kind);
       --  Whether the mode leaves a pixel without ink as it is, as srcOr, text's usual mode, does: such pixels are
@@ -262,7 +262,7 @@ package body Pictlib.Internal.Typesetting is
          for Y in Integer'Max (Top, P.Window.Top) .. Integer'Min (Bottom, P.Window.Bottom - 1) loop
             for Index in First .. Last loop
                if Y in Cells (Index).Top .. Cells (Index).Bottom - 1 then
-                  Current := Index;
+                  Current := Cells (Index);
                   Result := Rendering.Begin_Row (P, S, Y, Cells (Index).Left, Cells (Index).Right);
                   if Results.Succeeded (Result) then
                      Result := Paint_Glyph (P, S, Y);

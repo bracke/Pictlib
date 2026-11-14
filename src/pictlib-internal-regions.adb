@@ -25,6 +25,7 @@ package body Pictlib.Internal.Regions is
       Item.Active.Clear;
       Item.Next_Line := 1;
       Item.Cursor_Y := Integer'First;
+      Item.Costs.Clear;
    end Translate;
 
    --  Check the scanline encoding and keep it: y strictly increasing within the box, inversion columns strictly
@@ -168,9 +169,35 @@ package body Pictlib.Internal.Regions is
          return;
       end if;
 
+      if Item.Costs.Is_Empty then
+         Item.Costs.Reserve_Capacity (Item.Lines.Length + 1);
+         Item.Costs.Append (0);
+      end if;
+      --  A row above the last one walked starts the walk again from the top, and is charged so. Inverting is
+      --  its own inverse, so the lines below the row may instead be inverted out again, bottom up: that is done
+      --  when it is less than half the work of walking down from the top again, and charged as walking down,
+      --  so the work done never exceeds the work charged.
       if Y < Item.Cursor_Y then
-         Item.Active.Clear;
-         Item.Next_Line := 1;
+         declare
+            Walked : constant Natural := Item.Next_Line - 1;
+            Kept : Natural := Walked;
+         begin
+            while Kept > 0 and then Item.Lines.Element (Kept).Y > Y loop
+               Kept := Kept - 1;
+            end loop;
+            if Checked_Arithmetic.Saturating_Add (1, Item.Costs.Element (Kept)) <= Allowance
+              and then 2 * (Item.Costs.Element (Walked) - Item.Costs.Element (Kept)) < Item.Costs.Element (Kept)
+            then
+               for Line_Index in reverse Kept + 1 .. Walked loop
+                  Invert (Item, Item.Lines.Element (Line_Index));
+               end loop;
+               Item.Next_Line := Kept + 1;
+               Work := Checked_Arithmetic.Saturating_Add (Work, Item.Costs.Element (Kept));
+            else
+               Item.Active.Clear;
+               Item.Next_Line := 1;
+            end if;
+         end;
       end if;
       Item.Cursor_Y := Y;
       while Item.Next_Line <= Natural (Item.Lines.Length) and then Item.Lines.Element (Item.Next_Line).Y <= Y loop
@@ -178,13 +205,18 @@ package body Pictlib.Internal.Regions is
          --  is inverted.
          declare
             Line : constant Scanline := Item.Lines.Element (Item.Next_Line);
+            Cost : constant Pixel_Count :=
+              Pixel_Count (Item.Active.Length) + Pixel_Count (Line.Last - Line.First + 1) + 1;
          begin
-            Work := Checked_Arithmetic.Saturating_Add
-              (Work, Pixel_Count (Item.Active.Length) + Pixel_Count (Line.Last - Line.First + 1) + 1);
+            Work := Checked_Arithmetic.Saturating_Add (Work, Cost);
             --  The walk resumes from this line at the next call; this one is over budget.
             if Work > Allowance then
                Spans.Clear;
                return;
+            end if;
+            --  The first walk past a line records what walking to it from the top costs.
+            if Natural (Item.Costs.Length) = Item.Next_Line then
+               Item.Costs.Append (Checked_Arithmetic.Saturating_Add (Item.Costs.Last_Element, Cost));
             end if;
             Invert (Item, Line);
          end;

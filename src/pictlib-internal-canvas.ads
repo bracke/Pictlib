@@ -1,4 +1,5 @@
 with Pictlib.Images;
+with Pictlib.Internal.Pixels;
 
 --  The caller's view as a drawing surface: canvas pixel (0, 0) is the view's first pixel. Every drawn pixel is
 --  opaque. The view must be valid before it is bound.
@@ -52,6 +53,11 @@ package Pictlib.Internal.Canvas is
    --  @param At_Pixel Index of a pixel of the canvas.
    --  @return The pixel's color.
    function Get_At (Target : Canvas; At_Pixel : Positive) return Images.RGB_Color with Inline;
+   --  Put run: Colors written to consecutive pixels of a row from At_Pixel, the format decided once.
+   --  @param Target Canvas to draw on.
+   --  @param At_Pixel Index of the first pixel.
+   --  @param Colors Opaque colors, as many as the row has pixels from At_Pixel on, or fewer.
+   procedure Put_Run (Target : in out Canvas; At_Pixel : Positive; Colors : Pixels.Color_Row);
    --  Repeat: pixels Left .. Left + Period - 1 of row Y copied over the rest of Left .. Right - 1, period by
    --  period, as a pattern repeats.
    --  @param Target Canvas to draw on.

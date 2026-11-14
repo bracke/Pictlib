@@ -1,11 +1,13 @@
 --  Throughput, for information only: each layout encoded from and rendered back into a 1024 x 768 view, patterned
 --  fills, text and shapes under a clip of many lines drawn on one, and the real-world vector picture rendered.
 --  Prints megapixels per second of frame, timed in the process's CPU time, which a busy machine skews less than
---  the wall clock. Runs from anywhere below the pictlib tree.
+--  the wall clock. --layouts, --patterns, --text, --clipped and --vector run only the cases named. Runs from
+--  anywhere below the pictlib tree.
 with Pictlib_Testing.Builders;
 with Pictlib_Testing.Canvases;
 with Pictlib_Testing.Fonts;
 with Pictlib_Testing.Tools;
+with Ada.Command_Line;
 with Ada.Directories;
 with Ada.Execution_Time;
 with Ada.Real_Time;
@@ -18,6 +20,7 @@ with Pictlib.Results;
 with Pictlib.Streams;
 with Pictlib_Testing.Files;
 with Pictlib_Testing.Samples;
+with Project_Tools.Processes;
 
 procedure Pictlib_Benchmark is
    use type Ada.Execution_Time.CPU_Time;
@@ -164,6 +167,10 @@ procedure Pictlib_Benchmark is
       Free (Data);
    end Drawn;
 
+   --  Whether to run a case: each is run when no case is named, else the cases named.
+   function Wanted (Flag : String) return Boolean is
+     (Ada.Command_Line.Argument_Count = 0 or else Project_Tools.Processes.Has_Argument (Flag));
+
    --  A two-by-two dither, as gray fills use.
    Gray : constant Pictlib.Streams.Byte_Array := Repeat (B (16#AA#) & B (16#55#), 4);
    --  Ten fills of the frame with a pattern, copied, then ten painted with the pen's pattern or-ed in.
@@ -204,16 +211,29 @@ begin
       return;
    end if;
    Pictlib_Testing.Tools.Start_Report ("pictlib_benchmark");
-   if not Pictlib_Testing.Tools.Arguments_Known ([1 .. 0 => null]) then
+   if not Pictlib_Testing.Tools.Arguments_Known
+            ([new String'("--layouts"), new String'("--patterns"), new String'("--text"), new String'("--clipped"),
+              new String'("--vector")])
+   then
       Pictlib_Testing.Tools.Finish_Report;
       return;
    end if;
-   Layout (Pictlib_Testing.Samples.Gradient, Pictlib.Encoding.Direct_32);
-   Layout (Pictlib_Testing.Samples.Three_Colors, Pictlib.Encoding.Indexed_8);
-   Layout (Pictlib_Testing.Samples.Black_And_White, Pictlib.Encoding.Mono_1);
-   Drawn ("patterned fills", Patterned, (others => <>));
-   Drawn ("text", Text_Lines, (Fonts => Pictlib_Testing.Fonts.Test_Table, others => <>));
-   Drawn ("clipped ovals", Clipped, (others => <>));
-   Vector_Picture ("fixtures/real_world/libreoffice/pass/ooo25876-2.pct");
+   if Wanted ("--layouts") then
+      Layout (Pictlib_Testing.Samples.Gradient, Pictlib.Encoding.Direct_32);
+      Layout (Pictlib_Testing.Samples.Three_Colors, Pictlib.Encoding.Indexed_8);
+      Layout (Pictlib_Testing.Samples.Black_And_White, Pictlib.Encoding.Mono_1);
+   end if;
+   if Wanted ("--patterns") then
+      Drawn ("patterned fills", Patterned, (others => <>));
+   end if;
+   if Wanted ("--text") then
+      Drawn ("text", Text_Lines, (Fonts => Pictlib_Testing.Fonts.Test_Table, others => <>));
+   end if;
+   if Wanted ("--clipped") then
+      Drawn ("clipped ovals", Clipped, (others => <>));
+   end if;
+   if Wanted ("--vector") then
+      Vector_Picture ("fixtures/real_world/libreoffice/pass/ooo25876-2.pct");
+   end if;
    Pictlib_Testing.Tools.Finish_Report;
 end Pictlib_Benchmark;

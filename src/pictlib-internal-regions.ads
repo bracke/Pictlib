@@ -100,6 +100,7 @@ private
    end record;
 
    package Scanline_Vectors is new Ada.Containers.Vectors (Positive, Scanline);
+   package Work_Vectors is new Ada.Containers.Vectors (Natural, Pixel_Count);
 
    type Region is record
       Box : Area;
@@ -113,5 +114,8 @@ private
       Merged : Integer_Vectors.Vector;
       Next_Line : Positive := 1;
       Cursor_Y : Integer := Integer'First;
+      --  Costs (J): what walking from the top through Lines (1 .. J) is charged, Costs (0) being 0, for every line
+      --  walked so far. A walk back up is charged what walking down from the top would be, from these.
+      Costs : Work_Vectors.Vector;
    end record;
 end Pictlib.Internal.Regions;

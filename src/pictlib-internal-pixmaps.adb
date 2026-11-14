@@ -483,7 +483,19 @@ package body Pictlib.Internal.Pixmaps is
       First : constant Positive := Data'First;
    begin
       case Header.Encoding is
-         when Bitmap_Bits | Indexed_Bits =>
+         when Bitmap_Bits =>
+            --  A byte at a time, eight pixels, most significant bit first: 1 black, 0 white.
+            for At_Byte in 0 .. (Width + 7) / 8 - 1 loop
+               declare
+                  Bits : constant Byte := Data (First + At_Byte);
+               begin
+                  for Bit in 0 .. Natural'Min (7, Width - 1 - 8 * At_Byte) loop
+                     Decoder.Buffers.Colors (8 * At_Byte + Bit) :=
+                       (if (Bits and 2 ** (7 - Bit)) /= 0 then Images.Black else Images.White);
+                  end loop;
+               end;
+            end loop;
+         when Indexed_Bits =>
             declare
                Depth : constant Natural := Header.Fields.Pixel_Size;
                Mask : constant Interfaces.Unsigned_8 := 2 ** Depth - 1;
@@ -491,13 +503,13 @@ package body Pictlib.Internal.Pixmaps is
                for X in 0 .. Width - 1 loop
                   declare
                      Bit : constant Natural := X * Depth;
+                     --  A byte is an index at depth 8; smaller depths pack several, the first most significant.
                      Index : constant Natural :=
-                       Natural (Interfaces.Shift_Right (Interfaces.Unsigned_8 (Data (First + Bit / 8)),
-                                                        8 - Depth - Bit mod 8) and Mask);
+                       (if Depth = 8 then Natural (Data (First + X))
+                        else Natural (Interfaces.Shift_Right (Interfaces.Unsigned_8 (Data (First + Bit / 8)),
+                                                              8 - Depth - Bit mod 8) and Mask));
                   begin
-                     if Header.Encoding = Bitmap_Bits then
-                        Decoder.Buffers.Colors (X) := (if Index = 1 then Images.Black else Images.White);
-                     elsif Header.Table.Defined (Index) then
+                     if Header.Table.Defined (Index) then
                         Decoder.Buffers.Colors (X) := Header.Table.Colors (Index);
                      else
                         --  Leniently black, reported once per opcode.
@@ -593,6 +605,9 @@ package body Pictlib.Internal.Pixmaps is
 
    function Pixel (Decoder : Row_Decoder; Column : Natural) return Images.RGB_Color is
      (Decoder.Buffers.Colors (Column));
+
+   function Colors (Decoder : Row_Decoder) return not null access constant Pixels.Color_Row is
+     (Decoder.Buffers.Colors);
 
    overriding procedure Finalize (Buffers : in out Row_Buffers) is
    begin

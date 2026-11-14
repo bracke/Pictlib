@@ -96,7 +96,6 @@ is
 
       Index : Natural := 0;
    begin
-      Output := [others => 0];
       Written := 0;
       while Index < Length loop
          if Starts_Run (Index) then
@@ -113,8 +112,18 @@ is
          else
             declare
                Literal : Natural := 1;
+               --  A run starts at byte K when K equals K + 1 and K + 1 equals K + 2: whether K equals K + 1 is
+               --  carried from one byte to the next, so each pair is compared once.
+               Equal_Next : Boolean := Index + 2 < Length and then Same (Index + 1, Index + 2);
             begin
-               while Index + Literal < Length and then Literal < 128 and then not Starts_Run (Index + Literal) loop
+               while Index + Literal < Length and then Literal < 128 loop
+                  declare
+                     At_Byte : constant Natural := Index + Literal;
+                     Equal_After : constant Boolean := At_Byte + 2 < Length and then Same (At_Byte + 1, At_Byte + 2);
+                  begin
+                     exit when At_Byte + 2 < Length and then Equal_Next and then Equal_After;
+                     Equal_Next := Equal_After;
+                  end;
                   Literal := Literal + 1;
                end loop;
                Put (Byte (Literal - 1));

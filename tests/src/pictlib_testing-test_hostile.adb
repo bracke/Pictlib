@@ -321,6 +321,13 @@ package body Pictlib_Testing.Test_Hostile is
                    & Repeat (W (1_000) & W (0), 2_000) & Repeat (W (16#78#), 99));
       Penless_Region : aliased constant Bytes :=
         Pic (4, 4, Pen_Size (0, 0) & W (16#80#) & Striped_Region (10, 4_000, 4) & Repeat (W (16#88#), 99));
+      --  Rectangles under a clip of every other row, drawn up and down the frame, so the clip is walked back up
+      --  again and again: what each walk is charged pins how it is charged, whichever way it gets there.
+      Walked_Back : aliased constant Bytes :=
+        Pic (8, 400, W (16#01#) & Striped_Region (0, 400, 8)
+                     & Repeat (Op_Rect (16#31#, 380, 0, 400, 8) & Op_Rect (16#31#, 0, 0, 20, 8)
+                               & Op_Rect (16#31#, 300, 0, 320, 8) & Op_Rect (16#31#, 150, 0, 170, 8)
+                               & Op_Rect (16#31#, 390, 0, 395, 8) & Op_Rect (16#31#, 370, 0, 380, 8), 20));
       Moving_Clip : aliased constant Bytes :=
         Pic (4, 4, W (16#01#) & Striped_Region (0, 4_000, 4) & Repeat (Origin (1, 1) & Origin (-1, -1), 20_000)
                    & Op_Rect (16#31#, 0, 0, 4, 4));
@@ -358,6 +365,29 @@ package body Pictlib_Testing.Test_Hostile is
       Canvases.Expect_Failure (Far_Polygon, 4, 4, Errors.Limit_Exceeded, "100 frames of 2,000 points on 100,000",
                                16#78#, Budget => Small, Limit => Pictlib.Drawing_Work_Limit);
       Canvases.Expect_Raster (Moving_Clip, 4, 4, "BBBB/WWWW/BBBB/WWWW", "clip kept while the origin moves");
+      declare
+         use type Pictlib.Pixel_Count;
+         Least : constant Pictlib.Pixel_Count :=
+           Canvases.Least_Drawing_Work (Walked_Back, 8, 400, "a clip walked back");
+      begin
+         --  As charged when every walk back up started again from the top.
+         Assert (Least = 109_920, "a clip walked back up costs" & Least'Image);
+      end;
+      --  And draws the same: the clip's even rows of the rectangles' rows.
+      declare
+         function Expected return String is
+            Result : String (1 .. 400 * 9 - 1) := [others => '/'];
+         begin
+            for Y in 0 .. 399 loop
+               Result (Y * 9 + 1 .. Y * 9 + 8) :=
+                 (if Y mod 2 = 0 and then (Y < 20 or else Y in 150 .. 169 | 300 .. 319 or else Y >= 370)
+                  then "BBBBBBBB" else "WWWWWWWW");
+            end loop;
+            return Result;
+         end Expected;
+      begin
+         Canvases.Expect_Raster (Walked_Back, 8, 400, Expected, "a clip walked back up");
+      end;
       --  A shape that runs out of its allowance part-way covers nothing, whoever asks.
       declare
          package Coverage renames Pictlib.Internal.Coverage;

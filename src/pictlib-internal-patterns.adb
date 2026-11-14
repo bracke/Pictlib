@@ -1,3 +1,4 @@
+with Interfaces;
 with Pictlib.Internal.Sessions.Accounting;
 with Pictlib.Internal.Failures;
 with Pictlib.Errors;
@@ -6,6 +7,7 @@ with Pictlib.Streams;
 
 package body Pictlib.Internal.Patterns is
    package Accounting renames Pictlib.Internal.Sessions.Accounting;
+   use type Interfaces.Unsigned_8;
 
    function From_Bits (Rows : Bit_Rows) return Pattern is ((Kind => Bit_Pattern, Bits => Rows, others => <>));
 
@@ -16,10 +18,11 @@ package body Pictlib.Internal.Patterns is
       case Item.Kind is
          when Bit_Pattern =>
             declare
-               Row : constant Natural := Natural (Item.Bits (Y mod 8));
-               Bit : constant Natural := (Row / 2 ** (7 - X mod 8)) mod 2;
+               Row : constant Byte := Item.Bits (Y mod 8);
             begin
-               return (if Bit = 1 then Images.Black else Images.White);
+               return
+                 (if (Interfaces.Shift_Right (Interfaces.Unsigned_8 (Row), 7 - X mod 8) and 1) /= 0 then Images.Black
+                  else Images.White);
             end;
          when Solid_Color =>
             return Item.Color;

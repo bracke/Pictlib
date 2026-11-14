@@ -39,7 +39,7 @@ is
 
    --  Pack: a row of bytes, as the encoder writes rows. Word units are only ever unpacked.
    --  @param Row One row.
-   --  @param Output Receives the packed row.
+   --  @param Output Receives the packed row in its first Written bytes; the rest is left as it was.
    --  @param Written Bytes of Output used, at most Worst_Case (Row'Length).
    procedure Pack
      (Row : Streams.Byte_Array;

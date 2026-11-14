@@ -64,6 +64,22 @@ Output, drawing-work charges and the limits are unchanged.
   loops read vector elements by value, so no read takes and finalizes a
   container lock.
 - The release profile adds cross-unit inlining (`-gnatn`).
+- A second round, against commit f9ccc8f: rendering a copied PixMap or
+  BitMap 2.2 to 4.6 times as fast, `Indexed_8` encoding twice as fast,
+  shapes under a clip of many lines 1.8 times as fast. An unscaled copy in
+  black on white is written as a run; a BitMap copied under the or, bic
+  and xor modes paints a color, nothing, or the inverse a pixel; `Convert`
+  decodes BitMaps a byte at a time and 8-bit indexes directly; spans and
+  rows are charged without building a result when the budget allows. A
+  clip walked back up inverts the lines below the row out again when that
+  is less than half the work of starting from the top, and is charged as
+  starting from the top, from a running cost kept for each scanline; a
+  region read still counts 10 bytes a byte, and a region shape drawn 20 a
+  unit. The encoder reads a pixel's components at offsets worked out once,
+  looks a color up only when it differs from the pixel before, packs rows
+  straight into the rows it keeps, and packs twice instead when there is
+  no memory to keep them; PackBits compares each pair of bytes once and no
+  longer clears its output; a row read clears its buffer only on failure.
 
 ### Hostile input
 
@@ -899,3 +915,6 @@ All tooling is Ada, in the `tests` crate:
   `expected.txt` can still be rewritten.
 - `pictlib_benchmark` times in CPU time and adds patterned fills, text and
   shapes under a clip of many lines.
+- `pictlib_benchmark` runs one case alone with `--layouts`, `--patterns`,
+  `--text`, `--clipped` or `--vector`. A test pins what a clip walked back
+  up again and again is charged, and what it draws.

@@ -6,6 +6,9 @@ with Pictlib.Streams;
 package Pictlib.Internal.Pixels is
    pragma Preelaborate;
 
+   --  A run of colors, as a decoded row holds them and the canvas writes them.
+   type Color_Row is array (Natural range <>) of Images.RGB_Color;
+
    --  Pixel offset: where a view's pixel starts.
    --  @param Descriptor A valid view's descriptor.
    --  @param X Column.
@@ -14,6 +17,23 @@ package Pictlib.Internal.Pixels is
    function Pixel_Offset (Descriptor : Images.Image_Descriptor; X, Y : Natural) return Natural is
      (Natural (Byte_Count (Y) * Byte_Count (Descriptor.Stride)
                + Byte_Count (X) * Images.Bytes_Per_Pixel (Descriptor.Format)));
+   --  Where each component of a pixel lies, counted from its first byte, so a loop over a row decides the format
+   --  once; a format without alpha points Alpha at nothing, and its pixels are opaque.
+   type Component_Offsets is record
+      Red, Green, Blue, Alpha : Natural := 0;
+      Has_Alpha : Boolean := False;
+   end record;
+   --  Offsets.
+   --  @param Format A pixel format.
+   --  @return Where its components lie.
+   function Offsets (Format : Pixel_Format) return Component_Offsets is
+     (case Format is
+         when RGB_24 => (Red => 0, Green => 1, Blue => 2, Alpha => 0, Has_Alpha => False),
+         when BGR_24 => (Red => 2, Green => 1, Blue => 0, Alpha => 0, Has_Alpha => False),
+         when RGBA_32 => (Red => 0, Green => 1, Blue => 2, Alpha => 3, Has_Alpha => True),
+         when BGRA_32 => (Red => 2, Green => 1, Blue => 0, Alpha => 3, Has_Alpha => True),
+         when ARGB_32 => (Red => 1, Green => 2, Blue => 3, Alpha => 0, Has_Alpha => True));
+
    --  Color at.
    --  @param Format The view's pixel format.
    --  @param Data Its storage.

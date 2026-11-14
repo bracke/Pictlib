@@ -89,7 +89,9 @@ besides `jpeglib`'s own buffers, both freed when the opcode ends. Text keeps
 up to eight loaded fonts, nine while one loads before the least recently used goes, each a copy of its file and a glyph atlas, for the
 whole of a `Render`; they are freed when it ends. Regions keep their
 scanline data, the current inversion set and a buffer it is merged in, each
-reserved once for every point. The encoder keeps the rows its dry run stored
+reserved once for every point, and, once walked, what walking to each
+scanline from the top costs, which lets a walk go back up without starting
+again yet be charged as if it had. The encoder keeps the rows its dry run stored
 when one allocation of at most 64 MiB holds them, and frees them when the
 picture is written. Retained metadata and
 font names are read into a heap buffer and then copied into the store, so

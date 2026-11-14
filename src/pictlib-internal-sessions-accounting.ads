@@ -20,6 +20,12 @@ package Pictlib.Internal.Sessions.Accounting is
    --  @param Units Drawing work about to be done.
    --  @return As Charge_Work above.
    function Charge_Work (S : in out Session; Units : Natural) return Results.Result;
+   --  Charged: Charge_Work for a loop that charges often, without building a result when it succeeds.
+   --  @param S Session doing the work.
+   --  @param Units Drawing work about to be done.
+   --  @return True with the work counted; False with nothing counted, when Charge_Work would fail, and gives
+   --  that failure.
+   function Charged (S : in out Session; Units : Natural) return Boolean;
    --  Over work.
    --  @param S Session whose drawing budget was crossed.
    --  @param Units Work asked for beyond the work done.
@@ -54,13 +60,14 @@ package Pictlib.Internal.Sessions.Accounting is
    --  this row's and the next's, which swap buffers and so both grow to the most edges active at once; and its
    --  crossing.
    Polygon_Edge_Bytes : constant := 3 * 48 + 8;
-   --  A unit of a region's size, for a copy of it: at most a 12-byte scanline record, as an empty scanline is.
-   Region_Unit_Bytes : constant := 12;
+   --  A unit of a region's size, for a copy of it: at most a 12-byte scanline record and, once walked, its
+   --  8-byte running cost; or a point, its active copy and its merge, 4 bytes each.
+   Region_Unit_Bytes : constant := 20;
    --  Each byte of a region read: its scanlines and inversion points, reserved exactly, and while it is walked
-   --  as a clip or mask the active points and their merge, each reserved for every point, the row's spans cut
-   --  from them and those spans' share of the intersection with the drawn row, each grown to the most a row
-   --  needs. A scanline of 4 bytes read is a 12-byte
-   --  record; an inversion point of 2 bytes is 4 bytes stored and up to 16 more walked: at most 10 a byte.
+   --  as a clip or mask each scanline's running cost, the active points and their merge, each reserved for every
+   --  point, the row's spans cut from them and those spans' share of the intersection with the drawn row, each
+   --  grown to the most a row needs. A scanline of 4 bytes read is a 12-byte record and an 8-byte cost, 5 a
+   --  byte; an inversion point of 2 bytes is 4 bytes stored and up to 16 more walked, 10 a byte.
    Region_Payload_Factor : constant := 10;
    --  A unit of shape-building work: the spans it can make.
    Shape_Bytes_Per_Work_Unit : constant := 256;

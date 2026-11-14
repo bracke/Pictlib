@@ -9,6 +9,8 @@ package body Pictlib.Internal.Rendering is
    use type Geometry.Rect;
    use type Patterns.Pattern_Kind;
    use type Transfer_Modes.Effect_Kind;
+   use type Transfer_Modes.Mode_Kind;
+   use type Pixmaps.Pixel_Encoding;
    use type Images.RGB_Color;
 
    procedure Start
@@ -194,8 +196,10 @@ package body Pictlib.Internal.Rendering is
             --  A copy: Paint_Span may not change the spans, and a read by index would hold a lock on them.
             Span : constant Regions.Span := P.Machine.Row_Spans.Element (Index);
          begin
-            Outcome := Accounting.Charge_Work (S, Span.Right - Span.Left);
-            exit when not Results.Succeeded (Outcome);
+            if not Accounting.Charged (S, Span.Right - Span.Left) then
+               Outcome := Accounting.Charge_Work (S, Span.Right - Span.Left);
+               exit;
+            end if;
             Paint_Span (P, Span.Left, Span.Right);
          end;
       end loop;
@@ -400,8 +404,8 @@ package body Pictlib.Internal.Rendering is
       Whole : constant Long_Long_Integer := Source_Width / Destination_Width;
       Part : constant Long_Long_Integer := Source_Width mod Destination_Width;
 
-      function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
-         pragma Unreferenced (Y);
+      --  The source pixel destination column X samples.
+      function Source_At (X : Integer) return Images.RGB_Color is
       begin
          if X /= Next_X then
             declare
@@ -411,10 +415,9 @@ package body Pictlib.Internal.Rendering is
                Left_Over := Scaled mod Destination_Width;
             end;
          end if;
-         declare
-            Pixel : constant Images.RGB_Color :=
-              Pixmaps.Pixel (Decoder, Natural (Long_Long_Integer (Source.Left - Header.Bounds.Left) + Column));
-         begin
+         return Pixel : constant Images.RGB_Color :=
+           Pixmaps.Pixel (Decoder, Natural (Long_Long_Integer (Source.Left - Header.Bounds.Left) + Column))
+         do
             Column := Column + Whole;
             Left_Over := Left_Over + Part;
             if Left_Over >= Destination_Width then
@@ -422,10 +425,71 @@ package body Pictlib.Internal.Rendering is
                Left_Over := Left_Over - Destination_Width;
             end if;
             Next_X := X + 1;
-            return (if Identity then Pixel else Transfer_Modes.Compose (Kind, Pixel, Under, P.Port.Colors));
-         end;
+         end return;
+      end Source_At;
+
+      function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
+         pragma Unreferenced (Y);
+         Pixel : constant Images.RGB_Color := Source_At (X);
+      begin
+         return (if Identity then Pixel else Transfer_Modes.Compose (Kind, Pixel, Under, P.Port.Colors));
       end Color_At;
       function Paint is new Paint_Row (Color_At, Reads_Under => Transfer_Modes.Reads_Destination (Kind));
+
+      --  An unscaled copy in black on white is the converted row itself: each span is written as one run.
+      Run_Copy : constant Boolean := Identity and then Source_Width = Destination_Width;
+      Current_Y : Integer := 0;
+      procedure Copy_Span (P : in out Painter; Left, Right : Integer) is
+         First : constant Natural :=
+           Natural (Long_Long_Integer (Source.Left - Header.Bounds.Left) + Long_Long_Integer (Left - Destination.Left));
+      begin
+         if Left < Right then
+            Canvas.Put_Run
+              (P.Machine.Target, Canvas.Index (P.Machine.Target, Left - P.Window.Left, Current_Y - P.Window.Top),
+               Pixmaps.Colors (Decoder) (First .. First + (Right - Left) - 1));
+         end if;
+      end Copy_Span;
+      function Copied is new Charged_Spans (Copy_Span);
+
+      --  A BitMap's pixels are black or white. Under the boolean modes but copy each of the two either paints one
+      --  color, changes nothing, or, for xor, inverts what is under it: decided once for both, not composed a
+      --  pixel at a time.
+      Two_Toned : constant Boolean :=
+        Header.Encoding = Pixmaps.Bitmap_Bits
+        and then Kind in Transfer_Modes.Or_Mode | Transfer_Modes.Xor_Mode | Transfer_Modes.Bic
+                       | Transfer_Modes.Not_Or | Transfer_Modes.Not_Xor | Transfer_Modes.Not_Bic;
+      Xored : constant Boolean := Kind in Transfer_Modes.Xor_Mode | Transfer_Modes.Not_Xor;
+      Dark_Color, Light_Color : Images.RGB_Color := Images.Black;
+      Dark_Effect : constant Transfer_Modes.Effect_Kind :=
+        (if Two_Toned and then not Xored
+         then Transfer_Modes.Effect (Kind, Images.Black, P.Port.Colors, True, Dark_Color)
+         else Transfer_Modes.Depends_On_Destination);
+      Light_Effect : constant Transfer_Modes.Effect_Kind :=
+        (if Two_Toned and then not Xored
+         then Transfer_Modes.Effect (Kind, Images.White, P.Port.Colors, True, Light_Color)
+         else Transfer_Modes.Depends_On_Destination);
+      --  Whether the pixel Bit_Keeps last looked at is black, for Bit_Color, asked next of the same pixel.
+      Dark : Boolean := False;
+      --  Xor inverts under black and keeps under white; notXor the other way round.
+      function Bit_Keeps (X, Y : Integer) return Boolean is
+         pragma Unreferenced (Y);
+      begin
+         Dark := Source_At (X) = Images.Black;
+         return
+           (if Xored then Dark = (Kind = Transfer_Modes.Not_Xor)
+            else (if Dark then Dark_Effect else Light_Effect) = Transfer_Modes.Unchanged);
+      end Bit_Keeps;
+      function Bit_Color (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
+         pragma Unreferenced (X, Y);
+      begin
+         return (if Xored then Transfer_Modes.Invert (Under) elsif Dark then Dark_Color else Light_Color);
+      end Bit_Color;
+      function Bits is new Paint_Row (Bit_Color, Reads_Under => Xored, Keeps => Bit_Keeps);
+      Bit_Painted : constant Boolean :=
+        Two_Toned
+        and then (Xored
+                  or else (Dark_Effect /= Transfer_Modes.Depends_On_Destination
+                           and then Light_Effect /= Transfer_Modes.Depends_On_Destination));
    begin
       if Relative < 0 or else Relative >= Source_Height then
          return Results.Success;
@@ -435,13 +499,14 @@ package body Pictlib.Internal.Rendering is
             Y : constant Integer := Destination.Top + Integer (K);
          begin
             --  Every destination row a copy walks costs a unit, in the frame or not.
-            Outcome := Accounting.Charge_Work (S, Natural'(1));
-            if not Results.Succeeded (Outcome) then
-               return Outcome;
+            if not Accounting.Charged (S, 1) then
+               return Accounting.Charge_Work (S, Natural'(1));
             end if;
             Outcome := Begin_Masked_Row (P, S, Y, Painted.Left, Painted.Right, Mask, Header.Masked);
             if Results.Succeeded (Outcome) then
-               Outcome := Paint (P, S, Y);
+               Current_Y := Y;
+               Outcome :=
+                 (if Run_Copy then Copied (P, S) elsif Bit_Painted then Bits (P, S, Y) else Paint (P, S, Y));
             end if;
             if not Results.Succeeded (Outcome) then
                return Outcome;

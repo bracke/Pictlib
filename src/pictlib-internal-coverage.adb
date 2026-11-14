@@ -454,8 +454,8 @@ package body Pictlib.Internal.Coverage is
       declare
          Lowest : Long_Long_Integer := Edges.First_Element.Last;
       begin
-         for E of Edges loop
-            Lowest := Long_Long_Integer'Max (Lowest, E.Last);
+         for Index in Edges.First_Index .. Edges.Last_Index loop
+            Lowest := Long_Long_Integer'Max (Lowest, Edges.Element (Index).Last);
          end loop;
          Expect_Rows
            (Item, Integer (Long_Long_Integer'Max (Long_Long_Integer (Item.Window.Top), Edges.First_Element.First)),
@@ -613,8 +613,8 @@ package body Pictlib.Internal.Coverage is
             exit when Item.Spent;
             Regions.Row_Spans (Source, Y, Spans, Units, Remaining (Item));
             Add_Work (Item, Units);
-            for S of Spans loop
-               Add (Item, Y, S.Left, S.Right);
+            for Index in Spans.First_Index .. Spans.Last_Index loop
+               Add (Item, Y, Spans.Element (Index).Left, Spans.Element (Index).Right);
             end loop;
          end loop;
       end if;
@@ -674,10 +674,14 @@ package body Pictlib.Internal.Coverage is
             declare
                Inset : Span_List;
             begin
-               for S of Spans loop
-                  if S.Left + Pen_Width < S.Right - Pen_Width then
-                     Inset.Append (Regions.Span'(S.Left + Pen_Width, S.Right - Pen_Width));
-                  end if;
+               for Index in Spans.First_Index .. Spans.Last_Index loop
+                  declare
+                     S : constant Regions.Span := Spans.Element (Index);
+                  begin
+                     if S.Left + Pen_Width < S.Right - Pen_Width then
+                        Inset.Append (Regions.Span'(S.Left + Pen_Width, S.Right - Pen_Width));
+                     end if;
+                  end;
                end loop;
                Narrowed.Append (Inset);
             end;
@@ -710,8 +714,8 @@ package body Pictlib.Internal.Coverage is
                   begin
                      Regions.Subtract (Whole (Y - Low), Eroded, Kept);
                      Charge (Item, Natural (Kept.Length) + 1);
-                     for S of Kept loop
-                        Add (Item, Y, S.Left, S.Right);
+                     for Index in Kept.First_Index .. Kept.Last_Index loop
+                        Add (Item, Y, Kept.Element (Index).Left, Kept.Element (Index).Right);
                      end loop;
                   end;
                end;

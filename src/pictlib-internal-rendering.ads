@@ -233,7 +233,7 @@ package Pictlib.Internal.Rendering is
    --  @param X Column.
    --  @param Y Row.
    --  @return False.
-   function Never (X, Y : Integer) return Boolean;
+   function Never (X, Y : Integer) return Boolean with Inline;
    --  Paint row: each span of Row_Spans is charged, then each of its pixels becomes Color_At of what is under it,
    --  left to right; nothing is painted past the budget. Keeps is asked of each pixel once, then, unless it is
    --  kept, Color_At, so Color_At may use what Keeps worked out for the same pixel.
