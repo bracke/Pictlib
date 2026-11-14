@@ -89,6 +89,22 @@ Output, drawing-work charges and the limits are unchanged.
   rasterizer, which now finds each subsample row's edges once a row by a
   sweep, not once a pixel by testing them all (textrender 0fd899a and
   423b0ff, coverage unchanged pixel for pixel).
+- A fourth round: a bit pattern under or, bic and their not forms writes,
+  for each of its eight columns whose bit paints, every eighth pixel of a
+  span in one color, the format decided once; a color pattern's tile is
+  read by value. PackBits unpacks a run at once rather than a unit at a
+  time (still proved); the memory source and the fixed buffer copy a
+  slice; a run's byte is packed as one byte; the canvas writes runs in
+  each format with its own loop; Convert tests BitMap bits by shifting and
+  looks an indexed color up only when the index changes. A shape keeps
+  every row's spans in one pool, each row a slot read and written by
+  value, so building it takes no lock and frees no list a row; oval rows
+  are worked out in 64 bits when the box allows and the square root
+  starts near the root; short constant spans are written directly.
+  Against commit 007bf2b: patterned fills take a quarter of the
+  instructions, the layouts 29 % fewer, clipped ovals 20 % fewer and the
+  real-world picture 22 % fewer; text, with textrender 594f048, which
+  resolves each subsample row by each edge's prefix of samples, 32 % fewer.
 
 ### Hostile input
 
@@ -927,3 +943,5 @@ All tooling is Ada, in the `tests` crate:
 - `pictlib_benchmark` runs one case alone with `--layouts`, `--patterns`,
   `--text`, `--clipped` or `--vector`. A test pins what a clip walked back
   up again and again is charged, and what it draws.
+- A test draws many lines into one shape in no order of rows and checks it
+  holds the union of their Bresenham paths.

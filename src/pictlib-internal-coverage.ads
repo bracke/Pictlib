@@ -111,11 +111,27 @@ package Pictlib.Internal.Coverage is
 private
    package Row_Vectors is new Ada.Containers.Vectors (Natural, Span_List, Regions.Span_Vectors."=");
 
+   --  A row's spans: Count of them in a shape's span pool from First, with Room slots there it may fill in place.
+   type Row_Slot is record
+      First : Positive := 1;
+      Count : Natural := 0;
+      Room : Natural := 0;
+   end record;
+
+   package Slot_Vectors is new Ada.Containers.Vectors (Natural, Row_Slot);
+
+   --  Every row's spans live in one pool, not a list each: a row is a slot, read and written by value, so
+   --  building a shape takes no lock and frees no list per row. Builders mostly fill rows top down, each at the
+   --  pool's end; a row that outgrows its room moves there with room to spare, and the pool is compacted once
+   --  what rows left behind outweighs what they hold.
    type Shape is record
       Window : Area;
       --  Rows Top .. Top + Rows.Length - 1, each charged as it is added.
       Top : Integer := 0;
-      Rows : Row_Vectors.Vector;
+      Rows : Slot_Vectors.Vector;
+      Pool : Span_List;
+      --  Pool slots no row owns any more.
+      Abandoned : Natural := 0;
       Units : Pixel_Count := 0;
       Allowance : Pixel_Count := Pixel_Count'Last;
       Spent : Boolean := False;

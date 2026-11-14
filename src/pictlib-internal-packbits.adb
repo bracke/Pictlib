@@ -48,16 +48,29 @@ is
                   Status := Truncated;
                   return;
                end if;
-               for Repeat in 1 .. 257 - Flag loop
-                  pragma Loop_Invariant (Written <= Output'Length);
-                  if Output'Length - Written < Size then
-                     Status := Overrun;
-                     exit;
+               --  As many of the run's units as the output has room for, written at once rather than a unit at a
+               --  time; a run longer than that room overruns it.
+               declare
+                  Units : constant Natural := 257 - Flag;
+                  Fits : constant Natural := Natural'Min (Units, (Output'Length - Written) / Size);
+               begin
+                  if Fits > 0 then
+                     if Size = 1 then
+                        Output (Output'First + Written .. Output'First + Written + Fits - 1) :=
+                          [others => Packed (Next)];
+                     else
+                        for Index in 0 .. Fits - 1 loop
+                           pragma Loop_Invariant (Written + Fits * Size <= Output'Length);
+                           Output (Output'First + Written + 2 * Index) := Packed (Next);
+                           Output (Output'First + Written + 2 * Index + 1) := Packed (Next + 1);
+                        end loop;
+                     end if;
                   end if;
-                  Output (Output'First + Written .. Output'First + Written + Size - 1) :=
-                    Packed (Next .. Next + Size - 1);
-                  Written := Written + Size;
-               end loop;
+                  Written := Written + Fits * Size;
+                  if Fits < Units then
+                     Status := Overrun;
+                  end if;
+               end;
                Next := Next + Size;
             end if;
          end;
@@ -106,7 +119,7 @@ is
                   Run := Run + 1;
                end loop;
                Put (Byte (257 - Run));
-               Put_Bytes (Index, 1);
+               Put (Row (Row'First + Index));
                Index := Index + Run;
             end;
          else

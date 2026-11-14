@@ -66,13 +66,63 @@ package body Pictlib.Internal.Canvas is
                Storage (At_Byte + 2) := Color.Red;
                At_Byte := At_Byte + 3;
             end loop;
-         when RGBA_32 | BGRA_32 | ARGB_32 =>
+         when RGBA_32 =>
             for Color of Colors loop
-               Put_At (Target, At_Byte, Color);
+               Storage (At_Byte) := Color.Red;
+               Storage (At_Byte + 1) := Color.Green;
+               Storage (At_Byte + 2) := Color.Blue;
+               Storage (At_Byte + 3) := 16#FF#;
+               At_Byte := At_Byte + 4;
+            end loop;
+         when BGRA_32 =>
+            for Color of Colors loop
+               Storage (At_Byte) := Color.Blue;
+               Storage (At_Byte + 1) := Color.Green;
+               Storage (At_Byte + 2) := Color.Red;
+               Storage (At_Byte + 3) := 16#FF#;
+               At_Byte := At_Byte + 4;
+            end loop;
+         when ARGB_32 =>
+            for Color of Colors loop
+               Storage (At_Byte) := 16#FF#;
+               Storage (At_Byte + 1) := Color.Red;
+               Storage (At_Byte + 2) := Color.Green;
+               Storage (At_Byte + 3) := Color.Blue;
                At_Byte := At_Byte + 4;
             end loop;
       end case;
    end Put_Run;
+
+   procedure Put_Strided
+     (Target : in out Canvas;
+      At_Pixel : Positive;
+      Count : Natural;
+      Stride : Positive;
+      Color : Images.RGB_Color)
+   is
+      Storage : Streams.Byte_Array renames Target.View.Storage.all;
+      Step : constant Positive := Stride * Target.Step;
+      At_Byte : Positive := At_Pixel;
+      --  The pixel's bytes in storage order, the format decided here once.
+      Size : constant Positive := Target.Step;
+      Bytes : constant Streams.Byte_Array (1 .. 4) :=
+        (case Target.View.Descriptor.Format is
+            when RGB_24 | RGBA_32 => [Color.Red, Color.Green, Color.Blue, 16#FF#],
+            when BGR_24 | BGRA_32 => [Color.Blue, Color.Green, Color.Red, 16#FF#],
+            when ARGB_32 => [16#FF#, Color.Red, Color.Green, Color.Blue]);
+   begin
+      for Written in 1 .. Count loop
+         Storage (At_Byte) := Bytes (1);
+         Storage (At_Byte + 1) := Bytes (2);
+         Storage (At_Byte + 2) := Bytes (3);
+         if Size = 4 then
+            Storage (At_Byte + 3) := Bytes (4);
+         end if;
+         if Written < Count then
+            At_Byte := At_Byte + Step;
+         end if;
+      end loop;
+   end Put_Strided;
 
    function Get_At (Target : Canvas; At_Pixel : Positive) return Images.RGB_Color is
      (Pixels.Color_At (Target.View.Descriptor.Format, Target.View.Storage.all, At_Pixel));
@@ -97,6 +147,10 @@ package body Pictlib.Internal.Canvas is
    procedure Put_Span (Target : in out Canvas; Left, Right, Y : Natural; Color : Images.RGB_Color) is
    begin
       if Left = Right then
+         return;
+      elsif Right - Left <= 16 then
+         --  A short span costs less written a pixel at a time than doubled.
+         Put_Strided (Target, Index (Target, Left, Y), Right - Left, 1, Color);
          return;
       end if;
       Put (Target, Left, Y, Color);

@@ -20,16 +20,20 @@ package body Pictlib.Internal.Patterns is
             declare
                Row : constant Byte := Item.Bits (Y mod 8);
             begin
-               return
-                 (if (Interfaces.Shift_Right (Interfaces.Unsigned_8 (Row), 7 - X mod 8) and 1) /= 0 then Images.Black
-                  else Images.White);
+               return (if Bit_Set (Row, X mod 8) then Images.Black else Images.White);
             end;
          when Solid_Color =>
             return Item.Color;
          when Color_Pattern =>
-            return Item.Tile ((Y mod Item.Height) * Item.Width + X mod Item.Width);
+            --  Element, a copy: an indexed read would take and finalize a controlled lock at every pixel.
+            return Item.Tile.Element ((Y mod Item.Height) * Item.Width + X mod Item.Width);
       end case;
    end Sample;
+
+   function Row_Bits (Item : Pattern; Y : Integer) return Byte is (Item.Bits (Y mod 8));
+
+   function Bit_Set (Bits : Byte; Column : Natural) return Boolean is
+     ((Interfaces.Shift_Right (Interfaces.Unsigned_8 (Bits), 7 - Column) and 1) /= 0);
 
    function Period (Item : Pattern) return Positive is
      (case Item.Kind is

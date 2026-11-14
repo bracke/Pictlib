@@ -491,7 +491,8 @@ package body Pictlib.Internal.Pixmaps is
                begin
                   for Bit in 0 .. Natural'Min (7, Width - 1 - 8 * At_Byte) loop
                      Decoder.Buffers.Colors (8 * At_Byte + Bit) :=
-                       (if (Bits and 2 ** (7 - Bit)) /= 0 then Images.Black else Images.White);
+                       (if (Interfaces.Shift_Left (Interfaces.Unsigned_8 (Bits), Bit) and 16#80#) /= 0 then Images.Black
+                        else Images.White);
                   end loop;
                end;
             end loop;
@@ -499,6 +500,9 @@ package body Pictlib.Internal.Pixmaps is
             declare
                Depth : constant Natural := Header.Fields.Pixel_Size;
                Mask : constant Interfaces.Unsigned_8 := 2 ** Depth - 1;
+               --  The index before and its color: a run of one index looks its color up once.
+               Last_Index : Integer := -1;
+               Last_Color : Images.RGB_Color := Images.Black;
             begin
                for X in 0 .. Width - 1 loop
                   declare
@@ -509,8 +513,12 @@ package body Pictlib.Internal.Pixmaps is
                         else Natural (Interfaces.Shift_Right (Interfaces.Unsigned_8 (Data (First + Bit / 8)),
                                                               8 - Depth - Bit mod 8) and Mask));
                   begin
-                     if Header.Table.Defined (Index) then
-                        Decoder.Buffers.Colors (X) := Header.Table.Colors (Index);
+                     if Index = Last_Index then
+                        Decoder.Buffers.Colors (X) := Last_Color;
+                     elsif Header.Table.Defined (Index) then
+                        Last_Index := Index;
+                        Last_Color := Header.Table.Colors (Index);
+                        Decoder.Buffers.Colors (X) := Last_Color;
                      else
                         --  Leniently black, reported once per opcode.
                         if not Decoder.Bad_Index_Reported then

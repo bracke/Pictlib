@@ -37,6 +37,18 @@ package Pictlib.Internal.Patterns is
    --  @param Color Its one sample, when it has one.
    --  @return True when every sample of Item is the same.
    function Uniform (Item : Pattern; Color : out Images.RGB_Color) return Boolean;
+   --  Row bits.
+   --  @param Item A bit pattern.
+   --  @param Y A row.
+   --  @return Its row Y mod 8, column 0 the most significant bit, 1 dark.
+   function Row_Bits (Item : Pattern; Y : Integer) return Byte
+     with Pre => Kind (Item) = Bit_Pattern;
+   --  Bit set.
+   --  @param Bits A row of a bit pattern.
+   --  @param Column A column, from 0 to 7.
+   --  @return Whether that column is dark.
+   function Bit_Set (Bits : Byte; Column : Natural) return Boolean
+     with Pre => Column <= 7, Inline;
    --  Period.
    --  @param Item Pattern.
    --  @return The columns after which its rows repeat: Sample (Item, X + Period, Y) = Sample (Item, X, Y).

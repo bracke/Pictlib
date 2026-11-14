@@ -58,6 +58,18 @@ package Pictlib.Internal.Canvas is
    --  @param At_Pixel Index of the first pixel.
    --  @param Colors Opaque colors, as many as the row has pixels from At_Pixel on, or fewer.
    procedure Put_Run (Target : in out Canvas; At_Pixel : Positive; Colors : Pixels.Color_Row);
+   --  Put strided: Color at Count pixels of a row, from At_Pixel, every Stride-th pixel, the format decided once.
+   --  @param Target Canvas to draw on.
+   --  @param At_Pixel Index of the first pixel.
+   --  @param Count Pixels to write.
+   --  @param Stride Pixels from one written to the next.
+   --  @param Color Opaque color.
+   procedure Put_Strided
+     (Target : in out Canvas;
+      At_Pixel : Positive;
+      Count : Natural;
+      Stride : Positive;
+      Color : Images.RGB_Color);
    --  Repeat: pixels Left .. Left + Period - 1 of row Y copied over the rest of Left .. Right - 1, period by
    --  period, as a pattern repeats.
    --  @param Target Canvas to draw on.

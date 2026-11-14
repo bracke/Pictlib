@@ -120,9 +120,11 @@ package body Pictlib.Streams is
       To_Copy := Natural'Min (Natural'Min (Buffer'Length, Available), Transfer_Cap (Object.Max_Transfer));
 
       if To_Copy > 0 then
-         for I in 0 .. To_Copy - 1 loop
-            Buffer (Buffer'First + I) := Object.Storage (Object.Storage'First + Object.Position + I);
-         end loop;
+         declare
+            From : constant Positive := Object.Storage'First + Object.Position;
+         begin
+            Buffer (Buffer'First .. Buffer'First + To_Copy - 1) := Object.Storage (From .. From + To_Copy - 1);
+         end;
       end if;
 
       Object.Position := Object.Position + To_Copy;
@@ -181,9 +183,8 @@ package body Pictlib.Streams is
       To_Copy := Natural'Min (Natural'Min (Buffer'Length, Available), Transfer_Cap (Object.Max_Transfer));
 
       if To_Copy > 0 then
-         for I in 0 .. To_Copy - 1 loop
-            Object.Storage (Object.Storage'First + Object.Position + I) := Buffer (Buffer'First + I);
-         end loop;
+         Object.Storage (Object.Storage'First + Object.Position .. Object.Storage'First + Object.Position + To_Copy - 1)
+           := Buffer (Buffer'First .. Buffer'First + To_Copy - 1);
       end if;
       Object.Position := Object.Position + To_Copy;
 

@@ -43,7 +43,12 @@ package body Pictlib.Internal.Coverage is
       if Value < 2 then
          return Value;
       end if;
-      Guess := Value;
+      --  Newton's method from any guess at least the root ends on the root; the smallest power of two that is
+      --  ends there in a few steps, where Value itself took one a bit.
+      Guess := 1;
+      while Guess < Value / Guess loop
+         Guess := 2 * Guess;
+      end loop;
       loop
          Next := (Guess + Value / Guess) / 2;
          exit when Next >= Guess;
@@ -60,6 +65,8 @@ package body Pictlib.Internal.Coverage is
       Item.Spent := False;
       Item.Top := Window.Top;
       Item.Rows.Clear;
+      Item.Pool.Clear;
+      Item.Abandoned := 0;
    end Start;
 
    function Window_Of (Item : Shape) return Area is (Item.Window);
@@ -68,12 +75,22 @@ package body Pictlib.Internal.Coverage is
 
    function Last_Row (Item : Shape) return Integer is (Item.Top + Natural (Item.Rows.Length) - 1);
 
+   function Slot_Of (Item : Shape; Y : Integer) return Row_Slot is (Item.Rows.Element (Y - Item.Top));
+
+   --  Row Y's spans appended to Into.
+   procedure Append_Row (Item : Shape; Y : Integer; Into : in out Span_List) is
+      Slot : constant Row_Slot := Slot_Of (Item, Y);
+   begin
+      for Index in Slot.First .. Slot.First + Slot.Count - 1 loop
+         Into.Append (Item.Pool.Element (Index));
+      end loop;
+   end Append_Row;
+
    procedure Copy_Row (Item : Shape; Y : Integer; Into : in out Span_List) is
    begin
+      Into.Clear;
       if not Item.Spent and then Y in First_Row (Item) .. Last_Row (Item) then
-         Into.Assign (Item.Rows.Constant_Reference (Y - Item.Top));
-      else
-         Into.Clear;
+         Append_Row (Item, Y, Into);
       end if;
    end Copy_Row;
 
@@ -107,7 +124,7 @@ package body Pictlib.Internal.Coverage is
    --  Hold row Y, inside the window, charging a unit for every row added. Builders mostly go down the rows, so
    --  rows are appended; a row above the first moves those held, which is charged too.
    procedure Hold (Item : in out Shape; Y : Integer) is
-      Empty : Span_List;
+      Empty : constant Row_Slot := (others => <>);
    begin
       if Item.Rows.Is_Empty then
          Item.Top := Y;
@@ -117,22 +134,54 @@ package body Pictlib.Internal.Coverage is
          Charge (Item, Y - Last_Row (Item));
          Item.Rows.Append (Empty, Ada.Containers.Count_Type (Y - Last_Row (Item)));
       elsif Y < Item.Top then
+         --  The held rows' slots move down, a unit a row; their spans stay where they are in the pool.
          Charge (Item, Item.Top - Y + Natural (Item.Rows.Length));
-         --  Each held row is moved, not copied, so the cost is a unit a row whatever its spans: Prepend would
-         --  copy every span the rows below hold.
-         declare
-            Added : constant Natural := Item.Top - Y;
-            Moved : Row_Vectors.Vector;
-         begin
-            Moved.Append (Empty, Ada.Containers.Count_Type (Added + Natural (Item.Rows.Length)));
-            for Index in Item.Rows.First_Index .. Item.Rows.Last_Index loop
-               Regions.Span_Vectors.Move (Target => Moved (Added + Index), Source => Item.Rows (Index));
-            end loop;
-            Item.Rows.Move (Moved);
-         end;
+         Item.Rows.Prepend (Empty, Ada.Containers.Count_Type (Item.Top - Y));
          Item.Top := Y;
       end if;
    end Hold;
+
+   --  The pool rewritten with only what rows hold, each with no room to spare: once rows have left more behind
+   --  than they hold, so the work is no more than the moves that left it.
+   procedure Compact (Item : in out Shape) is
+      Kept : Span_List;
+   begin
+      Kept.Reserve_Capacity (Ada.Containers.Count_Type (Natural (Item.Pool.Length) - Item.Abandoned));
+      for Index in Item.Rows.First_Index .. Item.Rows.Last_Index loop
+         declare
+            Slot : constant Row_Slot := Item.Rows.Element (Index);
+            Moved : constant Row_Slot := (First => Natural (Kept.Length) + 1, Count => Slot.Count, Room => Slot.Count);
+         begin
+            for At_Span in Slot.First .. Slot.First + Slot.Count - 1 loop
+               Kept.Append (Item.Pool.Element (At_Span));
+            end loop;
+            Item.Rows.Replace_Element (Index, Moved);
+         end;
+      end loop;
+      Item.Pool.Move (Kept);
+      Item.Abandoned := 0;
+   end Compact;
+
+   --  Row Y's spans become Spans: in its room when they fit, else at the pool's end with as much again to spare,
+   --  so a row that keeps growing moves a number of times only logarithmic in its spans.
+   procedure Place (Item : in out Shape; Y : Integer; Spans : Span_List) is
+      Slot : Row_Slot := Slot_Of (Item, Y);
+      Count : constant Natural := Natural (Spans.Length);
+   begin
+      if Count > Slot.Room then
+         Item.Abandoned := Item.Abandoned + Slot.Room;
+         Slot := (First => Natural (Item.Pool.Length) + 1, Count => 0, Room => 2 * Count);
+         Item.Pool.Append (Regions.Span'(0, 0), Ada.Containers.Count_Type (Slot.Room));
+      end if;
+      for Index in 0 .. Count - 1 loop
+         Item.Pool.Replace_Element (Slot.First + Index, Spans.Element (Spans.First_Index + Index));
+      end loop;
+      Slot.Count := Count;
+      Item.Rows.Replace_Element (Y - Item.Top, Slot);
+      if Item.Abandoned > Natural (Item.Pool.Length) / 2 then
+         Compact (Item);
+      end if;
+   end Place;
 
    --  Room for rows down to Last, from First when none is held, so appending them does not grow the rows a step
    --  at a time, each step copying every span held; never for more rows than the allowance left pays for.
@@ -158,17 +207,45 @@ package body Pictlib.Internal.Coverage is
          return;
       end if;
       Hold (Item, Y);
+      Charge (Item, 1);
       --  Spans mostly arrive left to right: append, or widen the last span, in place.
       declare
-         Row : Span_List renames Item.Rows.Reference (Y - Item.Top).Element.all;
+         Slot : Row_Slot := Slot_Of (Item, Y);
+         Last_Index : constant Natural := Slot.First + Slot.Count - 1;
+         At_End : constant Boolean := Slot.First + Slot.Room - 1 = Natural (Item.Pool.Length);
       begin
-         Charge (Item, 1);
-         if Row.Is_Empty or else Row.Last_Element.Right < First then
-            Row.Append (Regions.Span'(First, Last));
+         if Slot.Count = 0 or else Item.Pool.Element (Last_Index).Right < First then
+            if Slot.Count < Slot.Room then
+               Item.Pool.Replace_Element (Slot.First + Slot.Count, Regions.Span'(First, Last));
+               Slot.Count := Slot.Count + 1;
+               Item.Rows.Replace_Element (Y - Item.Top, Slot);
+               return;
+            elsif At_End or else Slot.Room = 0 then
+               --  At the pool's end, or a row with no spans yet, which starts there.
+               if Slot.Room = 0 then
+                  Slot.First := Natural (Item.Pool.Length) + 1;
+               end if;
+               Item.Pool.Append (Regions.Span'(First, Last));
+               Slot.Count := Slot.Count + 1;
+               Slot.Room := Slot.Room + 1;
+               Item.Rows.Replace_Element (Y - Item.Top, Slot);
+               return;
+            end if;
+            --  A row full and away from the end moves there with the span, still charged as an append.
+            declare
+               Grown : Span_List;
+            begin
+               Append_Row (Item, Y, Grown);
+               Grown.Append (Regions.Span'(First, Last));
+               Place (Item, Y, Grown);
+            end;
             return;
-         elsif Row.Last_Element.Left <= First then
-            Row.Replace_Element
-              (Row.Last_Index, Regions.Span'(Row.Last_Element.Left, Integer'Max (Row.Last_Element.Right, Last)));
+         elsif Item.Pool.Element (Last_Index).Left <= First then
+            declare
+               Widened : constant Regions.Span := Item.Pool.Element (Last_Index);
+            begin
+               Item.Pool.Replace_Element (Last_Index, Regions.Span'(Widened.Left, Integer'Max (Widened.Right, Last)));
+            end;
             return;
          end if;
       end;
@@ -176,26 +253,30 @@ package body Pictlib.Internal.Coverage is
          Merged : Span_List;
          Pending : Regions.Span := (First, Last);
          Placed : Boolean := False;
+         Slot : constant Row_Slot := Slot_Of (Item, Y);
       begin
-         --  Read in place and swapped in: the row is not copied.
-         for S of Item.Rows (Y - Item.Top) loop
-            if S.Right < Pending.Left then
-               Merged.Append (S);
-            elsif Pending.Right < S.Left then
-               if not Placed then
-                  Merged.Append (Pending);
-                  Placed := True;
+         for Index in Slot.First .. Slot.First + Slot.Count - 1 loop
+            declare
+               S : constant Regions.Span := Item.Pool.Element (Index);
+            begin
+               if S.Right < Pending.Left then
+                  Merged.Append (S);
+               elsif Pending.Right < S.Left then
+                  if not Placed then
+                     Merged.Append (Pending);
+                     Placed := True;
+                  end if;
+                  Merged.Append (S);
+               else
+                  Pending := (Integer'Min (S.Left, Pending.Left), Integer'Max (S.Right, Pending.Right));
                end if;
-               Merged.Append (S);
-            else
-               Pending := (Integer'Min (S.Left, Pending.Left), Integer'Max (S.Right, Pending.Right));
-            end if;
+            end;
          end loop;
          if not Placed then
             Merged.Append (Pending);
          end if;
          Charge (Item, Natural (Merged.Length));
-         Item.Rows (Y - Item.Top).Move (Merged);
+         Place (Item, Y, Merged);
       end;
    end Add;
 
@@ -236,8 +317,12 @@ package body Pictlib.Internal.Coverage is
          return False;
       end if;
       declare
+         --  The same quotient in 64 bits when the box is at most 2 ** 15 on each side, as its product then is
+         --  below 2 ** 60; in 128 otherwise.
          Limit : constant Long_Long_Integer :=
-           Long_Long_Integer (Wide (Width) ** 2 * (Wide (Height) ** 2 - Wide (Dy) ** 2) / Wide (Height) ** 2);
+           (if Width <= 2 ** 15 and then Height <= 2 ** 15
+            then Width ** 2 * (Height ** 2 - Dy ** 2) / Height ** 2
+            else Long_Long_Integer (Wide (Width) ** 2 * (Wide (Height) ** 2 - Wide (Dy) ** 2) / Wide (Height) ** 2));
          Reach : constant Long_Long_Integer := Square_Root (Limit);
          From : constant Long_Long_Integer := Ceiling_Divide (Sum - Reach - 1, 2);
          To : constant Long_Long_Integer := Floor_Divide (Sum + Reach - 1, 2);
@@ -346,16 +431,18 @@ package body Pictlib.Internal.Coverage is
             exit when Item.Spent;
             declare
                Y : constant Integer := Item.Top + Index;
+               Spans : Span_List;
                Kept : Span_List;
             begin
-               --  Read in place and swapped in: the row is not copied.
-               for S of Item.Rows (Index) loop
-                  --  The span is charged before it is tested, so a spent shape tests no more of it.
-                  Charge (Item, S.Right - S.Left);
-                  exit when Item.Spent;
+               Append_Row (Item, Y, Spans);
+               for At_Span in Spans.First_Index .. Spans.Last_Index loop
                   declare
+                     S : constant Regions.Span := Spans.Element (At_Span);
                      Run_Start : Integer := S.Left;
                   begin
+                     --  The span is charged before it is tested, so a spent shape tests no more of it.
+                     Charge (Item, S.Right - S.Left);
+                     exit when Item.Spent;
                      for X in S.Left .. S.Right - 1 loop
                         if not Inside (X, Y) then
                            if Run_Start < X then
@@ -369,7 +456,7 @@ package body Pictlib.Internal.Coverage is
                      end if;
                   end;
                end loop;
-               Item.Rows (Index).Move (Kept);
+               Place (Item, Y, Kept);
             end;
          end loop;
       end;
@@ -733,8 +820,8 @@ package body Pictlib.Internal.Coverage is
          return;
       end if;
       declare
-         --  One scratch list for every row, its buffer swapped with the row's: nothing is copied.
-         Kept : Span_List;
+         --  Scratch lists for every row, their buffers kept from row to row.
+         Mine, Theirs, Kept : Span_List;
       begin
          for Index in 0 .. Natural (Item.Rows.Length) - 1 loop
             exit when Item.Spent;
@@ -743,10 +830,14 @@ package body Pictlib.Internal.Coverage is
             begin
                --  A row Other does not reach keeps all it has.
                if Y in First_Row (Other) .. Last_Row (Other) then
-                  Regions.Subtract (Item.Rows (Index), Other.Rows (Y - Other.Top), Kept);
-                  Item.Rows (Index).Move (Kept);
+                  Mine.Clear;
+                  Theirs.Clear;
+                  Append_Row (Item, Y, Mine);
+                  Append_Row (Other, Y, Theirs);
+                  Regions.Subtract (Mine, Theirs, Kept);
+                  Place (Item, Y, Kept);
                end if;
-               Charge (Item, Natural (Item.Rows (Index).Length) + 1);
+               Charge (Item, Slot_Of (Item, Y).Count + 1);
             end;
          end loop;
       end;

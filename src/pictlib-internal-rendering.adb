@@ -332,18 +332,29 @@ package body Pictlib.Internal.Rendering is
          --  as or and bic do: a pixel is the dark bit's outcome or the light bit's, never read.
          Dark_Effect, Light_Effect : Transfer_Modes.Effect_Kind := Transfer_Modes.Depends_On_Destination;
          Dark_Color, Light_Color : Images.RGB_Color := Images.Black;
-         Dark : Boolean := False;
-         function Two_Tone_Keeps (X, Y : Integer) return Boolean is
+         --  A span of such a row: the pattern's eight columns repeat across it, so each column whose bit paints is
+         --  written every eighth pixel, in one color, and a column whose bit changes nothing is not touched.
+         procedure Two_Tone_Span (P : in out Painter; Left, Right : Integer) is
+            Bits : constant Byte := Patterns.Row_Bits (Source, Current_Row);
          begin
-            Dark := Patterns.Sample (Source, X, Y) = Images.Black;
-            return (if Dark then Dark_Effect else Light_Effect) = Transfer_Modes.Unchanged;
-         end Two_Tone_Keeps;
-         function Two_Tone_Color (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
-            pragma Unreferenced (X, Y, Under);
-         begin
-            return (if Dark then Dark_Color else Light_Color);
-         end Two_Tone_Color;
-         procedure Two_Tone is new Paint_Row (Two_Tone_Color, Reads_Under => False, Keeps => Two_Tone_Keeps);
+            for Phase in 0 .. 7 loop
+               declare
+                  --  The first column of the span in this phase, and how many of the span's columns are.
+                  First : constant Integer := Left + (Phase - Left) mod 8;
+                  Dark : constant Boolean := Patterns.Bit_Set (Bits, Phase);
+               begin
+                  if First < Right
+                    and then (if Dark then Dark_Effect else Light_Effect) /= Transfer_Modes.Unchanged
+                  then
+                     Canvas.Put_Strided
+                       (P.Machine.Target,
+                        Canvas.Index (P.Machine.Target, First - P.Window.Left, Current_Row - P.Window.Top),
+                        (Right - 1 - First) / 8 + 1, 8, (if Dark then Dark_Color else Light_Color));
+                  end if;
+               end;
+            end loop;
+         end Two_Tone_Span;
+         procedure Two_Tone is new Charged_Spans (Two_Tone_Span);
          Two_Toned : Boolean := False;
       begin
          --  A uniform pattern whose result does not depend on the pixels under it paints one color, or nothing.
@@ -371,7 +382,7 @@ package body Pictlib.Internal.Rendering is
                   elsif Patterned and then not Transfer_Modes.Reads_Destination (Kind) then
                      Repeated (P, S, Outcome);
                   elsif Two_Toned then
-                     Two_Tone (P, S, Y, Outcome);
+                     Two_Tone (P, S, Outcome);
                   else
                      Paint (P, S, Y, Outcome);
                   end if;

@@ -228,5 +228,33 @@ package body Pictlib_Testing.Test_Coverage is
             Check ((-1_000_000, -1_000_000 + Near_5), (1_000_000, 1_000_000 + Near_6));
          end;
       end loop;
+      --  Many lines into one shape, in no order of rows: rows grow out of turn, move in the shape's store and are
+      --  compacted, and still hold the union of every line's Bresenham path.
+      for Trial in 1 .. 20 loop
+         declare
+            Item : Coverage.Shape;
+            Want : Grid := [others => [others => False]];
+         begin
+            Coverage.Start (Item, Window);
+            for Line in 1 .. 60 loop
+               declare
+                  From_H : constant Integer := Near;
+                  From_V : constant Integer := Near;
+                  To_H : constant Integer := Near;
+                  To_V : constant Integer := Near;
+                  Path : constant Grid := Walked ((From_H, From_V), (To_H, To_V));
+               begin
+                  Coverage.Line (Item, (From_H, From_V), (To_H, To_V), 1, 1);
+                  for Y in Grid'Range (1) loop
+                     for X in Grid'Range (2) loop
+                        Want (Y, X) := Want (Y, X) or else Path (Y, X);
+                     end loop;
+                  end loop;
+               end;
+            end loop;
+            Assert (not Coverage.Exhausted (Item) and then Covered (Item) = Want,
+                    "60 lines in one shape, trial" & Trial'Image & ", hold other than their paths");
+         end;
+      end loop;
    end Line_Path;
 end Pictlib_Testing.Test_Coverage;
