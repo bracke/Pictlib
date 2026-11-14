@@ -9,6 +9,7 @@ package body Pictlib.Internal.Rendering is
    use type Geometry.Rect;
    use type Patterns.Pattern_Kind;
    use type Transfer_Modes.Effect_Kind;
+   use type Images.RGB_Color;
 
    procedure Start
      (P : in out Painter;
@@ -139,14 +140,6 @@ package body Pictlib.Internal.Rendering is
       else Cut_Row (S, P.Port.Clip, Y + P.Port.Origin_V, P.Port.Origin_H, P.Machine.Clip_Spans, P.Machine.Row_Spans,
                     P.Machine.Scratch));
 
-   procedure Put (P : in out Painter; X, Y : Integer; Color : Images.RGB_Color) is
-   begin
-      Canvas.Put (P.Machine.Target, X - P.Window.Left, Y - P.Window.Top, Color);
-   end Put;
-
-   function Get (P : Painter; X, Y : Integer) return Images.RGB_Color is
-     (Canvas.Get (P.Machine.Target, X - P.Window.Left, Y - P.Window.Top));
-
    function Begin_Row (P : in out Painter; S : in out Sessions.Session; Y, Left, Right : Integer)
      return Results.Result
    is
@@ -182,6 +175,12 @@ package body Pictlib.Internal.Rendering is
       return Outcome;
    end Begin_Masked_Row;
 
+   function Never (X, Y : Integer) return Boolean is
+      pragma Unreferenced (X, Y);
+   begin
+      return False;
+   end Never;
+
    --  Each span of the begun row charged, then painted by Paint_Span, in order; none past the budget.
    generic
       with procedure Paint_Span (P : in out Painter; Left, Right : Integer);
@@ -190,19 +189,35 @@ package body Pictlib.Internal.Rendering is
    function Charged_Spans (P : in out Painter; S : in out Sessions.Session) return Results.Result is
       Outcome : Results.Result := Results.Success;
    begin
-      for Span of P.Machine.Row_Spans loop
-         Outcome := Accounting.Charge_Work (S, Span.Right - Span.Left);
-         exit when not Results.Succeeded (Outcome);
-         Paint_Span (P, Span.Left, Span.Right);
+      for Index in P.Machine.Row_Spans.First_Index .. P.Machine.Row_Spans.Last_Index loop
+         declare
+            --  A copy: Paint_Span may not change the spans, and a read by index would hold a lock on them.
+            Span : constant Regions.Span := P.Machine.Row_Spans.Element (Index);
+         begin
+            Outcome := Accounting.Charge_Work (S, Span.Right - Span.Left);
+            exit when not Results.Succeeded (Outcome);
+            Paint_Span (P, Span.Left, Span.Right);
+         end;
       end loop;
       return Outcome;
    end Charged_Spans;
 
    function Paint_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result is
+      --  The view is stepped through a pixel at a time, its index worked out once a span.
       procedure Paint_Span (P : in out Painter; Left, Right : Integer) is
+         At_Pixel : Positive;
       begin
+         if Left >= Right then
+            return;
+         end if;
+         At_Pixel := Canvas.Index (P.Machine.Target, Left - P.Window.Left, Y - P.Window.Top);
          for X in Left .. Right - 1 loop
-            Put (P, X, Y, Color_At (X, Y, Get (P, X, Y)));
+            if not Keeps (X, Y) then
+               Canvas.Put_At
+                 (P.Machine.Target, At_Pixel,
+                  Color_At (X, Y, (if Reads_Under then Canvas.Get_At (P.Machine.Target, At_Pixel) else Images.Black)));
+            end if;
+            At_Pixel := At_Pixel + P.Machine.Target.Step;
          end loop;
       end Paint_Span;
       function Paint is new Charged_Spans (Paint_Span);
@@ -233,6 +248,8 @@ package body Pictlib.Internal.Rendering is
       Walked : constant Pixel_Count :=
         1 + Pixel_Count (Integer'Max (0, Coverage.Last_Row (Shape) - Coverage.First_Row (Shape) + 1));
       Outcome : Results.Result := Results.Success;
+      --  The row being painted, for a span painter, which is given only its columns.
+      Current_Row : Integer := 0;
       Source : Patterns.Pattern renames P.Port.Pattern_Set (How.Source);
       Colorize : constant Boolean := Patterns.Kind (Source) = Patterns.Bit_Pattern;
       Hilited : constant Boolean := Take_Hilite (P);
@@ -261,6 +278,7 @@ package body Pictlib.Internal.Rendering is
       declare
          Sample, Color : Images.RGB_Color := Images.Black;
          Effect : Transfer_Modes.Effect_Kind := Transfer_Modes.Depends_On_Destination;
+         Patterned : constant Boolean := How.Kind = Pattern_Paint;
 
          --  An invert after HiliteMode highlights: every pixel is dark, so the background and highlight swap.
          function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
@@ -270,11 +288,57 @@ package body Pictlib.Internal.Rendering is
                                          Bit_Source => True)
             else Transfer_Modes.Compose
                    (Kind, Patterns.Sample (Source, X, Y), Under, P.Port.Colors, Colorize, Bit_Source => Colorize));
-         function Paint is new Paint_Row (Color_At);
+         function Paint is new Paint_Row
+           (Color_At, Reads_Under => not Patterned or else Transfer_Modes.Reads_Destination (Kind));
+
+         --  A copied pattern does not depend on what is under it: one period of a row is composed, and copied
+         --  over the rest of the span.
+         procedure Repeat_Span (P : in out Painter; Left, Right : Integer) is
+            Head : constant Integer := Integer'Min (Right, Left + Patterns.Period (Source));
+            At_Pixel : Positive;
+         begin
+            if Left >= Right then
+               return;
+            end if;
+            At_Pixel := Canvas.Index (P.Machine.Target, Left - P.Window.Left, Current_Row - P.Window.Top);
+            for X in Left .. Head - 1 loop
+               Canvas.Put_At (P.Machine.Target, At_Pixel, Color_At (X, Current_Row, Images.Black));
+               At_Pixel := At_Pixel + P.Machine.Target.Step;
+            end loop;
+            if Head < Right then
+               Canvas.Repeat
+                 (P.Machine.Target, Left - P.Window.Left, Right - P.Window.Left, Current_Row - P.Window.Top,
+                  Patterns.Period (Source));
+            end if;
+         end Repeat_Span;
+         function Repeated is new Charged_Spans (Repeat_Span);
+
+         --  A bit pattern under a mode where each of its two colors either paints one color or changes nothing,
+         --  as or and bic do: a pixel is the dark bit's outcome or the light bit's, never read.
+         Dark_Effect, Light_Effect : Transfer_Modes.Effect_Kind := Transfer_Modes.Depends_On_Destination;
+         Dark_Color, Light_Color : Images.RGB_Color := Images.Black;
+         Dark : Boolean := False;
+         function Two_Tone_Keeps (X, Y : Integer) return Boolean is
+         begin
+            Dark := Patterns.Sample (Source, X, Y) = Images.Black;
+            return (if Dark then Dark_Effect else Light_Effect) = Transfer_Modes.Unchanged;
+         end Two_Tone_Keeps;
+         function Two_Tone_Color (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
+            pragma Unreferenced (X, Y, Under);
+         begin
+            return (if Dark then Dark_Color else Light_Color);
+         end Two_Tone_Color;
+         function Two_Tone is new Paint_Row (Two_Tone_Color, Reads_Under => False, Keeps => Two_Tone_Keeps);
+         Two_Toned : Boolean := False;
       begin
          --  A uniform pattern whose result does not depend on the pixels under it paints one color, or nothing.
-         if How.Kind = Pattern_Paint and then Patterns.Uniform (Source, Sample) then
+         if Patterned and then Patterns.Uniform (Source, Sample) then
             Effect := Transfer_Modes.Effect (Kind, Sample, P.Port.Colors, Colorize, Color);
+         elsif Patterned and then Colorize then
+            Dark_Effect := Transfer_Modes.Effect (Kind, Images.Black, P.Port.Colors, Colorize, Dark_Color);
+            Light_Effect := Transfer_Modes.Effect (Kind, Images.White, P.Port.Colors, Colorize, Light_Color);
+            Two_Toned := Dark_Effect /= Transfer_Modes.Depends_On_Destination
+              and then Light_Effect /= Transfer_Modes.Depends_On_Destination;
          end if;
          if Effect = Transfer_Modes.Unchanged then
             return Outcome;
@@ -286,8 +350,11 @@ package body Pictlib.Internal.Rendering is
             if not P.Machine.Row_Spans.Is_Empty then
                Outcome := Clip_Row (P, S, Y);
                if Results.Succeeded (Outcome) then
+                  Current_Row := Y;
                   Outcome :=
                     (if Effect = Transfer_Modes.Constant_Color then Paint_Row_Color (P, S, Y, Color)
+                     elsif Patterned and then not Transfer_Modes.Reads_Destination (Kind) then Repeated (P, S)
+                     elsif Two_Toned then Two_Tone (P, S, Y)
                      else Paint (P, S, Y));
                end if;
             end if;
@@ -323,16 +390,42 @@ package body Pictlib.Internal.Rendering is
       Last_Row : constant Long_Long_Integer :=
         Divisions.Ceiling_Divide ((Relative + 1) * Destination_Height, Source_Height) - 1;
       Outcome : Results.Result;
+      --  A copy in black on white is the source itself.
+      Identity : constant Boolean := Transfer_Modes.Is_Identity (Kind, P.Port.Colors);
+      --  The source column Sampled gives for column Next_X, as Column + Left_Over / Destination_Width: column X + 1
+      --  follows from column X by adding Source_Width / Destination_Width with carry, so a row needs no division
+      --  but at the start of each span.
+      Next_X : Integer := Integer'First;
+      Column, Left_Over : Long_Long_Integer := 0;
+      Whole : constant Long_Long_Integer := Source_Width / Destination_Width;
+      Part : constant Long_Long_Integer := Source_Width mod Destination_Width;
 
       function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
          pragma Unreferenced (Y);
-         Source_X : constant Integer :=
-           Integer (Source.Left) + Sampled (X - Destination.Left, Source_Width, Destination_Width);
       begin
-         return Transfer_Modes.Compose
-           (Kind, Pixmaps.Pixel (Decoder, Source_X - Integer (Header.Bounds.Left)), Under, P.Port.Colors);
+         if X /= Next_X then
+            declare
+               Scaled : constant Long_Long_Integer := Long_Long_Integer (X - Destination.Left) * Source_Width;
+            begin
+               Column := Scaled / Destination_Width;
+               Left_Over := Scaled mod Destination_Width;
+            end;
+         end if;
+         declare
+            Pixel : constant Images.RGB_Color :=
+              Pixmaps.Pixel (Decoder, Natural (Long_Long_Integer (Source.Left - Header.Bounds.Left) + Column));
+         begin
+            Column := Column + Whole;
+            Left_Over := Left_Over + Part;
+            if Left_Over >= Destination_Width then
+               Column := Column + 1;
+               Left_Over := Left_Over - Destination_Width;
+            end if;
+            Next_X := X + 1;
+            return (if Identity then Pixel else Transfer_Modes.Compose (Kind, Pixel, Under, P.Port.Colors));
+         end;
       end Color_At;
-      function Paint is new Paint_Row (Color_At);
+      function Paint is new Paint_Row (Color_At, Reads_Under => Transfer_Modes.Reads_Destination (Kind));
    begin
       if Relative < 0 or else Relative >= Source_Height then
          return Results.Success;

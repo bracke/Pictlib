@@ -11,13 +11,13 @@ library project Pictlib is
    for Create_Missing_Dirs use "True";
 
    --  The checks are part of the library's contract with hostile input and stay on in every profile; Alire's
-   --  build profile chooses only the optimization and debug information.
+   --  build profile chooses only the optimization, inlining across units included, and debug information.
    Checks := ("-gnat2022", "-gnatyM120", "-gnatX", "-gnata", "-gnato", "-gnatVa", "-gnatwa", "-gnatwe");
 
    package Compiler is
       case Pictlib_Config.Build_Profile is
          when "release" =>
-            for Default_Switches ("Ada") use Checks & ("-O2");
+            for Default_Switches ("Ada") use Checks & ("-O2", "-gnatn");
          when others =>
             for Default_Switches ("Ada") use Checks & ("-Og", "-g");
       end case;

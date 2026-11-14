@@ -39,6 +39,32 @@ specification (`docs/SPECIFICATION.md`) is the contract each item refers to.
 - Strictness modes `Strict`, `Compatible` and `Recover_When_Safe`, with
   structured, non-raising results, stable `pict.*` identifiers and warnings.
 
+### Performance
+
+Measured with `pictlib_benchmark` built at `-O2` with every check on, best of
+three runs, against commit 0effe30: rendering a copied
+PixMap or BitMap about twice as fast; encoding `Direct_32` 2.7×, `Indexed_8`
+3.6× and `Mono_1` 6.5× as fast; patterned fills about 12× and shapes under a
+clip of many lines about 5× as fast; 4.2 times fewer instructions in all.
+Output, drawing-work charges and the limits are unchanged.
+
+- Painting a row steps through the view by index, reads the destination
+  only for a mode that uses it, and skips pixels the mode leaves as they
+  are, such as the uninked ones of text in srcOr. A copy in black on white
+  is the source itself, and its source columns are stepped, not divided.
+- A copied pattern composes one period of a row and repeats it; a bit
+  pattern under or or bic paints one color or nothing a pixel, without
+  reading the view.
+- The encoder finds colors in an open-addressed table instead of a hashed
+  map, fills each row with its layout decided once, tests luminance without
+  a division, and keeps the rows its dry run packed, when one allocation of
+  at most 64 MiB holds them, so it does not convert and pack them again.
+- Shapes reserve their rows before building them; a region's walk keeps
+  its merge buffer and its rows' spans, and the region, coverage and paint
+  loops read vector elements by value, so no read takes and finalizes a
+  container lock.
+- The release profile adds cross-unit inlining (`-gnatn`).
+
 ### Hostile input
 
 - Every budget in `Pictlib.Limits` fails before it is crossed:
@@ -871,3 +897,5 @@ All tooling is Ada, in the `tests` crate:
   corpus raised no defect and no failure, so an unreadable file or a
   differing reference never becomes an expected outcome; a broken
   `expected.txt` can still be rewritten.
+- `pictlib_benchmark` times in CPU time and adds patterned fills, text and
+  shapes under a clip of many lines.

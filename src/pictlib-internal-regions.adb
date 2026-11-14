@@ -115,26 +115,32 @@ package body Pictlib.Internal.Regions is
       return True;
    end From_Scanlines;
 
-   --  Active := Active xor Points (Line), both sorted.
+   --  Active := Active xor Points (Line), both sorted. In this unit's loops a vector's elements are read through
+   --  Element, which returns a copy, not by indexing, whose reference GNAT guards with a controlled lock that is
+   --  finalized at every read.
    procedure Invert (Item : in out Region; Line : Scanline) is
-      Merged : Integer_Vectors.Vector;
+      Merged : Integer_Vectors.Vector renames Item.Merged;
       Left : Positive := 1;
       Right : Positive := Line.First;
    begin
-      --  At most every point of both, reserved at once: appending alone could grow it to twice that.
-      Merged.Reserve_Capacity (Item.Active.Length + Ada.Containers.Count_Type (Line.Last - Line.First + 1));
+      Merged.Clear;
+      --  The active columns and the line's are distinct points of the region, so all of them fit; reserved at
+      --  once, where appending alone could grow it to twice that.
+      if Merged.Capacity < Item.Points.Length then
+         Merged.Reserve_Capacity (Item.Points.Length);
+      end if;
       while Left <= Natural (Item.Active.Length) or else Right <= Line.Last loop
          if Right > Line.Last then
-            Merged.Append (Item.Active (Left));
+            Merged.Append (Item.Active.Element (Left));
             Left := Left + 1;
          elsif Left > Natural (Item.Active.Length) then
-            Merged.Append (Item.Points (Right));
+            Merged.Append (Item.Points.Element (Right));
             Right := Right + 1;
-         elsif Item.Active (Left) < Item.Points (Right) then
-            Merged.Append (Item.Active (Left));
+         elsif Item.Active.Element (Left) < Item.Points.Element (Right) then
+            Merged.Append (Item.Active.Element (Left));
             Left := Left + 1;
-         elsif Item.Points (Right) < Item.Active (Left) then
-            Merged.Append (Item.Points (Right));
+         elsif Item.Points.Element (Right) < Item.Active.Element (Left) then
+            Merged.Append (Item.Points.Element (Right));
             Right := Right + 1;
          else
             Left := Left + 1;
@@ -167,11 +173,11 @@ package body Pictlib.Internal.Regions is
          Item.Next_Line := 1;
       end if;
       Item.Cursor_Y := Y;
-      while Item.Next_Line <= Natural (Item.Lines.Length) and then Item.Lines (Item.Next_Line).Y <= Y loop
+      while Item.Next_Line <= Natural (Item.Lines.Length) and then Item.Lines.Element (Item.Next_Line).Y <= Y loop
          --  Inverting merges the active set with the line's points: both are charged, and the line, before it
          --  is inverted.
          declare
-            Line : constant Scanline := Item.Lines (Item.Next_Line);
+            Line : constant Scanline := Item.Lines.Element (Item.Next_Line);
          begin
             Work := Checked_Arithmetic.Saturating_Add
               (Work, Pixel_Count (Item.Active.Length) + Pixel_Count (Line.Last - Line.First + 1) + 1);
@@ -188,13 +194,15 @@ package body Pictlib.Internal.Regions is
       declare
          Index : Positive := 1;
       begin
-         --  The row's spans, at most one a pair of active points, reserved exactly: a row cut from a large
-         --  region keeps no capacity a walk of the next did not ask for, and grows to no more than it holds.
-         Spans.Reserve_Capacity (Item.Active.Length / 2);
+         --  The row's spans, at most one a pair of active points: grown to that at once, never step by step,
+         --  and kept for the next row rather than allocated again.
+         if Spans.Capacity < Item.Active.Length / 2 then
+            Spans.Reserve_Capacity (Item.Active.Length / 2);
+         end if;
          while Index + 1 <= Natural (Item.Active.Length) loop
             declare
-               Left : constant Integer := Integer'Max (Item.Active (Index), Box.Left);
-               Right : constant Integer := Integer'Min (Item.Active (Index + 1), Box.Right);
+               Left : constant Integer := Integer'Max (Item.Active.Element (Index), Box.Left);
+               Right : constant Integer := Integer'Min (Item.Active.Element (Index + 1), Box.Right);
             begin
                if Left < Right then
                   Spans.Append (Span'(Left, Right));
@@ -211,12 +219,14 @@ package body Pictlib.Internal.Regions is
       R : Positive := 1;
    begin
       Result.Clear;
-      --  At most a span for each of both, reserved exactly as Row_Spans reserves its own.
-      Result.Reserve_Capacity (Left.Length + Right.Length);
+      --  At most a span for each of both, grown to as Row_Spans grows its own.
+      if Result.Capacity < Left.Length + Right.Length then
+         Result.Reserve_Capacity (Left.Length + Right.Length);
+      end if;
       while L <= Natural (Left.Length) and then R <= Natural (Right.Length) loop
          declare
-            A : constant Span := Left (L);
-            B : constant Span := Right (R);
+            A : constant Span := Left.Element (L);
+            B : constant Span := Right.Element (R);
             First : constant Integer := Integer'Max (A.Left, B.Left);
             Last : constant Integer := Integer'Min (A.Right, B.Right);
          begin
@@ -236,24 +246,25 @@ package body Pictlib.Internal.Regions is
       R : Positive := 1;
    begin
       Result.Clear;
-      for A of Left loop
+      for Index in Left.First_Index .. Left.Last_Index loop
          declare
+            A : constant Span := Left.Element (Index);
             From : Integer := A.Left;
          begin
             --  Cuts wholly before this span are behind every later span too.
-            while R <= Natural (Right.Length) and then Right (R).Right <= From loop
+            while R <= Natural (Right.Length) and then Right.Element (R).Right <= From loop
                R := R + 1;
             end loop;
             --  Cuts within the span; one that reaches past it is kept for the next span.
             declare
                Cut : Positive := R;
             begin
-               while Cut <= Natural (Right.Length) and then Right (Cut).Left < A.Right loop
-                  if Right (Cut).Left > From then
-                     Result.Append (Span'(From, Right (Cut).Left));
+               while Cut <= Natural (Right.Length) and then Right.Element (Cut).Left < A.Right loop
+                  if Right.Element (Cut).Left > From then
+                     Result.Append (Span'(From, Right.Element (Cut).Left));
                   end if;
-                  From := Integer'Max (From, Right (Cut).Right);
-                  exit when Right (Cut).Right >= A.Right;
+                  From := Integer'Max (From, Right.Element (Cut).Right);
+                  exit when Right.Element (Cut).Right >= A.Right;
                   Cut := Cut + 1;
                end loop;
             end;

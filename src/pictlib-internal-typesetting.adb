@@ -216,17 +216,36 @@ package body Pictlib.Internal.Typesetting is
            ((Cells (Current).Metric.Y + Y - Cells (Current).Glyph_Top) * Atlas_Width
             + Cells (Current).Metric.X + X - Cells (Current).Glyph_Left) >= Ink_Threshold);
 
+      Reads : constant Boolean := Transfer_Modes.Reads_Destination (Kind);
+      --  Whether the mode leaves a pixel without ink as it is, as srcOr, text's usual mode, does: such pixels are
+      --  then skipped.
+      Unused : Images.RGB_Color;
+      Blank_Unchanged : constant Boolean :=
+        Transfer_Modes."="
+          (Transfer_Modes.Effect (Kind, Images.White, P.Port.Colors, Colorize => True, Color => Unused),
+           Transfer_Modes.Unchanged);
+      --  Whether the pixel Glyph_Keeps last looked at is inked, for Glyph_Color, asked next of the same pixel.
+      Inked : Boolean := False;
+
       --  Bold smears ink one pixel right.
+      function Glyph_Keeps (X, Y : Integer) return Boolean is
+      begin
+         Inked := Covered (X, Y) or else (Bold = 1 and then Covered (X - 1, Y));
+         return Blank_Unchanged and then not Inked;
+      end Glyph_Keeps;
       function Glyph_Color (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
-        (Through_Mode (Covered (X, Y) or else (Bold = 1 and then Covered (X - 1, Y)), Under));
-      function Paint_Glyph is new Rendering.Paint_Row (Glyph_Color);
+         pragma Unreferenced (X, Y);
+      begin
+         return Through_Mode (Inked, Under);
+      end Glyph_Color;
+      function Paint_Glyph is new Rendering.Paint_Row (Glyph_Color, Reads_Under => Reads, Keeps => Glyph_Keeps);
 
       function Ink_Color (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
          pragma Unreferenced (X, Y);
       begin
          return Through_Mode (True, Under);
       end Ink_Color;
-      function Paint_Ink is new Rendering.Paint_Row (Ink_Color);
+      function Paint_Ink is new Rendering.Paint_Row (Ink_Color, Reads_Under => Reads);
 
       --  Paint Cells (First .. Last) row by row, top to bottom, so the clip region is walked once for them all;
       --  within a row the cells go in string order. Their metrics must all be of the atlas's current generation.

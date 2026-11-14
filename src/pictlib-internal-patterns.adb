@@ -28,6 +28,12 @@ package body Pictlib.Internal.Patterns is
       end case;
    end Sample;
 
+   function Period (Item : Pattern) return Positive is
+     (case Item.Kind is
+         when Bit_Pattern => 8,
+         when Solid_Color => 1,
+         when Color_Pattern => Item.Width);
+
    function Uniform (Item : Pattern; Color : out Images.RGB_Color) return Boolean is
    begin
       Color := Sample (Item, 0, 0);

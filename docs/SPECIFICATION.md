@@ -550,7 +550,10 @@ Rows are stored as QuickDraw stores them: unpacked when `rowBytes < 8`, otherwis
 byte count (a word count when `rowBytes > 250`). `rowBytes` above `16#3FFE#` cannot be written
 (`Invalid_Argument`): 4095 pixels wide for `Direct_32`, 16382 for `Indexed_8`. `Max_Frame_Width`,
 `Max_Frame_Height`, `Max_Output_Bytes` (checked by the dry run before a byte is written) and
-`Max_Allocation_Bytes` (row buffers) apply.
+`Max_Allocation_Bytes` (row buffers) apply. The dry run keeps the rows it stores, so the write does
+not convert and pack them again, when one allocation within `Max_Allocation_Bytes` and at most
+64 MiB holds every row at its worst case; otherwise the write stores each row again, alike. Either
+way the destination is given the same writes, in the same order.
 
 ## 8. Metadata policy
 
@@ -663,7 +666,8 @@ Root `alire.toml`: `name = "pictlib"`, `0.1.0-dev`, MIT, `gnat_native = "^15"`, 
 `pictlib_example` (the README's example, which it runs), `pictlib_real_world`
 (the real-world corpus against its recorded outcomes), `pictlib_fuzz` (mutation fuzzing),
 `pictlib_prove` (the SPARK proof profile), `pictlib_conformance` (encoder output read by ImageMagick
-and by LibreOffice's own PICT import, exact), `pictlib_benchmark` (throughput, informational) and
+and by LibreOffice's own PICT import, exact), `pictlib_benchmark` (throughput in CPU time, informational: encoding and rendering each layout,
+patterned fills, text, shapes under a clip of many lines, and a real-world picture) and
 `pictlib_complete` (every gate in turn; `--fuzz-seed N`, or `PICTLIB_FUZZ_SEED`, fuzzes from seed
 N, as CI does with its run number), and `pictlib_generate` (the external fixtures, from ImageMagick and Netpbm; `--check`
 compares a regeneration with the committed files byte for byte). All tooling is Ada; there are no

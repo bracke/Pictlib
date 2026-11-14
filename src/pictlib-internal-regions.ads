@@ -108,6 +108,9 @@ private
       Points : Integer_Vectors.Vector;
       --  Row cursor: the inversion columns in effect after Lines (1 .. Next_Line - 1).
       Active : Integer_Vectors.Vector;
+      --  Where a line's inversion is merged before it becomes Active, which takes its buffer and leaves its own:
+      --  the two trade buffers line after line, reserved once for every point, so walking allocates nothing.
+      Merged : Integer_Vectors.Vector;
       Next_Line : Positive := 1;
       Cursor_Y : Integer := Integer'First;
    end record;

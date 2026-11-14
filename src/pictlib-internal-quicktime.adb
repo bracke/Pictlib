@@ -180,6 +180,7 @@ package body Pictlib.Internal.QuickTime is
       --  The drawing after HiliteMode, as for any copy.
       Outcome : Results.Result :=
         Rendering.Drawing_Mode (S, Event, Header.Mode_Word, Rendering.Take_Hilite (P), Kind);
+      Copied : constant Boolean := Transfer_Modes."=" (Kind, Transfer_Modes.Copy);
 
       --  The image pixel destination pixel X, Y samples; a decompressed image is not colorized.
       function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color is
@@ -188,12 +189,14 @@ package body Pictlib.Internal.QuickTime is
          Column : constant Natural :=
            Natural (Clamped.Left) + Rendering.Sampled (X - Destination.Left, Source_Width, Destination_Width);
          At_Pixel : constant Positive := JPEG_Bridge.Bytes_Per_Pixel * (Row * Item.Width + Column) + 1;
+         Pixel : constant Images.RGB_Color :=
+           (Byte (Pixels (At_Pixel)), Byte (Pixels (At_Pixel + 1)), Byte (Pixels (At_Pixel + 2)));
       begin
-         return Transfer_Modes.Compose
-           (Kind, (Byte (Pixels (At_Pixel)), Byte (Pixels (At_Pixel + 1)), Byte (Pixels (At_Pixel + 2))), Under,
-            P.Port.Colors, Colorize => False);
+         --  Uncolorized, a copy is the image itself.
+         return
+           (if Copied then Pixel else Transfer_Modes.Compose (Kind, Pixel, Under, P.Port.Colors, Colorize => False));
       end Color_At;
-      function Paint is new Rendering.Paint_Row (Color_At);
+      function Paint is new Rendering.Paint_Row (Color_At, Reads_Under => Transfer_Modes.Reads_Destination (Kind));
    begin
       if not Results.Succeeded (Outcome) or else Geometry.Is_Empty (Clamped) or else Regions.Is_Empty (Destination)
       then

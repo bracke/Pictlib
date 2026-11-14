@@ -229,14 +229,24 @@ package Pictlib.Internal.Rendering is
       Y, Left, Right : Integer;
       Mask : in out Regions.Region;
       Masked : Boolean) return Results.Result;
-   --  Paint row: each span of Row_Spans is charged, then each of its pixels becomes Color_At of what is under it;
-   --  nothing is painted past the budget.
+   --  Never: no pixel is kept as it is, Paint_Row's default.
+   --  @param X Column.
+   --  @param Y Row.
+   --  @return False.
+   function Never (X, Y : Integer) return Boolean;
+   --  Paint row: each span of Row_Spans is charged, then each of its pixels becomes Color_At of what is under it,
+   --  left to right; nothing is painted past the budget. Keeps is asked of each pixel once, then, unless it is
+   --  kept, Color_At, so Color_At may use what Keeps worked out for the same pixel.
    --  @param P Painter whose begun row is painted.
    --  @param S Session whose drawing budget applies.
    --  @param Y Picture row.
    --  @return Success, or Limit_Exceeded when the drawing budget is crossed.
    generic
       with function Color_At (X, Y : Integer; Under : Images.RGB_Color) return Images.RGB_Color;
+      --  Whether Color_At reads Under: when not, it is given black and the view is not read.
+      Reads_Under : Boolean := True;
+      --  Whether pixel X, Y stays as it is: Color_At is then not asked.
+      with function Keeps (X, Y : Integer) return Boolean is Never;
    function Paint_Row (P : in out Painter; S : in out Sessions.Session; Y : Integer) return Results.Result;
 
    --  Fill: a shape painted row by row, clipped, through How.

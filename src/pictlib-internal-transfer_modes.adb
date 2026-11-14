@@ -1,6 +1,5 @@
 package body Pictlib.Internal.Transfer_Modes is
    use type Interfaces.Unsigned_16;
-   use type Images.RGB_Color;
 
    Dither_Flag : constant := 16#40#;
 

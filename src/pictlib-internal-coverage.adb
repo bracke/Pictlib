@@ -134,6 +134,21 @@ package body Pictlib.Internal.Coverage is
       end if;
    end Hold;
 
+   --  Room for rows down to Last, from First when none is held, so appending them does not grow the rows a step
+   --  at a time, each step copying every span held; never for more rows than the allowance left pays for.
+   procedure Expect_Rows (Item : in out Shape; First, Last : Integer) is
+      Held : constant Long_Long_Integer := Long_Long_Integer (Item.Rows.Length);
+      Below : constant Long_Long_Integer :=
+        (if Item.Rows.Is_Empty then Long_Long_Integer (Last) - Long_Long_Integer (First) + 1
+         else Long_Long_Integer (Last) - Long_Long_Integer (Last_Row (Item)));
+      Wanted : constant Long_Long_Integer :=
+        Held + Long_Long_Integer'Min (Long_Long_Integer'Max (Below, 0), Long_Long_Integer (Remaining (Item)));
+   begin
+      if Wanted > Long_Long_Integer (Item.Rows.Capacity) then
+         Item.Rows.Reserve_Capacity (Ada.Containers.Count_Type (Wanted));
+      end if;
+   end Expect_Rows;
+
    --  Add pixels Left .. Right - 1 of row Y, merging with what the row holds.
    procedure Add (Item : in out Shape; Y, Left, Right : Integer) is
       First : constant Integer := Integer'Max (Left, Item.Window.Left);
@@ -198,6 +213,7 @@ package body Pictlib.Internal.Coverage is
       First, Last : Integer;
    begin
       if Row_Range (Item, Bounds, First, Last) then
+         Expect_Rows (Item, First, Last);
          for Y in First .. Last loop
             exit when Item.Spent;
             Charge (Item, 1);
@@ -239,6 +255,7 @@ package body Pictlib.Internal.Coverage is
       First, Last, Left, Right : Integer;
    begin
       if Row_Range (Item, Bounds, First, Last) then
+         Expect_Rows (Item, First, Last);
          for Y in First .. Last loop
             exit when Item.Spent;
             --  Every row walked is charged, whether or not any of it lands in the window.
@@ -261,6 +278,7 @@ package body Pictlib.Internal.Coverage is
       elsif not Row_Range (Item, Bounds, First, Last) then
          return;
       end if;
+      Expect_Rows (Item, First, Last);
       declare
          Corner : constant Area := (0, 0, Height, Width);
       begin
@@ -433,6 +451,16 @@ package body Pictlib.Internal.Coverage is
       Active.Reserve_Capacity (Edges.Length);
       Kept.Reserve_Capacity (Edges.Length);
       Boundaries.Reserve_Capacity (Edges.Length);
+      declare
+         Lowest : Long_Long_Integer := Edges.First_Element.Last;
+      begin
+         for E of Edges loop
+            Lowest := Long_Long_Integer'Max (Lowest, E.Last);
+         end loop;
+         Expect_Rows
+           (Item, Integer (Long_Long_Integer'Max (Long_Long_Integer (Item.Window.Top), Edges.First_Element.First)),
+            Integer (Long_Long_Integer'Min (Long_Long_Integer (Item.Window.Bottom - 1), Lowest)));
+      end;
 
       --  From the first row an edge crosses, not the window's top.
       for Y in Integer (Long_Long_Integer'Max (Long_Long_Integer (Item.Window.Top), Edges.First_Element.First))
@@ -445,16 +473,22 @@ package body Pictlib.Internal.Coverage is
          begin
             Boundaries.Clear;
             Kept.Clear;
-            while Next_Edge <= Natural (Edges.Length) and then Edges (Next_Edge).First <= Row loop
-               Active.Append (Edges (Next_Edge));
+            --  Edges are read through Element, a copy, not by indexing, whose reference GNAT guards with a
+            --  controlled lock finalized at every read.
+            while Next_Edge <= Natural (Edges.Length) and then Edges.Element (Next_Edge).First <= Row loop
+               Active.Append (Edges.Element (Next_Edge));
                Next_Edge := Next_Edge + 1;
             end loop;
             exit when Active.Is_Empty and then Next_Edge > Natural (Edges.Length);
-            for E of Active loop
-               if E.Last >= Row then
-                  Kept.Append (E);
-                  Boundaries.Append (Crossing (E, Center));
-               end if;
+            for Index in Active.First_Index .. Active.Last_Index loop
+               declare
+                  E : constant Edge := Active.Element (Index);
+               begin
+                  if E.Last >= Row then
+                     Kept.Append (E);
+                     Boundaries.Append (Crossing (E, Center));
+                  end if;
+               end;
             end loop;
             Active.Move (Kept);
             Charge (Item, Natural (Active.Length) + 1);
@@ -549,6 +583,9 @@ package body Pictlib.Internal.Coverage is
          return;
       end if;
       --  Row Y is covered by the pen at every path row from Y - Pen_Height + 1 to Y, the extremes at the ends.
+      Expect_Rows
+        (Item, Integer'Max (Kept_Top, Item.Window.Top),
+         Integer'Min (Kept_Bottom + Pen_Height, Item.Window.Bottom) - 1);
       for Y in Integer'Max (Kept_Top, Item.Window.Top) .. Integer'Min (Kept_Bottom + Pen_Height, Item.Window.Bottom) - 1
       loop
          exit when Item.Spent;
@@ -571,6 +608,7 @@ package body Pictlib.Internal.Coverage is
       Units : Pixel_Count;
    begin
       if Row_Range (Item, Box, First, Last) then
+         Expect_Rows (Item, First, Last);
          for Y in First .. Last loop
             exit when Item.Spent;
             Regions.Row_Spans (Source, Y, Spans, Units, Remaining (Item));
@@ -619,6 +657,7 @@ package body Pictlib.Internal.Coverage is
       if Pen_Width <= 0 or else Pen_Height <= 0 or else not Row_Range (Item, Box, First, Last) then
          return;
       end if;
+      Expect_Rows (Item, First, Last);
       declare
          --  Every region row an output row's inset depends on.
          Low : constant Integer := Integer'Max (Box.Top, First - Pen_Height);

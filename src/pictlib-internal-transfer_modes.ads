@@ -7,6 +7,7 @@ with Pictlib.Images;
 --  arithmetic; Copy reproduces the source exactly.
 package Pictlib.Internal.Transfer_Modes is
    pragma Preelaborate;
+   use type Images.RGB_Color;
 
    type Mode_Kind is
      (Copy, Or_Mode, Xor_Mode, Bic, Not_Copy, Not_Or, Not_Xor, Not_Bic,
@@ -65,6 +66,18 @@ package Pictlib.Internal.Transfer_Modes is
       Colors : Port_Colors;
       Colorize : Boolean;
       Color : out Images.RGB_Color) return Effect_Kind;
+
+   --  Reads destination.
+   --  @param Kind Transfer mode.
+   --  @return Whether Compose with Kind depends on Destination: every mode but the copies does.
+   function Reads_Destination (Kind : Mode_Kind) return Boolean is (Kind not in Copy | Not_Copy);
+   --  Is identity.
+   --  @param Kind Transfer mode.
+   --  @param Colors Port colors.
+   --  @return Whether Compose with Kind, Colors and the default colorizing gives every source back unchanged:
+   --  a copy in black on white.
+   function Is_Identity (Kind : Mode_Kind; Colors : Port_Colors) return Boolean is
+     (Kind = Copy and then Colors.Foreground = Images.Black and then Colors.Background = Images.White);
 
    --  Invert.
    --  @param Item Pixel.

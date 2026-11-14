@@ -139,7 +139,7 @@ package Pictlib.Internal.Pixmaps is
    --  @param Column Pixel column from 0.
    --  @return The pixel's color.
    function Pixel (Decoder : Row_Decoder; Column : Natural) return Images.RGB_Color
-     with Pre => Column < Row_Width (Decoder);
+     with Pre => Column < Row_Width (Decoder), Inline;
    --  Finish.
    --  @param Decoder Decoder whose buffers are released.
    procedure Finish (Decoder : in out Row_Decoder);

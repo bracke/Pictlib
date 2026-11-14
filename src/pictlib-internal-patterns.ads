@@ -37,6 +37,10 @@ package Pictlib.Internal.Patterns is
    --  @param Color Its one sample, when it has one.
    --  @return True when every sample of Item is the same.
    function Uniform (Item : Pattern; Color : out Images.RGB_Color) return Boolean;
+   --  Period.
+   --  @param Item Pattern.
+   --  @return The columns after which its rows repeat: Sample (Item, X + Period, Y) = Sample (Item, X, Y).
+   function Period (Item : Pattern) return Positive;
 
    --  Read bit pattern.
    --  @param S Session positioned at 8 pattern bytes.

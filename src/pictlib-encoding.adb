@@ -1,4 +1,4 @@
-with Ada.Containers.Hashed_Maps;
+with Ada.Unchecked_Deallocation;
 with Ada.Containers.Vectors;
 with Interfaces;
 with Pictlib.Internal.Bytes;
@@ -12,6 +12,7 @@ package body Pictlib.Encoding is
    use type Images.RGB_Color;
    use type Geometry.Fixed;
    use type Internal.Generation;
+   use type Streams.Byte_Array_Access;
    use all type Internal.Call_Guards.Guard;
 
    package Writers renames Internal.Writers;
@@ -30,58 +31,79 @@ package body Pictlib.Encoding is
    Widen_Component : constant := 257;
    Largest_Colors : constant := 256;
 
-   type Pixel is record
-      Color : Images.RGB_Color;
-      Alpha : Byte := 16#FF#;
-   end record;
-
-   function Pixel_At (Image : Images.Image_View; X, Y : Natural) return Pixel is
-      Format : constant Pixel_Format := Image.Descriptor.Format;
-      At_Pixel : constant Positive := Image.Storage'First + Internal.Pixels.Pixel_Offset (Image.Descriptor, X, Y);
-   begin
-      return (Internal.Pixels.Color_At (Format, Image.Storage.all, At_Pixel),
-              Internal.Pixels.Alpha_At (Format, Image.Storage.all, At_Pixel));
-   end Pixel_At;
+   --  Where row Y of Image starts in its storage; the next pixel starts Bytes_Per_Pixel on.
+   function Row_Start (Image : Images.Image_View; Y : Natural) return Positive is
+     (Image.Storage'First + Internal.Pixels.Pixel_Offset (Image.Descriptor, 0, Y));
 
    function Key (Color : Images.RGB_Color) return Natural is
      (Natural (Color.Red) * 65_536 + Natural (Color.Green) * 256 + Natural (Color.Blue));
 
-   function Hash (Item : Natural) return Ada.Containers.Hash_Type is (Ada.Containers.Hash_Type (Item));
-
-   package Index_Maps is new Ada.Containers.Hashed_Maps (Natural, Natural, Hash, "=");
    package Color_Vectors is new Ada.Containers.Vectors (Natural, Images.RGB_Color);
+
+   --  A color's index is found in an open-addressed table of twice the most colors kept, so a slot is always
+   --  free and every probe sequence ends; it holds no controlled state, unlike a hashed map, so a lookup per
+   --  pixel costs no tamper check.
+   Slots : constant := 512;
+   subtype Slot is Natural range 0 .. Slots - 1;
+   No_Key : constant := -1;
+   type Slot_Keys is array (Slot) of Integer range No_Key .. 16#FF_FFFF#;
+   type Slot_Indexes is array (Slot) of Natural;
 
    --  The image's colors in the order they first appear, up to one more than a color table holds.
    type Palette is record
-      Indexes : Index_Maps.Map;
+      Keys : Slot_Keys := [others => No_Key];
+      Indexes : Slot_Indexes := [others => 0];
       Colors : Color_Vectors.Vector;
       Black_And_White : Boolean := True;
    end record;
 
+   --  The slot holding Color's key, or the free slot it would take.
+   function Slot_Of (Item : Palette; Color : Images.RGB_Color) return Slot is
+      use type Interfaces.Unsigned_32;
+      Wanted : constant Natural := Key (Color);
+      --  Fibonacci hashing: the key times 2^32 / phi, its top bits.
+      At_Slot : Slot := Slot (Interfaces.Shift_Right (Interfaces.Unsigned_32 (Wanted) * 2_654_435_769, 23) mod Slots);
+   begin
+      while Item.Keys (At_Slot) /= No_Key and then Item.Keys (At_Slot) /= Wanted loop
+         At_Slot := (At_Slot + 1) mod Slots;
+      end loop;
+      return At_Slot;
+   end Slot_Of;
+
+   --  The index of a color the survey found.
+   function Index_Of (Item : Palette; Color : Images.RGB_Color) return Natural is
+     (Item.Indexes (Slot_Of (Item, Color)));
+
    procedure Survey (Image : Images.Image_View; Item : out Palette) is
+      Format : constant Pixel_Format := Image.Descriptor.Format;
+      Step : constant Positive := Positive (Images.Bytes_Per_Pixel (Format));
    begin
       for Y in 0 .. Natural (Image.Descriptor.Height) - 1 loop
-         for X in 0 .. Natural (Image.Descriptor.Width) - 1 loop
-            declare
-               Color : constant Images.RGB_Color := Pixel_At (Image, X, Y).Color;
-            begin
-               if Color /= Images.Black and then Color /= Images.White then
-                  Item.Black_And_White := False;
-               end if;
-               if Natural (Item.Colors.Length) <= Largest_Colors and then not Item.Indexes.Contains (Key (Color)) then
-                  Item.Indexes.Insert (Key (Color), Natural (Item.Colors.Length));
-                  Item.Colors.Append (Color);
-               end if;
-            end;
-            exit when Natural (Item.Colors.Length) > Largest_Colors;
-         end loop;
+         declare
+            At_Pixel : Positive := Row_Start (Image, Y);
+         begin
+            for X in 0 .. Natural (Image.Descriptor.Width) - 1 loop
+               declare
+                  Color : constant Images.RGB_Color := Internal.Pixels.Color_At (Format, Image.Storage.all, At_Pixel);
+                  At_Slot : constant Slot := Slot_Of (Item, Color);
+               begin
+                  if Color /= Images.Black and then Color /= Images.White then
+                     Item.Black_And_White := False;
+                  end if;
+                  if Item.Keys (At_Slot) = No_Key then
+                     Item.Keys (At_Slot) := Key (Color);
+                     Item.Indexes (At_Slot) := Natural (Item.Colors.Length);
+                     Item.Colors.Append (Color);
+                  end if;
+               end;
+               exit when Natural (Item.Colors.Length) > Largest_Colors;
+               At_Pixel := At_Pixel + Step;
+            end loop;
+         end;
          --  More colors than an indexed picture holds are not all black or white.
          exit when Natural (Item.Colors.Length) > Largest_Colors;
       end loop;
    end Survey;
-
-   function Luminance (Color : Images.RGB_Color) return Natural is
-     ((299 * Natural (Color.Red) + 587 * Natural (Color.Green) + 114 * Natural (Color.Blue)) / 1000);
 
    function Invalid (Expected, Actual : Byte_Count) return Results.Result is
      (Results.Failure (Errors.Make (Errors.Invalid_Argument, (Expected => Expected, Actual => Actual, others => <>))));
@@ -234,7 +256,8 @@ package body Pictlib.Encoding is
       Accumulate (Outcome, Writers.Put_Word (Out_Bytes, 0));           --  srcCopy
    end Put_Bits_Header;
 
-   --  One row as it is stored before packing.
+   --  One row as it is stored before packing. The layout is decided once a row, and the image's pixels are
+   --  stepped through, each read once.
    procedure Fill_Row
      (Image : Images.Image_View;
       Settings : Options;
@@ -244,40 +267,101 @@ package body Pictlib.Encoding is
       Row : out Streams.Byte_Array)
    is
       Width : constant Natural := Item.Width;
-      Red : constant Natural := Internal.Plane_Offset (Internal.Red_Plane, Item.Components, Width);
-      Green : constant Natural := Internal.Plane_Offset (Internal.Green_Plane, Item.Components, Width);
-      Blue : constant Natural := Internal.Plane_Offset (Internal.Blue_Plane, Item.Components, Width);
+      Format : constant Pixel_Format := Image.Descriptor.Format;
+      Step : constant Positive := Positive (Images.Bytes_Per_Pixel (Format));
+      Data : Streams.Byte_Array renames Image.Storage.all;
+      At_Pixel : Positive := Row_Start (Image, Y);
+      First : constant Positive := Row'First;
+      Alpha : constant Boolean := Item.Components = 4;
+
+      function Color return Images.RGB_Color is (Internal.Pixels.Color_At (Format, Data, At_Pixel));
    begin
-      Row := [others => 0];
-      for X in 0 .. Width - 1 loop
-         declare
-            Source : constant Pixel := Pixel_At (Image, X, Y);
-         begin
-            case Item.Layout is
-               when Direct_32 =>
-                  if not Item.Packed then
-                     --  Unpacked chunky pixels: pad (or alpha), red, green, blue.
-                     Row (Row'First + 4 * X .. Row'First + 4 * X + 3) :=
-                       [(if Item.Components = 4 then Source.Alpha else 0), Source.Color.Red, Source.Color.Green,
-                        Source.Color.Blue];
-                  else
-                     if Item.Components = 4 then
-                        Row (Row'First + X) := Source.Alpha;
-                     end if;
-                     Row (Row'First + Red + X) := Source.Color.Red;
-                     Row (Row'First + Green + X) := Source.Color.Green;
-                     Row (Row'First + Blue + X) := Source.Color.Blue;
+      case Item.Layout is
+         when Direct_32 =>
+            if not Item.Packed then
+               --  Unpacked chunky pixels: pad (or alpha), red, green, blue.
+               for X in 0 .. Width - 1 loop
+                  declare
+                     Pixel : constant Images.RGB_Color := Color;
+                  begin
+                     Row (First + 4 * X) := (if Alpha then Internal.Pixels.Alpha_At (Format, Data, At_Pixel) else 0);
+                     Row (First + 4 * X + 1) := Pixel.Red;
+                     Row (First + 4 * X + 2) := Pixel.Green;
+                     Row (First + 4 * X + 3) := Pixel.Blue;
+                  end;
+                  At_Pixel := At_Pixel + Step;
+               end loop;
+            else
+               declare
+                  Red : constant Natural := Internal.Plane_Offset (Internal.Red_Plane, Item.Components, Width);
+                  Green : constant Natural := Internal.Plane_Offset (Internal.Green_Plane, Item.Components, Width);
+                  Blue : constant Natural := Internal.Plane_Offset (Internal.Blue_Plane, Item.Components, Width);
+               begin
+                  for X in 0 .. Width - 1 loop
+                     declare
+                        Pixel : constant Images.RGB_Color := Color;
+                     begin
+                        if Alpha then
+                           Row (First + X) := Internal.Pixels.Alpha_At (Format, Data, At_Pixel);
+                        end if;
+                        Row (First + Red + X) := Pixel.Red;
+                        Row (First + Green + X) := Pixel.Green;
+                        Row (First + Blue + X) := Pixel.Blue;
+                     end;
+                     At_Pixel := At_Pixel + Step;
+                  end loop;
+               end;
+            end if;
+         when Indexed_8 =>
+            --  An odd width leaves a pad byte.
+            Row (Row'Last) := 0;
+            for X in 0 .. Width - 1 loop
+               Row (First + X) := Byte (Index_Of (Colors, Color));
+               At_Pixel := At_Pixel + Step;
+            end loop;
+         when others =>
+            --  Black where the luminance, (299 R + 587 G + 114 B) / 1000 truncated, is below the threshold: the sum
+            --  against 1000 times the threshold, the same test without a division. Eight pixels make a byte, most
+            --  significant first.
+            Row := [others => 0];
+            declare
+               Dark_Below : constant Natural := 1000 * Natural (Settings.Mono_Threshold);
+               Bits : Byte := 0;
+            begin
+               for X in 0 .. Width - 1 loop
+                  declare
+                     Pixel : constant Images.RGB_Color := Color;
+                  begin
+                     Bits := Bits * 2
+                       + (if 299 * Natural (Pixel.Red) + 587 * Natural (Pixel.Green) + 114 * Natural (Pixel.Blue)
+                             < Dark_Below
+                          then 1 else 0);
+                  end;
+                  if X mod 8 = 7 then
+                     Row (First + X / 8) := Bits;
+                     Bits := 0;
                   end if;
-               when Indexed_8 =>
-                  Row (Row'First + X) := Byte (Colors.Indexes.Element (Key (Source.Color)));
-               when others =>
-                  if Luminance (Source.Color) < Natural (Settings.Mono_Threshold) then
-                     Row (Row'First + X / 8) := Row (Row'First + X / 8) or Byte (2 ** (7 - X mod 8));
-                  end if;
-            end case;
-         end;
-      end loop;
+                  At_Pixel := At_Pixel + Step;
+               end loop;
+               if Width mod 8 /= 0 then
+                  Row (First + Width / 8) := Bits * 2 ** (8 - Width mod 8);
+               end if;
+            end;
+      end case;
    end Fill_Row;
+
+   --  The rows a dry run stores, back to back, kept for the write so it does not convert and pack them again: row
+   --  Y is Data (Ends (Y) + 1 .. Ends (Y + 1)). Kept once the dry run has stored every row.
+   type Row_Ends is array (Natural range <>) of Natural;
+   type Row_Ends_Access is access Row_Ends;
+   procedure Free is new Ada.Unchecked_Deallocation (Row_Ends, Row_Ends_Access);
+   type Row_Store is record
+      Data : Streams.Byte_Array_Access;
+      Ends : Row_Ends_Access;
+      Kept : Boolean := False;
+   end record;
+   --  The most kept: past it, a picture's rows are stored twice rather than held whole.
+   Row_Store_Limit : constant := 64 * 1024 * 1024;
 
    --  Rows: unpacked below 8 rowBytes, otherwise PackBits behind a byte count, or a word count above 250.
    procedure Put_Rows
@@ -286,29 +370,56 @@ package body Pictlib.Encoding is
       Settings : Options;
       Item : Plan;
       Colors : Palette;
+      Store : in out Row_Store;
       Outcome : in out Results.Result)
    is
       --  Allocated in the body, so the handler below releases whichever was made.
       Row, Packed : Streams.Byte_Array_Access := null;
       Packed_Length : Natural;
+
+      --  A row as stored: a packed one behind its count.
+      procedure Put_Row (Stored : Streams.Byte_Array) is
+      begin
+         if Item.Packed then
+            if Item.Stored > Internal.Byte_Count_Row_Bytes then
+               Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Stored'Length));
+            else
+               Accumulate (Outcome, Writers.Put_Byte (Out_Bytes, Stored'Length));
+            end if;
+         end if;
+         Accumulate (Outcome, Writers.Put (Out_Bytes, Stored));
+      end Put_Row;
+
+      --  Row Y put, and kept when the store has room for every row.
+      procedure Put_And_Keep (Y : Natural; Stored : Streams.Byte_Array) is
+      begin
+         Put_Row (Stored);
+         if Store.Data /= null then
+            Store.Data (Store.Ends (Y) + 1 .. Store.Ends (Y) + Stored'Length) := Stored;
+            Store.Ends (Y + 1) := Store.Ends (Y) + Stored'Length;
+         end if;
+      end Put_And_Keep;
    begin
+      if Store.Kept then
+         for Y in 0 .. Item.Height - 1 loop
+            exit when not Results.Succeeded (Outcome);
+            Put_Row (Store.Data (Store.Ends (Y) + 1 .. Store.Ends (Y + 1)));
+         end loop;
+         return;
+      end if;
       Row := new Streams.Byte_Array (1 .. Item.Unpacked_Length);
       Packed := new Streams.Byte_Array (1 .. Internal.PackBits.Worst_Case (Item.Unpacked_Length));
       for Y in 0 .. Item.Height - 1 loop
          exit when not Results.Succeeded (Outcome);
          Fill_Row (Image, Settings, Item, Colors, Y, Row.all);
-         if not Item.Packed then
-            Accumulate (Outcome, Writers.Put (Out_Bytes, Row.all));
-         else
+         if Item.Packed then
             Internal.PackBits.Pack (Row.all, Packed.all, Packed_Length);
-            if Item.Stored > Internal.Byte_Count_Row_Bytes then
-               Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Packed_Length));
-            else
-               Accumulate (Outcome, Writers.Put_Byte (Out_Bytes, Packed_Length));
-            end if;
-            Accumulate (Outcome, Writers.Put (Out_Bytes, Packed (1 .. Packed_Length)));
+            Put_And_Keep (Y, Packed (1 .. Packed_Length));
+         else
+            Put_And_Keep (Y, Row.all);
          end if;
       end loop;
+      Store.Kept := Store.Data /= null and then Results.Succeeded (Outcome);
       Internal.Bytes.Free (Row);
       Internal.Bytes.Free (Packed);
    exception
@@ -326,13 +437,14 @@ package body Pictlib.Encoding is
       Settings : Options;
       Item : Plan;
       Colors : Palette;
+      Store : in out Row_Store;
       Picture_Size : Byte_Count) return Results.Result
    is
       Outcome : Results.Result := Results.Success;
    begin
       Put_Header (Out_Bytes, Settings, Item, Picture_Size, Outcome);
       Put_Bits_Header (Out_Bytes, Settings, Item, Colors, Outcome);
-      Put_Rows (Out_Bytes, Image, Settings, Item, Colors, Outcome);
+      Put_Rows (Out_Bytes, Image, Settings, Item, Colors, Store, Outcome);
       Accumulate (Outcome, Writers.Align (Out_Bytes));
       Accumulate (Outcome, Writers.Put_Word (Out_Bytes, Natural (Opcodes.End_Picture)));
       return Outcome;
@@ -429,6 +541,11 @@ package body Pictlib.Encoding is
       Measure : Writers.Writer;
       Output : Writers.Writer;
       Outcome : Results.Result;
+      --  Every row at its worst case, which the dry run's rows are kept in when one allocation holds it.
+      Worst : constant Byte_Count :=
+        Byte_Count (Item.Height)
+        * Byte_Count (if Item.Packed then Internal.PackBits.Worst_Case (Item.Unpacked_Length) else Item.Stored);
+      Store : Row_Store;
 
       --  What both runs write: the optional file header, then the picture. The dry run and the real one are this
       --  one sequence, so the real run writes exactly the bytes the dry run measured.
@@ -440,25 +557,41 @@ package body Pictlib.Encoding is
             Result := Writers.Put (Into, File_Header);
          end if;
          if Results.Succeeded (Result) then
-            Result := Write_Picture (Into, Image, Settings, Item, Colors, Picture_Size);
+            Result := Write_Picture (Into, Image, Settings, Item, Colors, Store, Picture_Size);
          end if;
          return Result;
       end Emit;
+      procedure Release is
+      begin
+         Internal.Bytes.Free (Store.Data);
+         Free (Store.Ends);
+      end Release;
    begin
       Started.all := False;
       Written := 0;
+      if Worst <= Byte_Count'Min (Budget.Max_Allocation_Bytes, Row_Store_Limit) then
+         Store.Data := new Streams.Byte_Array (1 .. Natural (Worst));
+         Store.Ends := new Row_Ends'(0 .. Item.Height => 0);
+      end if;
       --  The dry run counts what the output will hold, the file header included, against the limit as it was
       --  set, so a picture that does not fit is reported in the caller's terms.
       Writers.Start (Measure, null, Budget.Max_Output_Bytes);
       Outcome := Emit (Measure, 0);
       if not Results.Succeeded (Outcome) then
+         Release;
          return Outcome;
       end if;
       Started.all := True;
       Writers.Start (Output, Object.Output, Budget.Max_Output_Bytes, Object.Stops'Access);
       Outcome := Emit (Output, Writers.Picture_Count (Measure));
       Written := Writers.Count (Output);
+      Release;
       return Outcome;
+   exception
+      --  The destination's exception, or the store not allocated, passes through with the store released.
+      when others =>
+         Release;
+         raise;
    end Write;
 
    --  Guards a call that runs the destination, as Call_Guards describes: one that used the destination and did
